@@ -1,0 +1,87 @@
+{
+  "$schema": "../../umbraco-package-schema.json",
+  "id": "Imobisoft.Search",
+  "name": "Imobisoft Search",
+  "version": "1.0.0",
+  "allowTelemetry": false,
+  "extensions": [
+    {
+      "type": "section",
+      "alias": "Imobisoft.Section.Search",
+      "name": "Imobisoft Search Section",
+      "weight": 50,
+      "meta": {
+        "label": "Search",
+        "pathname": "imobisoft-search"
+      }
+    },
+    {
+      "type": "dashboard",
+      "alias": "Imobisoft.Search.Dashboard.Profiles",
+      "name": "Imobisoft Search Profiles Dashboard",
+      "element": "/App_Plugins/Imobisoft.Search/src/elements/search-profiles.element.js",
+      "weight": 10,
+      "meta": {
+        "label": "Search Profiles",
+        "pathname": "profiles"
+      },
+      "conditions": [
+        {
+          "alias": "Umb.Condition.SectionAlias",
+          "match": "Imobisoft.Section.Search"
+        }
+      ]
+    },
+    {
+      "type": "dashboard",
+      "alias": "Imobisoft.Search.Dashboard.Test",
+      "name": "Imobisoft Search Test Dashboard",
+      "element": "/App_Plugins/Imobisoft.Search/src/elements/search-test.element.js",
+      "weight": 20,
+      "meta": {
+        "label": "Test Search",
+        "pathname": "test"
+      },
+      "conditions": [
+        {
+          "alias": "Umb.Condition.SectionAlias",
+          "match": "Imobisoft.Section.Search"
+        }
+      ]
+    },
+    {
+      "type": "dashboard",
+      "alias": "Imobisoft.Search.Dashboard.Insights",
+      "name": "Imobisoft Search Insights Dashboard",
+      "element": "/App_Plugins/Imobisoft.Search/src/elements/search-insights.element.js",
+      "weight": 25,
+      "meta": {
+        "label": "Insights",
+        "pathname": "insights"
+      },
+      "conditions": [
+        {
+          "alias": "Umb.Condition.SectionAlias",
+          "match": "Imobisoft.Section.Search"
+        }
+      ]
+    },
+    {
+      "type": "dashboard",
+      "alias": "Imobisoft.Search.Dashboard.Indexes",
+      "name": "Imobisoft Search Indexes Dashboard",
+      "element": "/App_Plugins/Imobisoft.Search/src/elements/search-indexes.element.js",
+      "weight": 30,
+      "meta": {
+        "label": "Indexes",
+        "pathname": "indexes"
+      },
+      "conditions": [
+        {
+          "alias": "Umb.Condition.SectionAlias",
+          "match": "Imobisoft.Section.Search"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Constant and enum members document themselves; only the types that carry behaviour need prose. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <!-- Static web assets are exposed to the consumer under /App_Plugins/Imobisoft.Search/...
+         which is where Umbraco scans for umbraco-package.json (two levels deep). -->
+    <StaticWebAssetBasePath>App_Plugins/Imobisoft.Search</StaticWebAssetBasePath>
+    <!-- Compiles the package's .cshtml files as MVC views rather than Razor components, which is
+         what lets a consuming site find (and override) the built-in search page. -->
+    <AddRazorSupportForMvc>true</AddRazorSupportForMvc>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Packaging">
+    <PackageId>Imobisoft.Search</PackageId>
+    <Version>1.0.0</Version>
+    <Title>Imobisoft Search</Title>
+    <Authors>Imobisoft</Authors>
+    <Company>Imobisoft</Company>
+    <Description>
+      A self-contained, rule-driven site search package for Umbraco 17. Adds a Search section to the
+      backoffice where editors configure search profiles - which indexes to search, what to include
+      and exclude, field weighting, sorting and result shaping - and exposes IImobisoftSearchService
+      for use in the site. Requires no files or code in the consuming project.
+    </Description>
+    <PackageTags>umbraco umbraco-marketplace search examine site-search</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IsPackable>true</IsPackable>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../README.md" Pack="true" PackagePath="\" Condition="Exists('../README.md')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <SupportedPlatform Include="browser" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pinned to the 17 line: Umbraco.Cms.* 17.x packages pin each other to [17.0.0, 18.0.0),
+         so an Umbraco 18 site needs a separate build of this package. -->
+    <PackageReference Include="Umbraco.Cms.Api.Management" Version="[17.0.0, 18.0.0)" />
+    <PackageReference Include="Umbraco.Cms.Web.Common" Version="[17.0.0, 18.0.0)" />
+  </ItemGroup>
+
+</Project>

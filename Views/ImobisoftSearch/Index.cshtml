@@ -1,0 +1,143 @@
+@model ImobisoftSearchPageViewModel
+@{
+    Layout = null;
+    SearchResponse? response = Model.Response;
+}
+@*
+    The package's built-in search page. Deliberately unstyled - plain elements only, so it inherits
+    whatever the site's stylesheet does with them and there is nothing to undo.
+
+    To replace it, create Views/ImobisoftSearch/Index.cshtml in the site. A view of that name there
+    wins over this one, and nothing else changes.
+*@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@(Model.HasSearched ? $"{Model.Term} - Search" : "Search")</title>
+</head>
+<body>
+    <h1>Search</h1>
+
+    @* A plain GET form, so a search is bookmarkable, shareable and works with the back button. *@
+    <form method="get" action="@Model.PagePath">
+        <label for="q">Search</label>
+        <input type="search" id="q" name="q" value="@Model.Term" />
+        <button type="submit">Search</button>
+
+        @* Carries the chosen filters through when a new term is submitted. Without these the form
+           posts only q, and every search silently clears the filters. *@
+        @foreach (var filter in Context.GetActiveFilters())
+        {
+            foreach (var value in filter.Value)
+            {
+                <input type="hidden" name="f_@filter.Key" value="@value" />
+            }
+        }
+    </form>
+
+    @if (response is null)
+    {
+        <p>Enter a word to search for.</p>
+        return;
+    }
+
+    @if (!string.IsNullOrWhiteSpace(response.Suggestion))
+    {
+        <p>
+            Did you mean
+            <a href="@Model.PagePath?q=@Uri.EscapeDataString(response.Suggestion)">@response.Suggestion</a>?
+        </p>
+    }
+
+    @* Filters come from the Facets tab of the search profile. The links carry the selection in the
+       query string, and the package reads it back on the next request - no code needed here. *@
+    @foreach (FacetResult facet in Context.GetSearchFilters())
+    {
+        <fieldset>
+            <legend>@facet.Label</legend>
+            <ul>
+                @foreach (FacetValue choice in facet.Values)
+                {
+                    <li>
+                        <a href="@Context.ToggleFilterUrl(facet.Alias, choice.Value)" rel="nofollow">
+                            @(choice.IsSelected ? "[x]" : "[ ]") @choice.Label (@choice.Count)
+                        </a>
+                    </li>
+                }
+            </ul>
+        </fieldset>
+    }
+
+    @if (Context.HasActiveFilters())
+    {
+        <p><a href="@Context.ClearFiltersUrl()" rel="nofollow">Clear filters</a></p>
+    }
+
+    <p>@response.TotalResults result@(response.TotalResults == 1 ? "" : "s") for &quot;@response.Term&quot;</p>
+
+    @if (response.Groups.Count > 0)
+    {
+        <ul>
+            @foreach (var group in response.Groups)
+            {
+                <li>@group.Key: @group.Value</li>
+            }
+        </ul>
+    }
+
+    @if (response.Results.Count == 0)
+    {
+        <p>Nothing matched.</p>
+        return;
+    }
+
+    <ol id="imobisoft-search-results">
+        <partial name="_Results" model="Model" />
+    </ol>
+
+    @if (response.Page < response.TotalPages)
+    {
+        @* Works without JavaScript as an ordinary link to the next page. The script below upgrades
+           it to append in place, so the two behaviours never disagree about what page 2 is. *@
+        <p>
+            <a id="imobisoft-search-more"
+               href="@(Model.PagePath + Context.SearchUrlForPage(response.Page + 1))"
+               data-next-page="@(response.Page + 1)"
+               data-total-pages="@response.TotalPages">Load more</a>
+        </p>
+
+        <script>
+            (function () {
+                var link = document.getElementById('imobisoft-search-more');
+                var list = document.getElementById('imobisoft-search-results');
+                if (!link || !list) return;
+
+                link.addEventListener('click', async function (e) {
+                    e.preventDefault();
+
+                    var next = parseInt(link.getAttribute('data-next-page'), 10);
+                    var total = parseInt(link.getAttribute('data-total-pages'), 10);
+
+                    // Same query string as the current page, with the page number advanced, so
+                    // filters and the term carry over untouched.
+                    var params = new URLSearchParams(window.location.search);
+                    params.set('page', next);
+
+                    var response = await fetch('@Model.PagePath/results?' + params.toString());
+                    if (!response.ok) return;
+
+                    list.insertAdjacentHTML('beforeend', await response.text());
+
+                    if (next >= total) {
+                        link.parentNode.removeChild(link);
+                    } else {
+                        link.setAttribute('data-next-page', next + 1);
+                    }
+                });
+            })();
+        </script>
+    }
+</body>
+</html>

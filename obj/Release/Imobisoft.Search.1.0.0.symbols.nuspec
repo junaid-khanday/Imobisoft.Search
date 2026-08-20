@@ -1,0 +1,25 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2012/06/nuspec.xsd">
+  <metadata>
+    <id>Imobisoft.Search</id>
+    <version>1.0.0</version>
+    <title>Imobisoft Search</title>
+    <authors>Imobisoft</authors>
+    <readme>README.md</readme>
+    <description>A self-contained, rule-driven site search package for Umbraco 17. Adds a Search section to the
+      backoffice where editors configure search profiles - which indexes to search, what to include
+      and exclude, field weighting, sorting and result shaping - and exposes IImobisoftSearchService
+      for use in the site. Requires no files or code in the consuming project.</description>
+    <tags>umbraco umbraco-marketplace search examine site-search</tags>
+    <repository type="git" />
+    <dependencies>
+      <group targetFramework="net10.0">
+        <dependency id="Umbraco.Cms.Api.Management" version="[17.0.0, 18.0.0)" exclude="Build,Analyzers" />
+        <dependency id="Umbraco.Cms.Web.Common" version="[17.0.0, 18.0.0)" exclude="Build,Analyzers" />
+      </group>
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="D:\imobisoft\Imobisoft.Search\Imobisoft.Search\bin\Release\net10.0\Imobisoft.Search.pdb" target="lib\net10.0\Imobisoft.Search.pdb" />
+  </files>
+</package>
