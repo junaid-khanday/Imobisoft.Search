@@ -45,6 +45,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Remove="wwwroot\**\*" />
+    <Content Include="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Always" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Pinned to the 17 line: Umbraco.Cms.* 17.x packages pin each other to [17.0.0, 18.0.0),
          so an Umbraco 18 site needs a separate build of this package. -->
     <PackageReference Include="Umbraco.Cms.Api.Management" Version="[17.0.0, 18.0.0)" />
