@@ -1,204 +1,44 @@
 ﻿<Project>
   <ItemGroup>
-    <StaticWebAsset Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\src\elements\imobisoft-search-element.js'))">
+    <StaticWebAsset Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\auth-fetch.js'))">
       <SourceType>Package</SourceType>
       <SourceId>Imobisoft.Search</SourceId>
       <ContentRoot>$(MSBuildThisFileDirectory)..\staticwebassets\</ContentRoot>
       <BasePath>App_Plugins/Imobisoft.Search</BasePath>
-      <RelativePath>src/elements/imobisoft-search-element.js</RelativePath>
+      <RelativePath>auth-fetch.js</RelativePath>
       <AssetKind>All</AssetKind>
       <AssetMode>All</AssetMode>
       <AssetRole>Primary</AssetRole>
       <RelatedAsset></RelatedAsset>
       <AssetTraitName></AssetTraitName>
       <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>snwobx4y4r</Fingerprint>
-      <Integrity>WIrrXVhKboEhQbB5fS3rqjMGPED+BRtH/6eIn2l66CE=</Integrity>
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-      <FileLength>2118</FileLength>
-      <LastWriteTime>Thu, 20 Aug 2026 09:53:22 GMT</LastWriteTime>
-      <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\src\elements\imobisoft-search-element.js'))</OriginalItemSpec>
+      <Fingerprint>h2dgf3qiy3</Fingerprint>
+      <Integrity>196tq902oNKjiOs0gBbP0yrN7npnXMr4GUVFzoSn7Dc=</Integrity>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+      <FileLength>1715</FileLength>
+      <LastWriteTime>Fri, 21 Aug 2026 03:25:09 GMT</LastWriteTime>
+      <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\auth-fetch.js'))</OriginalItemSpec>
     </StaticWebAsset>
-    <StaticWebAsset Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\src\elements\search-indexes.element.js'))">
+    <StaticWebAsset Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\data-cache.js'))">
       <SourceType>Package</SourceType>
       <SourceId>Imobisoft.Search</SourceId>
       <ContentRoot>$(MSBuildThisFileDirectory)..\staticwebassets\</ContentRoot>
       <BasePath>App_Plugins/Imobisoft.Search</BasePath>
-      <RelativePath>src/elements/search-indexes.element.js</RelativePath>
+      <RelativePath>data-cache.js</RelativePath>
       <AssetKind>All</AssetKind>
       <AssetMode>All</AssetMode>
       <AssetRole>Primary</AssetRole>
       <RelatedAsset></RelatedAsset>
       <AssetTraitName></AssetTraitName>
       <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>vzjtnudr03</Fingerprint>
-      <Integrity>e0myOLF8sAVS0PM+ue9hyLL4KbRA5nWwuiYYQX4lSR0=</Integrity>
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-      <FileLength>4611</FileLength>
-      <LastWriteTime>Thu, 20 Aug 2026 09:59:12 GMT</LastWriteTime>
-      <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\src\elements\search-indexes.element.js'))</OriginalItemSpec>
-    </StaticWebAsset>
-    <StaticWebAsset Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\src\elements\search-insights.element.js'))">
-      <SourceType>Package</SourceType>
-      <SourceId>Imobisoft.Search</SourceId>
-      <ContentRoot>$(MSBuildThisFileDirectory)..\staticwebassets\</ContentRoot>
-      <BasePath>App_Plugins/Imobisoft.Search</BasePath>
-      <RelativePath>src/elements/search-insights.element.js</RelativePath>
-      <AssetKind>All</AssetKind>
-      <AssetMode>All</AssetMode>
-      <AssetRole>Primary</AssetRole>
-      <RelatedAsset></RelatedAsset>
-      <AssetTraitName></AssetTraitName>
-      <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>vmgz9cqwqy</Fingerprint>
-      <Integrity>9zfh2Z/nJdszQKvUjqiRDnawo90p1112R/4YYLXALxA=</Integrity>
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-      <FileLength>10884</FileLength>
-      <LastWriteTime>Thu, 20 Aug 2026 10:24:55 GMT</LastWriteTime>
-      <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\src\elements\search-insights.element.js'))</OriginalItemSpec>
-    </StaticWebAsset>
-    <StaticWebAsset Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\src\elements\search-profiles.element.js'))">
-      <SourceType>Package</SourceType>
-      <SourceId>Imobisoft.Search</SourceId>
-      <ContentRoot>$(MSBuildThisFileDirectory)..\staticwebassets\</ContentRoot>
-      <BasePath>App_Plugins/Imobisoft.Search</BasePath>
-      <RelativePath>src/elements/search-profiles.element.js</RelativePath>
-      <AssetKind>All</AssetKind>
-      <AssetMode>All</AssetMode>
-      <AssetRole>Primary</AssetRole>
-      <RelatedAsset></RelatedAsset>
-      <AssetTraitName></AssetTraitName>
-      <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>oj57oxvs8f</Fingerprint>
-      <Integrity>1EOhsapqYiVeG/iD/GnXCKQ9n5yo63SDTs3BITx2gFw=</Integrity>
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-      <FileLength>9093</FileLength>
-      <LastWriteTime>Thu, 20 Aug 2026 09:58:20 GMT</LastWriteTime>
-      <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\src\elements\search-profiles.element.js'))</OriginalItemSpec>
-    </StaticWebAsset>
-    <StaticWebAsset Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\src\elements\search-rules-editor.element.js'))">
-      <SourceType>Package</SourceType>
-      <SourceId>Imobisoft.Search</SourceId>
-      <ContentRoot>$(MSBuildThisFileDirectory)..\staticwebassets\</ContentRoot>
-      <BasePath>App_Plugins/Imobisoft.Search</BasePath>
-      <RelativePath>src/elements/search-rules-editor.element.js</RelativePath>
-      <AssetKind>All</AssetKind>
-      <AssetMode>All</AssetMode>
-      <AssetRole>Primary</AssetRole>
-      <RelatedAsset></RelatedAsset>
-      <AssetTraitName></AssetTraitName>
-      <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>3fnhg2hbj3</Fingerprint>
-      <Integrity>MUc4R7/Cchblm3py7pyB8A9QWdlv6lRpP8t4mvnGqIk=</Integrity>
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-      <FileLength>43142</FileLength>
-      <LastWriteTime>Thu, 20 Aug 2026 14:24:17 GMT</LastWriteTime>
-      <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\src\elements\search-rules-editor.element.js'))</OriginalItemSpec>
-    </StaticWebAsset>
-    <StaticWebAsset Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\src\elements\search-test.element.js'))">
-      <SourceType>Package</SourceType>
-      <SourceId>Imobisoft.Search</SourceId>
-      <ContentRoot>$(MSBuildThisFileDirectory)..\staticwebassets\</ContentRoot>
-      <BasePath>App_Plugins/Imobisoft.Search</BasePath>
-      <RelativePath>src/elements/search-test.element.js</RelativePath>
-      <AssetKind>All</AssetKind>
-      <AssetMode>All</AssetMode>
-      <AssetRole>Primary</AssetRole>
-      <RelatedAsset></RelatedAsset>
-      <AssetTraitName></AssetTraitName>
-      <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>rpumob5i7m</Fingerprint>
-      <Integrity>/zjXx0uNINVi27M2ZURFCmoN8No7WRL2AWM5H7ER0Xc=</Integrity>
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-      <FileLength>9492</FileLength>
-      <LastWriteTime>Thu, 20 Aug 2026 11:27:20 GMT</LastWriteTime>
-      <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\src\elements\search-test.element.js'))</OriginalItemSpec>
-    </StaticWebAsset>
-    <StaticWebAsset Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\src\repository\search-api.js'))">
-      <SourceType>Package</SourceType>
-      <SourceId>Imobisoft.Search</SourceId>
-      <ContentRoot>$(MSBuildThisFileDirectory)..\staticwebassets\</ContentRoot>
-      <BasePath>App_Plugins/Imobisoft.Search</BasePath>
-      <RelativePath>src/repository/search-api.js</RelativePath>
-      <AssetKind>All</AssetKind>
-      <AssetMode>All</AssetMode>
-      <AssetRole>Primary</AssetRole>
-      <RelatedAsset></RelatedAsset>
-      <AssetTraitName></AssetTraitName>
-      <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>52js6uvtqf</Fingerprint>
-      <Integrity>fX1TYpqCG4ARauBDycAJV5L2JenNCnv9u0XVCsJH9yE=</Integrity>
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-      <FileLength>3571</FileLength>
-      <LastWriteTime>Thu, 20 Aug 2026 10:25:04 GMT</LastWriteTime>
-      <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\src\repository\search-api.js'))</OriginalItemSpec>
-    </StaticWebAsset>
-    <StaticWebAsset Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\src\ui\controls.js'))">
-      <SourceType>Package</SourceType>
-      <SourceId>Imobisoft.Search</SourceId>
-      <ContentRoot>$(MSBuildThisFileDirectory)..\staticwebassets\</ContentRoot>
-      <BasePath>App_Plugins/Imobisoft.Search</BasePath>
-      <RelativePath>src/ui/controls.js</RelativePath>
-      <AssetKind>All</AssetKind>
-      <AssetMode>All</AssetMode>
-      <AssetRole>Primary</AssetRole>
-      <RelatedAsset></RelatedAsset>
-      <AssetTraitName></AssetTraitName>
-      <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>50woifl5ly</Fingerprint>
-      <Integrity>BTYv+vzetJIoGlxBEmCT6aP8KuIzq/GNUkEazSExQDc=</Integrity>
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-      <FileLength>7834</FileLength>
-      <LastWriteTime>Thu, 20 Aug 2026 11:26:50 GMT</LastWriteTime>
-      <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\src\ui\controls.js'))</OriginalItemSpec>
-    </StaticWebAsset>
-    <StaticWebAsset Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\src\ui\styles.js'))">
-      <SourceType>Package</SourceType>
-      <SourceId>Imobisoft.Search</SourceId>
-      <ContentRoot>$(MSBuildThisFileDirectory)..\staticwebassets\</ContentRoot>
-      <BasePath>App_Plugins/Imobisoft.Search</BasePath>
-      <RelativePath>src/ui/styles.js</RelativePath>
-      <AssetKind>All</AssetKind>
-      <AssetMode>All</AssetMode>
-      <AssetRole>Primary</AssetRole>
-      <RelatedAsset></RelatedAsset>
-      <AssetTraitName></AssetTraitName>
-      <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>s3eju6byn2</Fingerprint>
-      <Integrity>KLSHU/sQ1TUIGacBEst2eAilszUCxVVh/RqNg0VGTCQ=</Integrity>
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-      <FileLength>4252</FileLength>
-      <LastWriteTime>Thu, 20 Aug 2026 11:26:54 GMT</LastWriteTime>
-      <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\src\ui\styles.js'))</OriginalItemSpec>
-    </StaticWebAsset>
-    <StaticWebAsset Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\src\ui\volume-chart.js'))">
-      <SourceType>Package</SourceType>
-      <SourceId>Imobisoft.Search</SourceId>
-      <ContentRoot>$(MSBuildThisFileDirectory)..\staticwebassets\</ContentRoot>
-      <BasePath>App_Plugins/Imobisoft.Search</BasePath>
-      <RelativePath>src/ui/volume-chart.js</RelativePath>
-      <AssetKind>All</AssetKind>
-      <AssetMode>All</AssetMode>
-      <AssetRole>Primary</AssetRole>
-      <RelatedAsset></RelatedAsset>
-      <AssetTraitName></AssetTraitName>
-      <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>ifn1wssfvx</Fingerprint>
-      <Integrity>IkPy57HW8GHHrT749GH8ECQ9OhAsgecEPHSLXjXwObI=</Integrity>
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-      <FileLength>7968</FileLength>
-      <LastWriteTime>Thu, 20 Aug 2026 10:24:12 GMT</LastWriteTime>
-      <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\src\ui\volume-chart.js'))</OriginalItemSpec>
+      <Fingerprint>mk4joobkll</Fingerprint>
+      <Integrity>GjpwxMV3knipmhtI9LvQ4mEhXXWSV18ndmQmXa9PJ0I=</Integrity>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+      <FileLength>7566</FileLength>
+      <LastWriteTime>Fri, 21 Aug 2026 03:25:25 GMT</LastWriteTime>
+      <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\data-cache.js'))</OriginalItemSpec>
     </StaticWebAsset>
     <StaticWebAsset Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\umbraco-package.json'))">
       <SourceType>Package</SourceType>
@@ -212,13 +52,33 @@
       <RelatedAsset></RelatedAsset>
       <AssetTraitName></AssetTraitName>
       <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>7jsb6sa9yu</Fingerprint>
-      <Integrity>zQSDEFNx4Drw7od6tgsuV5tGuwEwu21YC57wxHpi6CE=</Integrity>
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-      <FileLength>2352</FileLength>
-      <LastWriteTime>Thu, 20 Aug 2026 10:25:08 GMT</LastWriteTime>
+      <Fingerprint>1erntoibtu</Fingerprint>
+      <Integrity>aWe4RsXemoQTyN5a8rxSIMw615Jtrnk9IFm8KdXD1f8=</Integrity>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+      <FileLength>856</FileLength>
+      <LastWriteTime>Fri, 21 Aug 2026 03:24:44 GMT</LastWriteTime>
       <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\umbraco-package.json'))</OriginalItemSpec>
+    </StaticWebAsset>
+    <StaticWebAsset Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\workspace.js'))">
+      <SourceType>Package</SourceType>
+      <SourceId>Imobisoft.Search</SourceId>
+      <ContentRoot>$(MSBuildThisFileDirectory)..\staticwebassets\</ContentRoot>
+      <BasePath>App_Plugins/Imobisoft.Search</BasePath>
+      <RelativePath>workspace.js</RelativePath>
+      <AssetKind>All</AssetKind>
+      <AssetMode>All</AssetMode>
+      <AssetRole>Primary</AssetRole>
+      <RelatedAsset></RelatedAsset>
+      <AssetTraitName></AssetTraitName>
+      <AssetTraitValue></AssetTraitValue>
+      <Fingerprint>4kymd89pls</Fingerprint>
+      <Integrity>jIqMv1pBZSDMskr/b9TUHxMmO55kGK/jYV8nt+/LEu8=</Integrity>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+      <FileLength>214481</FileLength>
+      <LastWriteTime>Fri, 21 Aug 2026 03:52:27 GMT</LastWriteTime>
+      <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\workspace.js'))</OriginalItemSpec>
     </StaticWebAsset>
   </ItemGroup>
 </Project>
