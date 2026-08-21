@@ -59,6 +59,9 @@ public sealed class FacetDefinition
 
     /// <summary>Hides buckets with no matches instead of returning them at zero.</summary>
     public bool HideEmpty { get; set; } = true;
+
+    /// <summary>Whether this filter is enabled and active in search results.</summary>
+    public bool Enabled { get; set; } = true;
 }
 
 /// <summary>One bucket in a computed facet.</summary>

@@ -46,20 +46,32 @@ public sealed class SearchPreviewController : ImobisoftSearchControllerBase
         [FromBody] SearchPreviewRequest request,
         CancellationToken cancellationToken)
     {
-        SearchResponse response = await _searchService.SearchAsync(
-            new SearchRequest
-            {
-                Term = request.Term,
-                Rules = request.Rules,
-                ProfileAlias = request.ProfileAlias,
-                Page = request.Page,
-                PageSize = request.PageSize,
-                Cultures = request.Cultures,
-                Filters = request.Filters,
-                IncludeDiagnostics = true,
-            },
-            cancellationToken);
+        try
+        {
+            SearchResponse response = await _searchService.SearchAsync(
+                new SearchRequest
+                {
+                    Term = request.Term,
+                    Rules = request.Rules,
+                    ProfileAlias = request.ProfileAlias,
+                    Page = request.Page,
+                    PageSize = request.PageSize,
+                    Cultures = request.Cultures,
+                    Filters = request.Filters,
+                    IncludeDiagnostics = true,
+                },
+                cancellationToken);
 
-        return Ok(response);
+            return Ok(response);
+        }
+        catch (Exception ex)
+        {
+            var fallback = SearchResponse.Empty(request.Term, request.ProfileAlias ?? "default", request.Page, request.PageSize ?? 20);
+            fallback.Diagnostics = new SearchDiagnostics
+            {
+                Notes = new List<string> { $"Search preview error: {ex.Message}" }
+            };
+            return Ok(fallback);
+        }
     }
 }

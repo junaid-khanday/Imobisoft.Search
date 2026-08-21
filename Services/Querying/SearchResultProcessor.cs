@@ -426,8 +426,13 @@ internal sealed partial class SearchResultProcessor
         return raw;
     }
 
-    private static string? ReadSortableValue(SearchResultItem item, string field)
+    private static string? ReadSortableValue(SearchResultItem item, string? field)
     {
+        if (item is null || string.IsNullOrWhiteSpace(field))
+        {
+            return null;
+        }
+
         if (field.Equals(ImobisoftSearchConstants.IndexFields.NodeName, StringComparison.OrdinalIgnoreCase) || field.Equals("name", StringComparison.OrdinalIgnoreCase))
         {
             return item.Name;
@@ -459,8 +464,13 @@ internal sealed partial class SearchResultProcessor
             : FieldValue(item, field);
     }
 
-    private static string? FieldValue(SearchResultItem item, string field)
+    private static string? FieldValue(SearchResultItem item, string? field)
     {
+        if (item is null || string.IsNullOrWhiteSpace(field))
+        {
+            return null;
+        }
+
         if (item.Fields.TryGetValue(field, out var value))
         {
             return value;
@@ -503,13 +513,13 @@ internal sealed partial class SearchResultProcessor
     {
         var results = new List<FacetResult>();
 
-        foreach (FacetDefinition definition in definitions.Where(d => !string.IsNullOrWhiteSpace(d.Alias)))
+        foreach (FacetDefinition definition in definitions.Where(d => d.Enabled && !string.IsNullOrWhiteSpace(d.Alias)))
         {
             // Every other facet's selection narrows the counts, but this facet's own does not -
             // otherwise selecting one bucket would zero out its siblings.
             IReadOnlyList<SearchResultItem> scope = ApplyFacetFilters(
                 items,
-                definitions.Where(d => !d.Alias.Equals(definition.Alias, StringComparison.OrdinalIgnoreCase)).ToList(),
+                definitions.Where(d => d.Enabled && !d.Alias.Equals(definition.Alias, StringComparison.OrdinalIgnoreCase)).ToList(),
                 selected,
                 new List<string>());
 
@@ -542,13 +552,16 @@ internal sealed partial class SearchResultProcessor
         IReadOnlyList<SearchResultItem> items,
         FacetDefinition definition,
         IReadOnlySet<string> chosen)
-        => items
-            .Select(item => FieldValue(item, definition.Field) ?? ReadSortableValue(item, definition.Field))
+    {
+        var targetField = !string.IsNullOrWhiteSpace(definition.Field) ? definition.Field : (definition.Alias ?? string.Empty);
+        return items
+            .Select(item => FieldValue(item, targetField) ?? ReadSortableValue(item, targetField))
             .Where(v => !string.IsNullOrEmpty(v))
-            .GroupBy(v => v!, StringComparer.OrdinalIgnoreCase)
+            .SelectMany(v => v!.Split(new[] { ',', ';', '|' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .GroupBy(v => v, StringComparer.OrdinalIgnoreCase)
             .OrderByDescending(g => g.Count())
             .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
-            .Take(Math.Max(1, definition.MaxValues))
+            .Take(Math.Max(1, definition.MaxValues > 0 ? definition.MaxValues : 50))
             .Select(g => new FacetValue
             {
                 Value = g.Key,
@@ -557,12 +570,13 @@ internal sealed partial class SearchResultProcessor
                 IsSelected = chosen.Contains(g.Key),
             })
             .ToList();
+    }
 
     private static IList<FacetValue> BuildRangeFacet(
         IReadOnlyList<SearchResultItem> items,
         FacetDefinition definition,
         IReadOnlySet<string> chosen)
-        => definition.Ranges
+        => (definition.Ranges ?? Array.Empty<FacetRange>())
             .Select(range => new FacetValue
             {
                 Value = range.Alias,
@@ -586,7 +600,7 @@ internal sealed partial class SearchResultProcessor
         var before = items.Count;
         IEnumerable<SearchResultItem> filtered = items;
 
-        foreach (FacetDefinition definition in definitions)
+        foreach (FacetDefinition definition in definitions.Where(d => d.Enabled))
         {
             if (!selected.TryGetValue(definition.Alias, out IList<string>? chosen) || chosen.Count == 0)
             {
@@ -599,8 +613,11 @@ internal sealed partial class SearchResultProcessor
 
             filtered = (!hasCustomRanges)
                 ? filtered.Where(item => {
-                    var val = FieldValue(item, captured.Field) ?? ReadSortableValue(item, captured.Field);
-                    return !string.IsNullOrEmpty(val) && chosenSet.Contains(val);
+                    var targetField = !string.IsNullOrWhiteSpace(captured.Field) ? captured.Field : captured.Alias;
+                    var val = FieldValue(item, targetField) ?? ReadSortableValue(item, targetField);
+                    if (string.IsNullOrEmpty(val)) return false;
+                    var tokens = val.Split(new[] { ',', ';', '|' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    return tokens.Any(t => chosenSet.Contains(t)) || chosenSet.Contains(val);
                 })
                 : filtered.Where(item => {
                     var matchingRanges = (captured.Ranges ?? Array.Empty<FacetRange>())
@@ -629,7 +646,13 @@ internal sealed partial class SearchResultProcessor
 
     private static bool FallsInRange(SearchResultItem item, FacetDefinition definition, FacetRange range)
     {
-        var raw = FieldValue(item, definition.Field) ?? ReadSortableValue(item, definition.Field);
+        if (item is null || definition is null || range is null)
+        {
+            return false;
+        }
+
+        var fieldName = !string.IsNullOrWhiteSpace(definition.Field) ? definition.Field : (definition.Alias ?? string.Empty);
+        var raw = FieldValue(item, fieldName) ?? ReadSortableValue(item, fieldName);
 
         if (definition.Kind == FacetKind.Numeric)
         {
@@ -659,26 +682,42 @@ internal sealed partial class SearchResultProcessor
             DateTime? from = ParseDateBound(range.From);
             DateTime? to = ParseDateBound(range.To);
 
+            if (from is null && to is null)
+            {
+                (from, to) = ExtractDateBounds(range.Alias, range.Label);
+            }
+
             return (from is null || date >= from) && (to is null || date < to);
         }
 
         // Subtree / Path / Content page matching (e.g. Specific Policy Page, Subtree Root)
-        if (definition.Field.Equals(ImobisoftSearchConstants.IndexFields.Path, StringComparison.OrdinalIgnoreCase) ||
-            definition.Field.Equals("path", StringComparison.OrdinalIgnoreCase) ||
-            definition.Field.Equals(ImobisoftSearchConstants.IndexFields.Key, StringComparison.OrdinalIgnoreCase) ||
-            definition.Field.Equals("key", StringComparison.OrdinalIgnoreCase) ||
-            definition.Field.Equals(ImobisoftSearchConstants.IndexFields.NodeId, StringComparison.OrdinalIgnoreCase) ||
-            definition.Field.Equals("id", StringComparison.OrdinalIgnoreCase))
+        if (fieldName.Equals(ImobisoftSearchConstants.IndexFields.Path, StringComparison.OrdinalIgnoreCase) ||
+            fieldName.Equals("path", StringComparison.OrdinalIgnoreCase) ||
+            fieldName.Equals(ImobisoftSearchConstants.IndexFields.Key, StringComparison.OrdinalIgnoreCase) ||
+            fieldName.Equals("key", StringComparison.OrdinalIgnoreCase) ||
+            fieldName.Equals(ImobisoftSearchConstants.IndexFields.NodeId, StringComparison.OrdinalIgnoreCase) ||
+            fieldName.Equals("id", StringComparison.OrdinalIgnoreCase))
         {
-            var matchTarget = !string.IsNullOrWhiteSpace(range.From) ? range.From.Trim() : range.Alias.Trim();
+            var matchTarget = !string.IsNullOrWhiteSpace(range.From) ? range.From.Trim() : (range.Alias ?? string.Empty).Trim();
             if (string.IsNullOrEmpty(matchTarget))
             {
                 return false;
             }
 
-            if (item.Key.HasValue && item.Key.Value.ToString().Equals(matchTarget, StringComparison.OrdinalIgnoreCase))
+            if (matchTarget.StartsWith("umb://document/", StringComparison.OrdinalIgnoreCase))
             {
-                return true;
+                matchTarget = matchTarget.Substring("umb://document/".Length).Replace("-", "");
+            }
+
+            if (item.Key.HasValue)
+            {
+                var keyStr = item.Key.Value.ToString();
+                var keyStrN = item.Key.Value.ToString("N");
+                if (keyStr.Equals(matchTarget, StringComparison.OrdinalIgnoreCase) ||
+                    keyStrN.Equals(matchTarget, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
             }
 
             if (!string.IsNullOrEmpty(item.Id) && item.Id.Equals(matchTarget, StringComparison.OrdinalIgnoreCase))
@@ -699,21 +738,21 @@ internal sealed partial class SearchResultProcessor
         }
 
         // Document Type matching (e.g. specific content types like policyPage, newsArticle)
-        if (definition.Field.Equals(ImobisoftSearchConstants.IndexFields.NodeTypeAlias, StringComparison.OrdinalIgnoreCase) ||
-            definition.Field.Equals("contentTypeAlias", StringComparison.OrdinalIgnoreCase) ||
-            definition.Field.Equals("contentType", StringComparison.OrdinalIgnoreCase))
+        if (fieldName.Equals(ImobisoftSearchConstants.IndexFields.NodeTypeAlias, StringComparison.OrdinalIgnoreCase) ||
+            fieldName.Equals("contentTypeAlias", StringComparison.OrdinalIgnoreCase) ||
+            fieldName.Equals("contentType", StringComparison.OrdinalIgnoreCase))
         {
-            var matchType = !string.IsNullOrWhiteSpace(range.From) ? range.From.Trim() : range.Alias.Trim();
+            var matchType = !string.IsNullOrWhiteSpace(range.From) ? range.From.Trim() : (range.Alias ?? string.Empty).Trim();
             return !string.IsNullOrEmpty(item.ContentTypeAlias) &&
                    (item.ContentTypeAlias.Equals(matchType, StringComparison.OrdinalIgnoreCase) ||
-                    item.ContentTypeAlias.Equals(range.Alias, StringComparison.OrdinalIgnoreCase));
+                    (!string.IsNullOrEmpty(range.Alias) && item.ContentTypeAlias.Equals(range.Alias, StringComparison.OrdinalIgnoreCase)));
         }
 
         // Generic field value matching
-        var targetVal = !string.IsNullOrWhiteSpace(range.From) ? range.From.Trim() : range.Alias.Trim();
+        var targetVal = !string.IsNullOrWhiteSpace(range.From) ? range.From.Trim() : (range.Alias ?? string.Empty).Trim();
         return !string.IsNullOrEmpty(raw) &&
-               (raw.Equals(targetVal, StringComparison.OrdinalIgnoreCase) ||
-                raw.Equals(range.Alias, StringComparison.OrdinalIgnoreCase));
+               ((!string.IsNullOrEmpty(targetVal) && raw.Equals(targetVal, StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrEmpty(range.Alias) && raw.Equals(range.Alias, StringComparison.OrdinalIgnoreCase)));
     }
 
     private static double? ParseNumericBound(string value)
@@ -752,6 +791,48 @@ internal sealed partial class SearchResultProcessor
             {
                 return (lower, null);
             }
+        }
+
+        return (null, null);
+    }
+
+    private static (DateTime? From, DateTime? To) ExtractDateBounds(string? alias, string? label)
+    {
+        var combined = $"{alias} {label}".Trim();
+        if (string.IsNullOrWhiteSpace(combined))
+        {
+            return (null, null);
+        }
+
+        // e.g. Year "2026", "2025", "2024"
+        Match matchYear = Regex.Match(combined, @"\b(20\d\d)\b");
+        if (matchYear.Success && int.TryParse(matchYear.Groups[1].Value, out var year))
+        {
+            return (new DateTime(year, 1, 1, 0, 0, 0, DateTimeKind.Utc), new DateTime(year + 1, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        }
+
+        // e.g. "past-24h", "24-hours", "last-24-hours", "today"
+        if (Regex.IsMatch(combined, @"(?:24\s*h|today|last\s*24|past\s*24)", RegexOptions.IgnoreCase))
+        {
+            return (DateTime.UtcNow.AddHours(-24), DateTime.UtcNow);
+        }
+
+        // e.g. "past-week", "7-days", "last-7-days", "7d"
+        if (Regex.IsMatch(combined, @"(?:7\s*d|week|past\s*7|last\s*7)", RegexOptions.IgnoreCase))
+        {
+            return (DateTime.UtcNow.AddDays(-7), DateTime.UtcNow);
+        }
+
+        // e.g. "past-month", "30-days", "last-30-days", "30d"
+        if (Regex.IsMatch(combined, @"(?:30\s*d|month|past\s*30|last\s*30)", RegexOptions.IgnoreCase))
+        {
+            return (DateTime.UtcNow.AddDays(-30), DateTime.UtcNow);
+        }
+
+        // e.g. "past-year", "1-year", "last-year", "1y"
+        if (Regex.IsMatch(combined, @"(?:1\s*y|year|past\s*year|last\s*year)", RegexOptions.IgnoreCase))
+        {
+            return (DateTime.UtcNow.AddYears(-1), DateTime.UtcNow);
         }
 
         return (null, null);

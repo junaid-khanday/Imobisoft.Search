@@ -90,7 +90,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         },
         {
             alias: 'numeric',
-            name: 'Numeric Range & Values',
+            name: 'Numeric',
             desc: 'Filter search results by price tiers, rating scores, or numeric intervals',
             defaultField: 'price',
             defaultKind: 'numeric'
@@ -748,9 +748,13 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 filterType: '',
                 maxValues: 20,
                 hideEmpty: true,
+                enabled: true,
                 ranges: [],
                 _isNew: !data
             };
+            if (data && data.enabled === undefined) {
+                this._sidePanelData.enabled = true;
+            }
             if (!Array.isArray(this._sidePanelData.ranges)) {
                 this._sidePanelData.ranges = [];
             }
@@ -1020,6 +1024,19 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 this._sidePanelData.field = '__NodeTypeAlias';
                 this._sidePanelData.kind = 'field';
                 if (!this._sidePanelData.label) this._sidePanelData.label = 'Document Type';
+                if (!this._sidePanelData.ranges || this._sidePanelData.ranges.length === 0) {
+                    const allCts = this._catalog?.contentTypes || [];
+                    if (allCts.length > 0) {
+                        this._sidePanelData.ranges = allCts.slice(0, 4).map(ct => ({
+                            alias: ct.alias,
+                            label: ct.name,
+                            from: ct.alias,
+                            to: ''
+                        }));
+                    } else {
+                        this._sidePanelData.ranges = [{ alias: '', label: '', from: '', to: '' }];
+                    }
+                }
             } else if (ft.alias === 'contentNode') {
                 this._sidePanelData.field = '__Path';
                 this._sidePanelData.kind = 'field';
@@ -1056,10 +1073,11 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 }
             } else if (ft.alias === 'field') {
                 this._sidePanelData.kind = 'field';
+                this._sidePanelData.ranges = [];
                 if (!this._sidePanelData.field || this._sidePanelData.field.startsWith('__')) {
                     this._sidePanelData.field = 'category';
                 }
-                if (!this._sidePanelData.label) this._sidePanelData.label = 'Category';
+                if (!this._sidePanelData.label) this._sidePanelData.label = 'Tag / Category';
             }
             if (!this._sidePanelData._aliasUnlocked) {
                 this._generateAliasFromLabel(this._sidePanelData);
@@ -1241,10 +1259,11 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             const cleanFacet = {
                 alias: d.alias.trim(),
                 label: d.label?.trim() || d.alias.trim(),
-                field: d.field.trim(),
+                field: (d.field || d.alias || '').trim(),
                 kind: d.kind || 'field',
                 maxValues: parseInt(d.maxValues) || 20,
                 hideEmpty: d.hideEmpty !== false,
+                enabled: d.enabled !== false,
                 ranges: cleanRanges
             };
 
@@ -2629,34 +2648,49 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
 
                 ${facets.length > 0 ? html`
                     <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
-                        ${facets.map((f, idx) => html`
-                            <div class="sp-choice-card" style="cursor: pointer; padding: 12px 18px;" @click=${() => this._openSidePanel('editFacet', f)}>
-                                <div class="sp-choice-info">
-                                    <div style="display: flex; align-items: center; gap: 8px;">
-                                        <strong class="sp-choice-title" style="font-size: 14px;">${f.label || f.alias}</strong>
-                                        <span class="badge badge-info">${f.kind || 'field'}</span>
+                        ${facets.map((f, idx) => {
+                            const isEnabled = f.enabled !== false;
+                            return html`
+                                <div class="sp-choice-card"
+                                     style="cursor: pointer; padding: 12px 18px; opacity: ${isEnabled ? '1' : '0.65'}; transition: opacity 0.2s ease;"
+                                     @click=${() => this._openSidePanel('editFacet', f)}>
+                                    <div class="sp-choice-info">
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <strong class="sp-choice-title" style="font-size: 14px;">${f.label || f.alias}</strong>
+                                            <span class="badge badge-info">${f.kind || 'field'}</span>
+                                            ${!isEnabled ? html`<span class="badge badge-muted" style="background: #f1f5f9; color: #64748b; font-size: 11px;">Disabled</span>` : nothing}
+                                        </div>
+                                        <span class="sp-choice-meta" style="margin-top: 2px;">
+                                            ${f.kind === 'field' && (!f.ranges || f.ranges.length === 0) ? 'Dynamic Tag / Taxonomy' : (f.ranges?.length ? `${f.ranges.length} option(s) configured` : 'Facet Filter')}
+                                            ${f.hideEmpty !== false ? ' • Hide Empty' : ''}
+                                        </span>
                                     </div>
-                                    <span class="sp-choice-meta" style="margin-top: 2px;">
-                                        Field: <code>${f.field}</code>
-                                        | Max buckets: ${f.maxValues || 20}
-                                        ${f.ranges?.length ? ` | ${f.ranges.length} options / buckets` : ''}
-                                    </span>
+                                    <div style="display: flex; align-items: center; gap: 10px;" @click=${e => e.stopPropagation()}>
+                                        <label class="switch switch-sm" title="${isEnabled ? 'Filter is Enabled (click to disable)' : 'Filter is Disabled (click to enable)'}">
+                                            <input type="checkbox"
+                                                   .checked=${isEnabled}
+                                                   @change=${async e => {
+                                                       f.enabled = e.target.checked;
+                                                       this.requestUpdate();
+                                                       await this._saveCurrentProfile();
+                                                   }}>
+                                            <span class="slider round"></span>
+                                        </label>
+                                        <button class="btn-icon" title="Edit Filter" @click=${() => this._openSidePanel('editFacet', f)}>
+                                            <i class="icon-edit"></i>
+                                        </button>
+                                        <button class="btn-icon btn-icon-danger" title="Remove Filter" @click=${async (e) => {
+                                            e.stopPropagation();
+                                            facets.splice(idx, 1);
+                                            this.requestUpdate();
+                                            await this._saveCurrentProfile();
+                                        }}>
+                                            <i class="icon-trash"></i>
+                                        </button>
+                                    </div>
                                 </div>
-                                <div style="display: flex; align-items: center; gap: 8px;" @click=${e => e.stopPropagation()}>
-                                    <button class="btn-icon" title="Edit Filter" @click=${() => this._openSidePanel('editFacet', f)}>
-                                        <i class="icon-edit"></i>
-                                    </button>
-                                    <button class="btn-icon btn-icon-danger" title="Remove Filter" @click=${async (e) => {
-                                        e.stopPropagation();
-                                        facets.splice(idx, 1);
-                                        this.requestUpdate();
-                                        await this._saveCurrentProfile();
-                                    }}>
-                                        <i class="icon-trash"></i>
-                                    </button>
-                                </div>
-                            </div>
-                        `)}
+                            `;
+                        })}
                     </div>
                 ` : nothing}
             </div>
@@ -4212,364 +4246,94 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                 class="sp-alias-lock-btn ${d._aliasUnlocked ? 'is-unlocked' : ''}"
                                 @click=${() => this._toggleAliasLock(d)}
                                 title="${d._aliasUnlocked ? 'Lock alias' : 'Unlock to edit alias'}">
-                            <i class="${d._aliasUnlocked ? 'icon-unlock' : 'icon-lock'}"></i>
+                            ${d._aliasUnlocked ? html`
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                                    <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
+                                </svg>
+                            ` : html`
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                                </svg>
+                            `}
                         </button>
                     </div>
                 </div>
                 ${this._sidePanelErrors.alias ? html`<div class="sp-error-msg">${this._sidePanelErrors.alias}</div>` : nothing}
             </div>
 
-            <!-- Filter Type Trigger Box (Forms 80%/20% Type Selector) -->
-            <div class="sp-input-wrapper">
-                <div class="sp-field-type-trigger-box" @click=${() => this._openFilterTypePicker()}>
-                    <div class="sp-field-type-left-80">
-                        <span class="sp-field-type-title">${this._getFilterTypeName(filterType)}</span>
-                        <span class="sp-field-type-desc">${this._getFilterTypeDesc(filterType)}</span>
-                    </div>
-                    <div class="sp-field-type-right-20">
-                        <span class="sp-field-type-btn-text">Change</span>
-                        <i class="icon-chevron-right sp-field-type-chevron"></i>
-                    </div>
-                </div>
-            </div>
 
-            <!-- Examine Field Configuration (Automatically mapped for Document Type, Content Page, and Numeric) -->
-            ${(filterType === 'contentType' || filterType === 'contentNode' || filterType === 'numeric') ? nothing : html`
-                <div class="sp-group">
-                    <label class="sp-floating-label">Examine Index Field</label>
-                    <select class="sp-select"
-                            .value=${this._isFieldInDiscoveredList(d.field, filterType) ? (d.field || (filterType === 'dateRange' ? 'updateDate' : 'category')) : '__custom__'}
-                            @change=${e => {
-                                const val = e.target.value;
-                                if (val === '__custom__') {
-                                    d._useCustomField = true;
-                                    if (this._isFieldInDiscoveredList(d.field, filterType)) {
-                                        d.field = '';
-                                    }
-                                } else {
-                                    d._useCustomField = false;
-                                    d.field = val;
-                                }
-                                this.requestUpdate();
-                            }}>
-                        ${filterType === 'dateRange' ? html`
-                            <optgroup label="Common Date Fields">
-                                <option value="updateDate">updateDate (Last Updated Date - Default)</option>
-                                <option value="createDate">createDate (Created Date)</option>
-                            </optgroup>
-                        ` : nothing}
-                        ${filterType === 'numeric' ? html`
-                            <optgroup label="Common Numeric Fields">
-                                <option value="price">price (Price Tier - Default)</option>
-                            </optgroup>
-                        ` : nothing}
-                        <optgroup label="Discovered Index Fields">
-                            ${this._getDiscoveredFields().map(f => html`
-                                <option value="${f.name}">${f.name} (${f.type || 'text'})</option>
-                            `)}
-                        </optgroup>
-                        <option value="__custom__">-- Custom Field (Type manually) --</option>
-                    </select>
 
-                    ${(d._useCustomField || (!this._isFieldInDiscoveredList(d.field, filterType) && d.field)) ? html`
-                        <div style="margin-top: 6px;">
-                            <input type="text"
-                                   class="sp-input"
-                                   placeholder="Type custom Examine field name (e.g. productSku, reviewRating)"
-                                   .value=${d.field || ''}
-                                   @input=${e => { d.field = e.target.value; this.requestUpdate(); }}>
-                        </div>
-                    ` : nothing}
 
-                    ${this._sidePanelErrors.field ? html`<div class="sp-error-msg">${this._sidePanelErrors.field}</div>` : nothing}
-                </div>
-            `}
 
-            <!-- TYPE SPECIFIC CONFIGURATION -->
-
-            <!-- 1. Document Types Filter Builder -->
-            ${filterType === 'contentType' ? html`
-                <div class="sp-sub-setting">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                        <div>
-                            <span class="sp-toggle-title">Document Type Segmentation</span>
-                            <span class="sp-toggle-desc" style="display: block;">Select specific document types or leave empty to aggregate all site types dynamically.</span>
-                        </div>
-                        <button type="button" class="btn btn-secondary btn-sm" @click=${() => {
-                            d.ranges = (this._catalog.contentTypes || []).map(ct => ({
-                                alias: ct.alias,
-                                label: ct.name,
-                                from: ct.alias,
-                                to: ''
-                            }));
-                            this.requestUpdate();
-                        }}>
-                            + Select All (${(this._catalog.contentTypes || []).length})
-                        </button>
-                    </div>
-
-                    <div style="display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto; padding-right: 4px;">
-                        ${(this._catalog.contentTypes || []).map(ct => {
-                            const isSelected = (d.ranges || []).some(r => r.from === ct.alias || r.alias === ct.alias);
-                            const existing = (d.ranges || []).find(r => r.from === ct.alias || r.alias === ct.alias);
-                            return html`
-                                <div style="display: flex; align-items: center; justify-content: space-between; background: #fff; border: 1px solid ${isSelected ? '#93c5fd' : '#e2e8f0'}; border-radius: 6px; padding: 8px 12px;">
-                                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; flex: 1;">
-                                        <input type="checkbox"
-                                               class="switch-input"
-                                               .checked=${isSelected}
-                                               @change=${e => {
-                                                   if (e.target.checked) {
-                                                       if (!d.ranges) d.ranges = [];
-                                                       d.ranges.push({ alias: ct.alias, label: ct.name, from: ct.alias, to: '' });
-                                                   } else {
-                                                       d.ranges = (d.ranges || []).filter(r => r.from !== ct.alias && r.alias !== ct.alias);
-                                                   }
-                                                   this.requestUpdate();
-                                               }} />
-                                        <div>
-                                            <strong style="font-size: 13px; color: #1f2937;">${ct.name}</strong>
-                                            <code style="font-size: 11px; margin-left: 6px; color: #6b7280;">${ct.alias}</code>
-                                        </div>
-                                    </label>
-                                    ${isSelected ? html`
-                                        <div style="display: flex; align-items: center; gap: 6px;">
-                                            <input type="text"
-                                                   class="sp-input"
-                                                   style="font-size: 12px; width: 140px; height: 30px; padding: 2px 8px;"
-                                                   placeholder="Display label"
-                                                   .value=${existing?.label || ct.name}
-                                                   @input=${e => {
-                                                       if (existing) existing.label = e.target.value;
-                                                       this.requestUpdate();
-                                                   }} />
-                                        </div>
-                                    ` : nothing}
-                                </div>
-                            `;
-                        })}
-                    </div>
-                </div>
-            ` : nothing}
-
-            <!-- 2. Content Page / Policy Subtree Builder -->
-            ${filterType === 'contentNode' ? html`
-                <div class="sp-sub-setting">
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
-                        <div>
-                            <span class="sp-toggle-title">Content Pages & Policy Subtrees</span>
-                            <span class="sp-toggle-desc" style="display: block;">Pick content pages (e.g. Policies, Legal, HR). When filtered, search results scope strictly to that section.</span>
-                        </div>
-                        <button type="button" class="btn btn-primary btn-sm" @click=${() => {
-                            if (!d.ranges) d.ranges = [];
-                            d.ranges.push({ alias: '', label: '', from: '', to: '' });
-                            this.requestUpdate();
-                        }}>
-                            + Add Page Option
-                        </button>
-                    </div>
-
-                    ${(!d.ranges || d.ranges.length === 0) ? html`
-                        <div style="text-align: center; padding: 24px; background: #f9fafb; border: 1px dashed #cbd5e1; border-radius: 6px;">
-                            <p style="margin: 0 0 10px 0; color: #64748b; font-size: 13px;">No content pages added yet.</p>
-                            <button type="button" class="btn btn-primary btn-sm" @click=${() => {
-                                if (!d.ranges) d.ranges = [];
-                                d.ranges.push({ alias: 'policies', label: 'Company Policies', from: '', to: '' });
-                                this.requestUpdate();
-                            }}>
-                                + Add First Page Option
-                            </button>
-                        </div>
-                    ` : html`
-                        <div style="display: flex; flex-direction: column; gap: 10px;">
-                            ${d.ranges.map((r, rIdx) => html`
-                                <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px;">
-                                    <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
-                                        <div style="flex: 1.5;">
-                                            <label class="sp-floating-label" style="font-size: 11px; margin-bottom: 2px;">Option Label</label>
-                                            <input type="text"
-                                                   class="sp-input"
-                                                   style="font-size: 12px; height: 32px;"
-                                                   placeholder="e.g. Policies, News, Legal"
-                                                   .value=${r.label || ''}
-                                                   @input=${e => {
-                                                       r.label = e.target.value;
-                                                       if (!r.alias || r.alias.startsWith('range-')) {
-                                                           r.alias = e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-');
-                                                       }
-                                                       this.requestUpdate();
-                                                   }} />
-                                        </div>
-                                        <div style="flex: 1;">
-                                            <label class="sp-floating-label" style="font-size: 11px; margin-bottom: 2px;">Key / Alias</label>
-                                            <input type="text"
-                                                   class="sp-input"
-                                                   style="font-size: 12px; height: 32px;"
-                                                   placeholder="policies"
-                                                   .value=${r.alias || ''}
-                                                   @input=${e => { r.alias = e.target.value; this.requestUpdate(); }} />
-                                        </div>
-                                        <div style="padding-top: 14px;">
-                                            <button type="button" class="btn-icon btn-icon-danger" title="Remove Option" @click=${() => {
-                                                d.ranges.splice(rIdx, 1);
-                                                this.requestUpdate();
-                                            }}>
-                                                <i class="icon-trash"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label class="sp-floating-label" style="font-size: 11px; margin-bottom: 4px;">Choose Content Page</label>
-                                        <umb-input-document
-                                            .selection=${[r.from].filter(Boolean)}
-                                            @change=${e => {
-                                                const sel = e.target.selection || [];
-                                                r.from = sel.length ? sel[0] : '';
-                                                this.requestUpdate();
-                                            }}>
-                                        </umb-input-document>
-                                    </div>
-                                </div>
-                            `)}
-                        </div>
-                    `}
-                </div>
-            ` : nothing}
-
-            <!-- 3. Date Range & Years Filter Builder -->
-            ${filterType === 'dateRange' ? html`
-                <div class="sp-sub-setting">
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; gap: 8px;">
-                        <div>
-                            <span class="sp-toggle-title">Date Range & Year Buckets</span>
-                            <span class="sp-toggle-desc" style="display: block;">Configure date intervals. Supports calendar years (2026, 2025), relative terms ("now-7d", "now-30d", "now-1y") or ISO dates.</span>
-                        </div>
-                        <div style="display: flex; gap: 6px; flex-shrink: 0;">
-                            <button type="button" class="btn btn-secondary btn-sm" @click=${() => {
-                                d.ranges = [
-                                    { alias: '2026', label: '2026', from: '2026-01-01', to: '2027-01-01' },
-                                    { alias: '2025', label: '2025', from: '2025-01-01', to: '2026-01-01' },
-                                    { alias: '2024', label: '2024', from: '2024-01-01', to: '2025-01-01' },
-                                    { alias: '2023-earlier', label: '2023 & Earlier', from: '2000-01-01', to: '2024-01-01' }
-                                ];
-                                this.requestUpdate();
-                            }} title="Load calendar year presets">
-                                📅 Year Presets
-                            </button>
-                            <button type="button" class="btn btn-secondary btn-sm" @click=${() => {
-                                d.ranges = [
-                                    { alias: 'last-24-hours', label: 'Last 24 Hours', from: 'now-24h', to: 'now' },
-                                    { alias: 'past-week', label: 'Past 7 Days', from: 'now-7d', to: 'now' },
-                                    { alias: 'past-month', label: 'Past 30 Days', from: 'now-30d', to: 'now' },
-                                    { alias: 'past-year', label: 'Past Year', from: 'now-1y', to: 'now' }
-                                ];
-                                this.requestUpdate();
-                            }} title="Load relative timeframe presets">
-                                ⚡ Relative Presets
-                            </button>
-                            <button type="button" class="btn btn-primary btn-sm" @click=${() => {
-                                if (!Array.isArray(d.ranges)) d.ranges = [];
-                                d.ranges.push({ alias: '', label: '', from: '', to: '' });
-                                this.requestUpdate();
-                            }}>
-                                + Add Option
-                            </button>
-                        </div>
-                    </div>
-
-                    ${(!d.ranges || d.ranges.length === 0) ? html`
-                        <div style="text-align: center; padding: 24px; background: #f9fafb; border: 1px dashed #cbd5e1; border-radius: 6px;">
-                            <p style="margin: 0 0 10px 0; color: #64748b; font-size: 13px;">No date range options defined yet.</p>
-                            <button type="button" class="btn btn-primary btn-sm" @click=${() => {
-                                if (!Array.isArray(d.ranges)) d.ranges = [];
-                                d.ranges.push({ alias: '2026', label: '2026', from: '2026-01-01', to: '2027-01-01' });
-                                this.requestUpdate();
-                            }}>
-                                + Add First Date Option
-                            </button>
-                        </div>
-                    ` : html`
-                        <div style="display: flex; flex-direction: column; gap: 8px;">
-                            ${d.ranges.map((r, rIdx) => html`
-                                <div style="display: grid; grid-template-columns: 1.4fr 1.2fr 1fr 1fr auto; gap: 8px; align-items: flex-end; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px;">
-                                    <div>
-                                        <label class="sp-floating-label" style="font-size: 11px; margin-bottom: 2px;">Label</label>
-                                        <input type="text"
-                                               class="sp-input"
-                                               style="font-size: 12px; height: 32px; padding: 4px 8px;"
-                                               placeholder="e.g. 2026, Past 7 Days"
-                                               .value=${r.label || ''}
-                                               @input=${e => {
-                                                   r.label = e.target.value;
-                                                   if (!r.alias || r.alias.startsWith('range-')) {
-                                                       r.alias = e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-');
-                                                   }
-                                                   this.requestUpdate();
-                                               }} />
-                                    </div>
-                                    <div>
-                                        <label class="sp-floating-label" style="font-size: 11px; margin-bottom: 2px;">Key / Alias</label>
-                                        <input type="text"
-                                               class="sp-input"
-                                               style="font-size: 12px; height: 32px; padding: 4px 8px;"
-                                               placeholder="2026"
-                                               .value=${r.alias || ''}
-                                               @input=${e => { r.alias = e.target.value; this.requestUpdate(); }} />
-                                    </div>
-                                    <div>
-                                        <label class="sp-floating-label" style="font-size: 11px; margin-bottom: 2px;">From (Min)</label>
-                                        <input type="text"
-                                               class="sp-input"
-                                               style="font-size: 12px; height: 32px; padding: 4px 8px;"
-                                               placeholder="2026-01-01"
-                                               .value=${r.from || ''}
-                                               @input=${e => { r.from = e.target.value; this.requestUpdate(); }} />
-                                    </div>
-                                    <div>
-                                        <label class="sp-floating-label" style="font-size: 11px; margin-bottom: 2px;">To (Max)</label>
-                                        <input type="text"
-                                               class="sp-input"
-                                               style="font-size: 12px; height: 32px; padding: 4px 8px;"
-                                               placeholder="2027-01-01"
-                                               .value=${r.to || ''}
-                                               @input=${e => { r.to = e.target.value; this.requestUpdate(); }} />
-                                    </div>
-                                    <div style="padding-bottom: 2px;">
-                                        <button type="button" class="btn-icon btn-icon-danger" title="Remove Range Option" @click=${() => {
-                                            d.ranges.splice(rIdx, 1);
-                                            this.requestUpdate();
-                                        }}>
-                                            <i class="icon-trash"></i>
-                                        </button>
-                                    </div>
-                                </div>
-                            `)}
-                        </div>
-                    `}
-                </div>
-            ` : nothing}
-
-            <!-- 4. Numeric Range Filter Builder (Forms Dropdown Options UI) -->
-            ${filterType === 'numeric' ? html`
+            <!-- Unified Options Filter Builder (Forms Dropdown Options UI - Not needed for dynamic Tag/Field filters) -->
+            ${filterType !== 'field' ? html`
                 <div class="sp-options-container">
                     <div class="sp-options-left">
                         <span class="sp-clean-toggle-title">Options</span>
                         <span class="sp-clean-toggle-sub">Provides a list of options.</span>
+                        ${filterType === 'contentType' && (this._catalog?.contentTypes || []).length > 0 ? html`
+                            <button type="button"
+                                    class="btn btn-secondary btn-sm"
+                                    style="margin-top: 10px; font-size: 11px; padding: 4px 8px; width: 100%; border-radius: 4px;"
+                                    @click=${() => {
+                                        d.ranges = (this._catalog?.contentTypes || []).map(ct => ({
+                                            alias: ct.alias,
+                                            label: ct.name,
+                                            from: ct.alias,
+                                            to: ''
+                                        }));
+                                        this.requestUpdate();
+                                    }}>
+                                + Add All Types (${(this._catalog?.contentTypes || []).length})
+                            </button>
+                        ` : nothing}
                     </div>
                     <div class="sp-options-right">
                         <div class="sp-options-col-headers">
                             <span style="flex: 1; font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;">Label</span>
-                            <span style="flex: 1; font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;">Key / Alias</span>
+                            <span style="flex: 1; font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;">${filterType === 'contentType' ? 'Document Type' : 'Key / Alias'}</span>
                         </div>
                         ${(!d.ranges || d.ranges.length === 0) ? html`
                             <div class="sp-option-row">
+                                <span class="sp-opt-reorder-handle" title="Option" style="opacity: 0;">
+                                    <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                                        <circle cx="9" cy="6" r="1.5"></circle>
+                                        <circle cx="15" cy="6" r="1.5"></circle>
+                                        <circle cx="9" cy="12" r="1.5"></circle>
+                                        <circle cx="15" cy="12" r="1.5"></circle>
+                                        <circle cx="9" cy="18" r="1.5"></circle>
+                                        <circle cx="15" cy="18" r="1.5"></circle>
+                                    </svg>
+                                </span>
                                 <input type="text" placeholder="New Label" class="sp-val-input flex-1"
                                        @input=${e => {
                                            d.ranges = [{ label: e.target.value, alias: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-'), from: '', to: '' }];
                                            this.requestUpdate();
                                        }} />
-                                <input type="text" placeholder="New Key / Alias" class="sp-val-input flex-1" />
+                                ${filterType === 'contentType' ? html`
+                                    <select class="sp-select flex-1"
+                                            style="height: 36px; padding: 4px 8px; font-size: 13px;"
+                                            @change=${e => {
+                                                const chosen = e.target.value;
+                                                const matched = (this._catalog?.contentTypes || []).find(c => c.alias === chosen);
+                                                d.ranges = [{
+                                                    label: matched?.name || chosen,
+                                                    alias: chosen,
+                                                    from: chosen,
+                                                    to: ''
+                                                }];
+                                                this.requestUpdate();
+                                            }}>
+                                        <option value="">-- Choose Document Type --</option>
+                                        ${(this._catalog?.contentTypes || []).map(ct => html`
+                                            <option value="${ct.alias}">${ct.name} (${ct.alias})</option>
+                                        `)}
+                                    </select>
+                                ` : html`
+                                    <input type="text" placeholder="New Key / Alias" class="sp-val-input flex-1" />
+                                `}
                                 <button class="sp-btn-icon-add" title="Add Option"
                                         @click=${() => {
                                             d.ranges = [{ label: '', alias: '', from: '', to: '' }];
@@ -4584,62 +4348,105 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         ` : (d.ranges || []).map((opt, oIdx) => {
                             const isLast = oIdx === (d.ranges.length - 1);
                             return html`
-                                <div class="sp-option-row">
-                                    <span class="sp-opt-reorder-handle" title="Option">
-                                        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-                                            <circle cx="9" cy="6" r="1.5"></circle>
-                                            <circle cx="15" cy="6" r="1.5"></circle>
-                                            <circle cx="9" cy="12" r="1.5"></circle>
-                                            <circle cx="15" cy="12" r="1.5"></circle>
-                                            <circle cx="9" cy="18" r="1.5"></circle>
-                                            <circle cx="15" cy="18" r="1.5"></circle>
-                                        </svg>
-                                    </span>
-                                    <input type="text"
-                                           .value=${opt.label || ''}
-                                           @input=${e => {
-                                               opt.label = e.target.value;
-                                               if (!opt.alias || opt.alias.startsWith('opt-') || opt.alias.startsWith('under-') || opt.alias.startsWith('over-')) {
-                                                   opt.alias = e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-');
-                                               }
-                                               this.requestUpdate();
-                                           }}
-                                           placeholder="New Label"
-                                           class="sp-val-input flex-1" />
-                                    <input type="text"
-                                           .value=${opt.alias || opt.value || ''}
-                                           @input=${e => {
-                                               opt.alias = e.target.value;
-                                               opt.value = e.target.value;
-                                               this.requestUpdate();
-                                           }}
-                                           placeholder="New Key / Alias"
-                                           class="sp-val-input flex-1" />
-                                    ${isLast ? html`
-                                        <button class="sp-btn-icon-add" title="Add Option"
-                                                @click=${() => {
-                                                    if (!Array.isArray(d.ranges)) d.ranges = [];
-                                                    d.ranges.push({ label: '', alias: '', from: '', to: '' });
+                                <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px;">
+                                    <div class="sp-option-row">
+                                        <span class="sp-opt-reorder-handle" title="Option">
+                                            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                                                <circle cx="9" cy="6" r="1.5"></circle>
+                                                <circle cx="15" cy="6" r="1.5"></circle>
+                                                <circle cx="9" cy="12" r="1.5"></circle>
+                                                <circle cx="15" cy="12" r="1.5"></circle>
+                                                <circle cx="9" cy="18" r="1.5"></circle>
+                                                <circle cx="15" cy="18" r="1.5"></circle>
+                                            </svg>
+                                        </span>
+                                        <input type="text"
+                                               .value=${opt.label || ''}
+                                               @input=${e => {
+                                                   opt.label = e.target.value;
+                                                   if (!opt.alias || opt.alias.startsWith('opt-') || opt.alias.startsWith('under-') || opt.alias.startsWith('over-') || opt.alias.startsWith('range-')) {
+                                                       opt.alias = e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-');
+                                                   }
+                                                   this.requestUpdate();
+                                               }}
+                                               placeholder="New Label"
+                                               class="sp-val-input flex-1" />
+                                        ${filterType === 'contentType' ? html`
+                                            <select class="sp-select flex-1"
+                                                    style="height: 36px; padding: 4px 8px; font-size: 13px;"
+                                                    .value=${opt.alias || opt.from || ''}
+                                                    @change=${e => {
+                                                        const chosen = e.target.value;
+                                                        opt.alias = chosen;
+                                                        opt.from = chosen;
+                                                        const matched = (this._catalog?.contentTypes || []).find(c => c.alias === chosen);
+                                                        if (matched && (!opt.label || opt.label === 'New Label' || opt.label === '')) {
+                                                            opt.label = matched.name;
+                                                        }
+                                                        this.requestUpdate();
+                                                    }}>
+                                                <option value="">-- Choose Document Type --</option>
+                                                ${(this._catalog?.contentTypes || []).map(ct => html`
+                                                    <option value="${ct.alias}" ?selected=${opt.alias === ct.alias || opt.from === ct.alias}>${ct.name} (${ct.alias})</option>
+                                                `)}
+                                                ${opt.alias && !(this._catalog?.contentTypes || []).some(ct => ct.alias === opt.alias) ? html`
+                                                    <option value="${opt.alias}" selected>${opt.alias}</option>
+                                                ` : nothing}
+                                            </select>
+                                        ` : html`
+                                            <input type="text"
+                                                   .value=${opt.alias || opt.value || ''}
+                                                   @input=${e => {
+                                                       opt.alias = e.target.value;
+                                                       opt.value = e.target.value;
+                                                       this.requestUpdate();
+                                                   }}
+                                                   placeholder="New Key / Alias"
+                                                   class="sp-val-input flex-1" />
+                                        `}
+                                        ${isLast ? html`
+                                            <button class="sp-btn-icon-add" title="Add Option"
+                                                    @click=${() => {
+                                                        if (!Array.isArray(d.ranges)) d.ranges = [];
+                                                        d.ranges.push({ label: '', alias: '', from: '', to: '' });
+                                                        this.requestUpdate();
+                                                    }}>
+                                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                                </svg>
+                                            </button>
+                                        ` : nothing}
+                                        ${d.ranges.length > 1 ? html`
+                                            <button class="btn-del-rule" title="Remove Option"
+                                                    @click=${() => {
+                                                        d.ranges.splice(oIdx, 1);
+                                                        this.requestUpdate();
+                                                    }}>
+                                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                    <path d="M3 6h18"></path>
+                                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
+                                                    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                                </svg>
+                                            </button>
+                                        ` : nothing}
+                                    </div>
+
+                                    ${filterType === 'contentNode' ? html`
+                                        <div style="margin: 2px 0 6px 24px; padding: 6px 10px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 6px;">
+                                            <label style="font-size: 11px; font-weight: 600; color: #64748b; margin-bottom: 4px; display: block;">Pick Content Page / Tree Node:</label>
+                                            <umb-input-document
+                                                .selection=${[opt.from].filter(Boolean)}
+                                                @change=${e => {
+                                                    const sel = e.target.selection || [];
+                                                    opt.from = sel.length ? sel[0] : '';
+                                                    if (!opt.alias) {
+                                                        opt.alias = opt.from;
+                                                    }
                                                     this.requestUpdate();
                                                 }}>
-                                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                                <line x1="12" y1="5" x2="12" y2="19"></line>
-                                                <line x1="5" y1="12" x2="19" y2="12"></line>
-                                            </svg>
-                                        </button>
-                                    ` : nothing}
-                                    ${d.ranges.length > 1 ? html`
-                                        <button class="btn-del-rule" title="Remove Option"
-                                                @click=${() => {
-                                                    d.ranges.splice(oIdx, 1);
-                                                    this.requestUpdate();
-                                                }}>
-                                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                                <path d="M3 6h18"></path>
-                                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
-                                                <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                                            </svg>
-                                        </button>
+                                            </umb-input-document>
+                                        </div>
                                     ` : nothing}
                                 </div>
                             `;
@@ -4648,19 +4455,18 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 </div>
             ` : nothing}
 
-            <!-- Common Display & Bucket Options (Only needed for dynamic taxonomy fields without predefined options) -->
-            ${(filterType === 'numeric' || filterType === 'dateRange' || filterType === 'contentType' || filterType === 'contentNode' || (d.ranges && d.ranges.length > 0)) ? nothing : html`
-                <div class="sp-group">
-                    <label class="sp-floating-label">Max Discovered Options Limit</label>
-                    <input type="number"
-                           class="sp-input"
-                           min="1"
-                           max="100"
-                           .value=${String(d.maxValues || 20)}
-                           @input=${e => { d.maxValues = parseInt(e.target.value) || 20; this.requestUpdate(); }}>
-                    <span class="sp-hint">Maximum number of top distinct values to surface in the filter sidebar.</span>
+            <div class="sp-toggle-row">
+                <div class="sp-toggle-info">
+                    <span class="sp-toggle-title">Filter Enabled</span>
+                    <span class="sp-toggle-desc">Enable or disable this filter on frontend search results and debug previews.</span>
                 </div>
-            `}
+                <label class="switch switch-sm">
+                    <input type="checkbox"
+                           .checked=${d.enabled !== false}
+                           @change=${e => { d.enabled = e.target.checked; this.requestUpdate(); }}>
+                    <span class="slider round"></span>
+                </label>
+            </div>
 
             <div class="sp-toggle-row">
                 <div class="sp-toggle-info">
