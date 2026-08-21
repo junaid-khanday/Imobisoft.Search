@@ -428,14 +428,29 @@ internal sealed partial class SearchResultProcessor
 
     private static string? ReadSortableValue(SearchResultItem item, string field)
     {
-        if (field.Equals(ImobisoftSearchConstants.IndexFields.NodeName, StringComparison.OrdinalIgnoreCase))
+        if (field.Equals(ImobisoftSearchConstants.IndexFields.NodeName, StringComparison.OrdinalIgnoreCase) || field.Equals("name", StringComparison.OrdinalIgnoreCase))
         {
             return item.Name;
         }
 
-        if (field.Equals(ImobisoftSearchConstants.IndexFields.NodeTypeAlias, StringComparison.OrdinalIgnoreCase))
+        if (field.Equals(ImobisoftSearchConstants.IndexFields.NodeTypeAlias, StringComparison.OrdinalIgnoreCase) || field.Equals("contentTypeAlias", StringComparison.OrdinalIgnoreCase) || field.Equals("contentType", StringComparison.OrdinalIgnoreCase))
         {
             return item.ContentTypeAlias;
+        }
+
+        if (field.Equals(ImobisoftSearchConstants.IndexFields.Key, StringComparison.OrdinalIgnoreCase) || field.Equals("key", StringComparison.OrdinalIgnoreCase))
+        {
+            return item.Key?.ToString();
+        }
+
+        if (field.Equals(ImobisoftSearchConstants.IndexFields.NodeId, StringComparison.OrdinalIgnoreCase) || field.Equals("id", StringComparison.OrdinalIgnoreCase))
+        {
+            return item.Id;
+        }
+
+        if (field.Equals(ImobisoftSearchConstants.IndexFields.Path, StringComparison.OrdinalIgnoreCase) || field.Equals("path", StringComparison.OrdinalIgnoreCase))
+        {
+            return item.Path;
         }
 
         // Umbraco writes a sort-optimised twin for sortable fields; prefer it when it is present.
@@ -445,7 +460,39 @@ internal sealed partial class SearchResultProcessor
     }
 
     private static string? FieldValue(SearchResultItem item, string field)
-        => item.Fields.TryGetValue(field, out var value) ? value : null;
+    {
+        if (item.Fields.TryGetValue(field, out var value))
+        {
+            return value;
+        }
+
+        if (field.Equals(ImobisoftSearchConstants.IndexFields.NodeTypeAlias, StringComparison.OrdinalIgnoreCase) || field.Equals("contentTypeAlias", StringComparison.OrdinalIgnoreCase) || field.Equals("contentType", StringComparison.OrdinalIgnoreCase))
+        {
+            return item.ContentTypeAlias;
+        }
+
+        if (field.Equals(ImobisoftSearchConstants.IndexFields.NodeName, StringComparison.OrdinalIgnoreCase) || field.Equals("name", StringComparison.OrdinalIgnoreCase))
+        {
+            return item.Name;
+        }
+
+        if (field.Equals(ImobisoftSearchConstants.IndexFields.Key, StringComparison.OrdinalIgnoreCase) || field.Equals("key", StringComparison.OrdinalIgnoreCase))
+        {
+            return item.Key?.ToString();
+        }
+
+        if (field.Equals(ImobisoftSearchConstants.IndexFields.Path, StringComparison.OrdinalIgnoreCase) || field.Equals("path", StringComparison.OrdinalIgnoreCase))
+        {
+            return item.Path;
+        }
+
+        if (field.Equals(ImobisoftSearchConstants.IndexFields.NodeId, StringComparison.OrdinalIgnoreCase) || field.Equals("id", StringComparison.OrdinalIgnoreCase))
+        {
+            return item.Id;
+        }
+
+        return null;
+    }
 
     private static IList<FacetResult> BuildFacets(
         IReadOnlyList<SearchResultItem> items,
@@ -467,7 +514,8 @@ internal sealed partial class SearchResultProcessor
             selected.TryGetValue(definition.Alias, out IList<string>? chosen);
             var chosenSet = new HashSet<string>(chosen ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
 
-            IList<FacetValue> values = definition.Kind == FacetKind.Field
+            var hasCustomRanges = definition.Ranges != null && definition.Ranges.Count > 0;
+            IList<FacetValue> values = (definition.Kind == FacetKind.Field && !hasCustomRanges)
                 ? BuildFieldFacet(scope, definition, chosenSet)
                 : BuildRangeFacet(scope, definition, chosenSet);
 
@@ -545,10 +593,11 @@ internal sealed partial class SearchResultProcessor
 
             var chosenSet = new HashSet<string>(chosen, StringComparer.OrdinalIgnoreCase);
             FacetDefinition captured = definition;
+            var hasCustomRanges = captured.Ranges != null && captured.Ranges.Count > 0;
 
-            filtered = definition.Kind == FacetKind.Field
+            filtered = (captured.Kind == FacetKind.Field && !hasCustomRanges)
                 ? filtered.Where(item => chosenSet.Contains(ReadSortableValue(item, captured.Field) ?? string.Empty))
-                : filtered.Where(item => captured.Ranges
+                : filtered.Where(item => captured.Ranges!
                     .Where(r => chosenSet.Contains(r.Alias))
                     .Any(r => FallsInRange(item, captured, r)));
         }
@@ -565,18 +614,11 @@ internal sealed partial class SearchResultProcessor
 
     private static bool FallsInRange(SearchResultItem item, FacetDefinition definition, FacetRange range)
     {
-        // The raw field, not the __Sort_ twin: Umbraco writes sort-optimised dates and numbers in a
-        // different representation, and a range has to read the value the way it was indexed.
         var raw = FieldValue(item, definition.Field) ?? ReadSortableValue(item, definition.Field);
-
-        if (string.IsNullOrEmpty(raw))
-        {
-            return false;
-        }
 
         if (definition.Kind == FacetKind.Numeric)
         {
-            if (!double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var value))
+            if (string.IsNullOrEmpty(raw) || !double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var value))
             {
                 return false;
             }
@@ -587,15 +629,71 @@ internal sealed partial class SearchResultProcessor
             return (lower is null || value >= lower) && (upper is null || value < upper);
         }
 
-        if (!TryParseDate(raw, out DateTime date))
+        if (definition.Kind == FacetKind.DateRange)
         {
+            if (string.IsNullOrEmpty(raw) || !TryParseDate(raw, out DateTime date))
+            {
+                return false;
+            }
+
+            DateTime? from = ParseDateBound(range.From);
+            DateTime? to = ParseDateBound(range.To);
+
+            return (from is null || date >= from) && (to is null || date < to);
+        }
+
+        // Subtree / Path / Content page matching (e.g. Specific Policy Page, Subtree Root)
+        if (definition.Field.Equals(ImobisoftSearchConstants.IndexFields.Path, StringComparison.OrdinalIgnoreCase) ||
+            definition.Field.Equals("path", StringComparison.OrdinalIgnoreCase) ||
+            definition.Field.Equals(ImobisoftSearchConstants.IndexFields.Key, StringComparison.OrdinalIgnoreCase) ||
+            definition.Field.Equals("key", StringComparison.OrdinalIgnoreCase) ||
+            definition.Field.Equals(ImobisoftSearchConstants.IndexFields.NodeId, StringComparison.OrdinalIgnoreCase) ||
+            definition.Field.Equals("id", StringComparison.OrdinalIgnoreCase))
+        {
+            var matchTarget = !string.IsNullOrWhiteSpace(range.From) ? range.From.Trim() : range.Alias.Trim();
+            if (string.IsNullOrEmpty(matchTarget))
+            {
+                return false;
+            }
+
+            if (item.Key.HasValue && item.Key.Value.ToString().Equals(matchTarget, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (!string.IsNullOrEmpty(item.Id) && item.Id.Equals(matchTarget, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (!string.IsNullOrEmpty(item.Path))
+            {
+                var segments = item.Path.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (segments.Contains(matchTarget, StringComparer.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
             return false;
         }
 
-        DateTime? from = ParseDateBound(range.From);
-        DateTime? to = ParseDateBound(range.To);
+        // Document Type matching (e.g. specific content types like policyPage, newsArticle)
+        if (definition.Field.Equals(ImobisoftSearchConstants.IndexFields.NodeTypeAlias, StringComparison.OrdinalIgnoreCase) ||
+            definition.Field.Equals("contentTypeAlias", StringComparison.OrdinalIgnoreCase) ||
+            definition.Field.Equals("contentType", StringComparison.OrdinalIgnoreCase))
+        {
+            var matchType = !string.IsNullOrWhiteSpace(range.From) ? range.From.Trim() : range.Alias.Trim();
+            return !string.IsNullOrEmpty(item.ContentTypeAlias) &&
+                   (item.ContentTypeAlias.Equals(matchType, StringComparison.OrdinalIgnoreCase) ||
+                    item.ContentTypeAlias.Equals(range.Alias, StringComparison.OrdinalIgnoreCase));
+        }
 
-        return (from is null || date >= from) && (to is null || date < to);
+        // Generic field value matching
+        var targetVal = !string.IsNullOrWhiteSpace(range.From) ? range.From.Trim() : range.Alias.Trim();
+        return !string.IsNullOrEmpty(raw) &&
+               (raw.Equals(targetVal, StringComparison.OrdinalIgnoreCase) ||
+                raw.Equals(range.Alias, StringComparison.OrdinalIgnoreCase));
     }
 
     private static double? ParseNumericBound(string value)

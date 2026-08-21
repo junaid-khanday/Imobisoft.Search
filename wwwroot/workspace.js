@@ -62,8 +62,47 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         _messageBoxCancelText: { state: true },
         _toasts: { state: true },
         _showImportModal: { state: true },
-        _importJsonText: { state: true }
+        _importJsonText: { state: true },
+        _showFilterTypePicker: { state: true }
     };
+
+    static _filterTypes = [
+        {
+            alias: 'contentType',
+            name: 'Document Type',
+            desc: 'Filter search results by Umbraco document types (Policies, News, Articles)',
+            defaultField: '__NodeTypeAlias',
+            defaultKind: 'field'
+        },
+        {
+            alias: 'contentNode',
+            name: 'Content Page / Subtree',
+            desc: 'Filter search results to specific pages or policy subtrees using document picker',
+            defaultField: '__Path',
+            defaultKind: 'field'
+        },
+        {
+            alias: 'dateRange',
+            name: 'Date Range & Year',
+            desc: 'Filter search results by calendar years (2026, 2025, 2024) or relative intervals',
+            defaultField: 'updateDate',
+            defaultKind: 'dateRange'
+        },
+        {
+            alias: 'numeric',
+            name: 'Numeric Range & Values',
+            desc: 'Filter search results by price tiers, rating scores, or numeric intervals',
+            defaultField: 'price',
+            defaultKind: 'numeric'
+        },
+        {
+            alias: 'field',
+            name: 'Field / Taxonomy / Tag',
+            desc: 'Filter search results dynamically by distinct values in Examine fields',
+            defaultField: '',
+            defaultKind: 'field'
+        }
+    ];
 
     constructor() {
         super();
@@ -123,6 +162,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         this._toasts = [];
         this._showImportModal = false;
         this._importJsonText = '';
+        this._showFilterTypePicker = false;
     }
 
     connectedCallback() {
@@ -705,11 +745,32 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 label: '',
                 field: '',
                 kind: 'field',
+                filterType: '',
                 maxValues: 20,
                 hideEmpty: true,
                 ranges: [],
                 _isNew: !data
             };
+            if (!Array.isArray(this._sidePanelData.ranges)) {
+                this._sidePanelData.ranges = [];
+            }
+            if (data) {
+                this._showFilterTypePicker = false;
+                this._sidePanelData._origAlias = data.alias;
+                if (data.field === '__NodeTypeAlias' || data.field === 'contentTypeAlias' || data.field === 'contentType') {
+                    this._sidePanelData.filterType = 'contentType';
+                } else if (data.field === '__Path' || data.field === 'path' || data.field === '__Key' || data.field === 'key') {
+                    this._sidePanelData.filterType = 'contentNode';
+                } else if (data.kind === 'dateRange') {
+                    this._sidePanelData.filterType = 'dateRange';
+                } else if (data.kind === 'numeric') {
+                    this._sidePanelData.filterType = 'numeric';
+                } else {
+                    this._sidePanelData.filterType = 'field';
+                }
+            } else {
+                this._showFilterTypePicker = true;
+            }
         } else if (type === 'editBestBet') {
             this._sidePanelData = data ? JSON.parse(JSON.stringify(data)) : {
                 terms: [],
@@ -856,13 +917,223 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
 
     _closeSidePanel() {
         this._sidePanelOpen = false;
+        this._showFilterTypePicker = false;
         this._sidePanelType = null;
         this._sidePanelData = null;
         this._sidePanelErrors = {};
         this.requestUpdate();
     }
 
-    _saveSidePanel() {
+    _getFilterTypeName(alias) {
+        const ft = ImobisoftSearchWorkspace._filterTypes.find(t => t.alias === alias);
+        return ft ? ft.name : 'Custom Field Filter';
+    }
+
+    _getFilterTypeDesc(alias) {
+        const ft = ImobisoftSearchWorkspace._filterTypes.find(t => t.alias === alias);
+        return ft ? ft.desc : 'Dynamic aggregation on Examine index values.';
+    }
+
+    _getDiscoveredFields() {
+        const fieldMap = new Map();
+        const standard = [
+            { name: 'category', type: 'text' },
+            { name: 'tags', type: 'text' },
+            { name: 'nodeName', type: 'text' },
+            { name: 'author', type: 'text' },
+            { name: 'department', type: 'text' },
+            { name: 'status', type: 'text' },
+            { name: 'updateDate', type: 'datetime' },
+            { name: 'createDate', type: 'datetime' },
+            { name: 'price', type: 'float' }
+        ];
+
+        standard.forEach(f => fieldMap.set(f.name, f));
+
+        (this._catalog?.indexes || []).forEach(idx => {
+            (idx.fields || []).forEach(f => {
+                if (f.name && !f.name.startsWith('__')) {
+                    fieldMap.set(f.name, { name: f.name, type: f.type || 'text' });
+                }
+            });
+        });
+
+        return Array.from(fieldMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    _isFieldInDiscoveredList(field, filterType) {
+        if (!field) return false;
+        if (filterType === 'dateRange' && (field === 'updateDate' || field === 'createDate')) return true;
+        if (filterType === 'numeric' && field === 'price') return true;
+        const all = this._getDiscoveredFields();
+        return all.some(f => f.name === field);
+    }
+
+    _getFilterTypeSvg(alias) {
+        switch (alias) {
+            case 'contentType':
+                return html`<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`;
+            case 'contentNode':
+                return html`<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"></circle><line x1="12" y1="8" x2="12" y2="14"></line><path d="M5 14h14"></path><line x1="5" y1="14" x2="5" y2="19"></line><line x1="19" y1="14" x2="19" y2="19"></line><circle cx="5" cy="19" r="2"></circle><circle cx="19" cy="19" r="2"></circle></svg>`;
+            case 'dateRange':
+                return html`<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>`;
+            case 'numeric':
+                return html`<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="9" x2="20" y2="9"></line><line x1="4" y1="15" x2="20" y2="15"></line><line x1="10" y1="3" x2="8" y2="21"></line><line x1="16" y1="3" x2="14" y2="21"></line></svg>`;
+            case 'field':
+            default:
+                return html`<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>`;
+        }
+    }
+
+    _openFilterTypePicker() {
+        this._showFilterTypePicker = true;
+        this.requestUpdate();
+    }
+
+    _closeFilterTypePicker() {
+        if (this._sidePanelData?._isNew && !this._sidePanelData?.filterType) {
+            this._closeSidePanel();
+            return;
+        }
+        this._showFilterTypePicker = false;
+        this.requestUpdate();
+    }
+
+    _selectFilterType(typeAlias) {
+        if (!this._sidePanelData) return;
+        const ft = ImobisoftSearchWorkspace._filterTypes.find(t => t.alias === typeAlias);
+        if (ft) {
+            this._sidePanelData.filterType = ft.alias;
+            this._sidePanelData.kind = ft.defaultKind;
+            if (ft.defaultField) {
+                this._sidePanelData.field = ft.defaultField;
+            }
+            if (ft.alias === 'contentType') {
+                this._sidePanelData.field = '__NodeTypeAlias';
+                this._sidePanelData.kind = 'field';
+                if (!this._sidePanelData.label) this._sidePanelData.label = 'Document Type';
+            } else if (ft.alias === 'contentNode') {
+                this._sidePanelData.field = '__Path';
+                this._sidePanelData.kind = 'field';
+                if (!this._sidePanelData.label) this._sidePanelData.label = 'Policies / Sections';
+            } else if (ft.alias === 'dateRange') {
+                this._sidePanelData.kind = 'dateRange';
+                if (!this._sidePanelData.field || this._sidePanelData.field.startsWith('__')) {
+                    this._sidePanelData.field = 'updateDate';
+                }
+                if (!this._sidePanelData.label) this._sidePanelData.label = 'Date / Year';
+                if (!this._sidePanelData.ranges || this._sidePanelData.ranges.length === 0) {
+                    this._sidePanelData.ranges = [
+                        { alias: '2026', label: '2026', from: '2026-01-01', to: '2027-01-01' },
+                        { alias: '2025', label: '2025', from: '2025-01-01', to: '2026-01-01' },
+                        { alias: '2024', label: '2024', from: '2024-01-01', to: '2025-01-01' },
+                        { alias: 'past-week', label: 'Past 7 Days', from: 'now-7d', to: 'now' },
+                        { alias: 'past-month', label: 'Past 30 Days', from: 'now-30d', to: 'now' }
+                    ];
+                }
+            } else if (ft.alias === 'numeric') {
+                this._sidePanelData.kind = 'numeric';
+                if (!this._sidePanelData.field || this._sidePanelData.field.startsWith('__')) {
+                    this._sidePanelData.field = 'price';
+                }
+                if (!this._sidePanelData.label) this._sidePanelData.label = 'Price / Range';
+                if (!this._sidePanelData.ranges || this._sidePanelData.ranges.length === 0) {
+                    this._sidePanelData.ranges = [
+                        { alias: 'under-25', label: 'Under $25', from: '', to: '25' },
+                        { alias: '25-to-50', label: '$25 to $50', from: '25', to: '50' },
+                        { alias: '50-to-100', label: '$50 to $100', from: '50', to: '100' },
+                        { alias: 'over-100', label: '$100 & Above', from: '100', to: '' }
+                    ];
+                }
+            } else if (ft.alias === 'field') {
+                this._sidePanelData.kind = 'field';
+                if (!this._sidePanelData.field || this._sidePanelData.field.startsWith('__')) {
+                    this._sidePanelData.field = 'category';
+                }
+                if (!this._sidePanelData.label) this._sidePanelData.label = 'Category';
+            }
+            if (!this._sidePanelData._aliasUnlocked) {
+                this._generateAliasFromLabel(this._sidePanelData);
+            }
+        }
+        this._showFilterTypePicker = false;
+        this.requestUpdate();
+    }
+
+    _toggleAliasLock(data) {
+        data._aliasUnlocked = !data._aliasUnlocked;
+        this.requestUpdate();
+    }
+
+    _generateAliasFromLabel(data) {
+        if (data._aliasUnlocked) return;
+        const label = data.label || '';
+        data.alias = label
+            .toLowerCase()
+            .replace(/[^a-z0-9_-]/g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '');
+        this.requestUpdate();
+    }
+
+    _renderFilterTypePicker() {
+        if (!this._sidePanelData) return nothing;
+        const currentType = this._sidePanelData.filterType || this._sidePanelData.kind || 'field';
+        
+        return html`
+            <div class="field-type-picker-overlay" @click=${() => this._closeFilterTypePicker()}>
+                <div class="field-type-picker-wrapper" @click=${e => e.stopPropagation()}>
+                    <div class="sp-body field-type-picker-body">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                            <div>
+                                <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #111827;">Select Filter Type</h3>
+                                <p style="margin: 4px 0 0 0; font-size: 12px; color: #6b7280;">Choose how this filter dimension segments and aggregates your search results.</p>
+                            </div>
+                            <button class="btn-icon" @click=${() => this._closeFilterTypePicker()} title="Close">✕</button>
+                        </div>
+                        <div class="field-type-grid">
+                            ${ImobisoftSearchWorkspace._filterTypes.map(t => {
+                                const isSelected = currentType === t.alias;
+                                return html`
+                                    <div class="field-type-card ${isSelected ? 'selected' : ''}" 
+                                         @click=${() => this._selectFilterType(t.alias)}>
+                                        <div class="field-type-card-icon">
+                                            ${this._getFilterTypeSvg(t.alias)}
+                                        </div>
+                                        <div class="field-type-card-info">
+                                            <span class="field-type-card-name">${t.name}</span>
+                                            <span class="field-type-card-desc">${t.desc}</span>
+                                        </div>
+                                        ${isSelected ? html`
+                                            <div class="field-type-card-check">
+                                                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                                    <polyline points="20 6 9 17 4 12"></polyline>
+                                                </svg>
+                                            </div>
+                                        ` : nothing}
+                                    </div>
+                                `;
+                            })}
+                        </div>
+                    </div>
+                    <div class="builder-footer" style="position: static; height: 60px; flex-shrink: 0;">
+                        <div class="footer-left">
+                            <span class="footer-form-label">TYPE</span>
+                            <span class="footer-divider">/</span>
+                            <span class="footer-form-name">FILTER PRESET</span>
+                        </div>
+                        <div class="footer-right">
+                            <button class="footer-btn" @click=${() => this._closeFilterTypePicker()} title="Cancel">
+                                <span class="footer-discard-btn">Close</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    async _saveSidePanel() {
         const d = this._sidePanelData;
         const errs = {};
 
@@ -898,7 +1169,35 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             }
         } else if (this._sidePanelType === 'editFacet') {
             if (!d.alias || !d.alias.trim()) errs.alias = "Facet alias is required.";
+            
+            // Auto-assign Examine field if missing based on filter preset
+            if (d.filterType === 'contentType') {
+                d.field = '__NodeTypeAlias';
+                d.kind = 'field';
+            } else if (d.filterType === 'contentNode') {
+                d.field = '__Path';
+                d.kind = 'field';
+            } else if (d.filterType === 'dateRange') {
+                d.kind = 'dateRange';
+                if (!d.field || !d.field.trim()) d.field = 'updateDate';
+            } else if (d.filterType === 'numeric') {
+                d.kind = 'numeric';
+                if (!d.field || !d.field.trim()) d.field = 'price';
+            } else {
+                if (!d.field || !d.field.trim()) d.field = 'category';
+            }
+
             if (!d.field || !d.field.trim()) errs.field = "Index field is required.";
+
+            let cleanRanges = [];
+            if (Array.isArray(d.ranges) && d.ranges.length > 0) {
+                cleanRanges = d.ranges.map((r, i) => ({
+                    alias: (r.alias || r.label || `option-${i + 1}`).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-'),
+                    label: (r.label || r.alias || `Option ${i + 1}`).trim(),
+                    from: (r.from !== undefined && r.from !== null) ? String(r.from).trim() : '',
+                    to: (r.to !== undefined && r.to !== null) ? String(r.to).trim() : ''
+                })).filter(r => r.alias.length > 0 || r.label.length > 0 || r.from.length > 0 || r.to.length > 0);
+            }
 
             if (Object.keys(errs).length > 0) {
                 this._sidePanelErrors = errs;
@@ -913,16 +1212,29 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 kind: d.kind || 'field',
                 maxValues: parseInt(d.maxValues) || 20,
                 hideEmpty: d.hideEmpty !== false,
-                ranges: Array.isArray(d.ranges) ? d.ranges : []
+                ranges: cleanRanges
             };
 
+            if (!this._currentProfile.rules) this._currentProfile.rules = {};
+            if (!this._currentProfile.rules.results) this._currentProfile.rules.results = {};
+            if (!Array.isArray(this._currentProfile.rules.results.facets)) {
+                this._currentProfile.rules.results.facets = [];
+            }
             const facets = this._currentProfile.rules.results.facets;
             if (d._isNew) {
-                facets.push(cleanFacet);
+                const existingIdx = facets.findIndex(f => f.alias.toLowerCase() === cleanFacet.alias.toLowerCase());
+                if (existingIdx >= 0) {
+                    facets[existingIdx] = cleanFacet;
+                } else {
+                    facets.push(cleanFacet);
+                }
             } else {
-                const idx = facets.findIndex(f => f.alias === d.alias);
-                if (idx >= 0) facets[idx] = cleanFacet;
-                else facets.push(cleanFacet);
+                const idx = facets.findIndex(f => f.alias.toLowerCase() === d.alias.toLowerCase() || (d._origAlias && f.alias.toLowerCase() === d._origAlias.toLowerCase()));
+                if (idx >= 0) {
+                    facets[idx] = cleanFacet;
+                } else {
+                    facets.push(cleanFacet);
+                }
             }
         } else if (this._sidePanelType === 'editBestBet') {
             const terms = (d._termsInput || '').split(',').map(t => t.trim()).filter(t => t.length > 0);
@@ -942,13 +1254,13 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 nodeKeys: nodeKeys
             };
 
-            const bestBets = this._currentProfile.rules.ranking.bestBets;
+            const bets = this._currentProfile.rules.ranking.bestBets;
             if (d._isNew) {
-                bestBets.push(cleanBet);
+                bets.push(cleanBet);
             } else {
-                const idx = d._index !== undefined ? d._index : -1;
-                if (idx >= 0 && idx < bestBets.length) bestBets[idx] = cleanBet;
-                else bestBets.push(cleanBet);
+                const idx = bets.findIndex(b => b === d._origItem);
+                if (idx >= 0) bets[idx] = cleanBet;
+                else bets.push(cleanBet);
             }
         } else if (this._sidePanelType === 'editSort') {
             if (!d.field || !d.field.trim()) errs.field = "Sort field is required.";
@@ -968,8 +1280,8 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             if (d._isNew) {
                 sortBy.push(cleanSort);
             } else {
-                const idx = d._index !== undefined ? d._index : -1;
-                if (idx >= 0 && idx < sortBy.length) sortBy[idx] = cleanSort;
+                const idx = sortBy.findIndex(s => s.field === d.field);
+                if (idx >= 0) sortBy[idx] = cleanSort;
                 else sortBy.push(cleanSort);
             }
         } else if (this._sidePanelType === 'editContentTypeBoost') {
@@ -1075,6 +1387,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         }
 
         this._closeSidePanel();
+        await this._saveCurrentProfile();
     }
 
     // ----------------- TEST SEARCH & AUTOCOMPLETE -----------------
@@ -1295,11 +1608,17 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         return html`
             <div class="builder-footer">
                 <div class="footer-left">
-                    <span class="footer-form-label">PROFILE</span>
+                    <span class="footer-form-label">${this._profileActiveTab === 'facets' ? 'FILTERS' : 'PROFILE'}</span>
                     <span class="footer-divider">/</span>
-                    <span class="footer-form-name">${p.name || 'Untitled Profile'}</span>
+                    <span class="footer-form-name">${this._profileActiveTab === 'facets' ? `${(p.rules?.results?.facets || []).length} Filters Configured` : (p.name || 'Untitled Profile')}</span>
                 </div>
                 <div class="footer-right">
+                    ${this._profileActiveTab === 'facets' ? html`
+                        <button class="footer-btn" title="Add Filter Dimension" @click=${() => this._openSidePanel('editFacet')}>
+                            <span class="footer-add-btn">+ Add Filter</span>
+                        </button>
+                        <div class="header-divider"></div>
+                    ` : nothing}
                     <button class="footer-btn" ?disabled=${this._profileSaving} title="Save Profile" @click=${this._saveCurrentProfile}>
                         <span class="footer-save-btn">${this._profileSaving ? 'Saving...' : 'Save Profile'}</span>
                     </button>
@@ -2239,7 +2558,9 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
 
     // --- TAB: FACETS & FILTERS ---
     _renderFacetsTab(p) {
-        const facets = p.rules.results?.facets || [];
+        if (!p.rules.results) p.rules.results = {};
+        if (!Array.isArray(p.rules.results.facets)) p.rules.results.facets = [];
+        const facets = p.rules.results.facets;
 
         return html`
             <div class="source-settings-container">
@@ -2248,10 +2569,10 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         <div class="setting-title">Configured Facet Dimensions</div>
                         <div class="setting-desc">Facets return dynamic filter dimensions with live counts for your search UI sidebar.</div>
                     </div>
-                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('manageFacets')}>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editFacet')}>
                         <div class="field-box-header">
                             <span class="field-type-tag">Facet Dimensions</span>
-                            <span class="field-count-pill">${facets.length ? `${facets.length} facets configured` : 'No Facets'}</span>
+                            <span class="field-count-pill">${facets.length ? `${facets.length} filters configured` : 'No Filters'}</span>
                         </div>
                         <div class="field-box-content">
                             ${facets.length ? html`
@@ -2259,19 +2580,51 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                     ${facets.map(f => html`
                                         <span class="selected-chip">
                                             <strong>${f.label || f.alias}</strong>
-                                            <span class="chip-meta">(field: <code>${f.field}</code>, max: ${f.maxValues || 20})</span>
+                                            <span class="chip-meta">(kind: <code>${f.kind || 'field'}</code>, field: <code>${f.field}</code>${f.ranges?.length ? `, ${f.ranges.length} options` : ''})</span>
                                         </span>
                                     `)}
                                 </div>
                             ` : html`
                                 <div class="selected-placeholder">
-                                    <span class="placeholder-tag">No Facet Dimensions</span>
-                                    <span class="placeholder-meta">Click to configure dynamic filter facets (e.g. Category, Document Type, Date).</span>
+                                    <span class="placeholder-tag">No Filters Added</span>
+                                    <span class="placeholder-meta">Click to add your first search filter (e.g. Document Types, Policies, Date Range, Price).</span>
                                 </div>
                             `}
                         </div>
                     </div>
                 </div>
+
+                ${facets.length > 0 ? html`
+                    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
+                        ${facets.map((f, idx) => html`
+                            <div class="sp-choice-card" style="cursor: default; padding: 12px 18px;">
+                                <div class="sp-choice-info">
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <strong class="sp-choice-title" style="font-size: 14px;">${f.label || f.alias}</strong>
+                                        <span class="badge badge-info">${f.kind || 'field'}</span>
+                                    </div>
+                                    <span class="sp-choice-meta" style="margin-top: 2px;">
+                                        Field: <code>${f.field}</code>
+                                        | Max buckets: ${f.maxValues || 20}
+                                        ${f.ranges?.length ? ` | ${f.ranges.length} options / buckets` : ''}
+                                    </span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <button class="btn-icon" title="Edit Filter" @click=${() => this._openSidePanel('editFacet', f)}>
+                                        <i class="icon-edit"></i>
+                                    </button>
+                                    <button class="btn-icon btn-icon-danger" title="Remove Filter" @click=${async () => {
+                                        facets.splice(idx, 1);
+                                        this.requestUpdate();
+                                        await this._saveCurrentProfile();
+                                    }}>
+                                        <i class="icon-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        `)}
+                    </div>
+                ` : nothing}
             </div>
         `;
     }
@@ -2355,6 +2708,37 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                             </span>
                         `))}
                         <button class="btn-clear-filters" @click=${this._clearTestFilters}>Clear All</button>
+                    </div>
+                ` : nothing}
+
+                <!-- Live Facet Filter Dimension Groups -->
+                ${this._testResults?.facets?.length > 0 ? html`
+                    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.03);">
+                        <div style="display: flex; flex-direction: column; gap: 10px;">
+                            ${this._testResults.facets.map(f => html`
+                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                    <span style="font-size: 12px; font-weight: 700; color: #334155; min-width: 110px;">
+                                        ${f.label || f.alias}:
+                                    </span>
+                                    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                        ${(f.values || []).map(v => {
+                                            const isSelected = (this._testActiveFilters[f.alias] || []).includes(v.value);
+                                            return html`
+                                                <button type="button"
+                                                        class="btn ${isSelected ? 'btn-primary' : 'btn-secondary'} btn-sm"
+                                                        style="font-size: 11px; padding: 3px 9px; border-radius: 14px; display: inline-flex; align-items: center; gap: 4px;"
+                                                        @click=${() => this._toggleTestFacet(f.alias, v.value)}>
+                                                    <span>${v.label || v.value}</span>
+                                                    <span class="badge ${isSelected ? 'badge-default' : 'badge-info'}" style="font-size: 10px; padding: 1px 5px;">
+                                                        ${v.count}
+                                                    </span>
+                                                </button>
+                                            `;
+                                        })}
+                                    </div>
+                                </div>
+                            `)}
+                        </div>
                     </div>
                 ` : nothing}
 
@@ -2802,43 +3186,39 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         if (!d) return nothing;
 
         let title = "Configuration";
-        if (t === 'manageFields') title = "Searchable Fields & Weightings";
-        else if (t === 'editField') title = d._isNew ? "Add Searchable Field" : `Edit Field: ${d.name}`;
-        else if (t === 'editMatchParameters') title = "Query Match Parameters";
-        else if (t === 'editStopWords') title = "Stop Words (Ignored Words)";
-        else if (t === 'manageSynonyms') title = "Query Synonym Groups";
-        else if (t === 'editSynonym') title = "Add Synonym Group";
-        else if (t === 'manageSort') title = "Sort Priority Levels";
-        else if (t === 'editSort') title = d._isNew ? "Add Sort Level" : "Edit Sort Level";
-        else if (t === 'manageContentTypeBoosts') title = "Document Type Relevance Boosts";
-        else if (t === 'editContentTypeBoost') title = "Add Content Type Boost";
-        else if (t === 'manageBestBets') title = "Best Bets (Pinned Results)";
-        else if (t === 'editBestBet') title = d._isNew ? "Add Best Bet (Pinned Result)" : "Edit Best Bet";
-        else if (t === 'editRecency') title = "Recency Decay & Time Boost";
-        else if (t === 'editBlockedTerms') title = "Blocked Search Terms";
-        else if (t === 'editPaging') title = "Paging & Result Capacity";
-        else if (t === 'editHighlighting') title = "Highlighting & Snippets";
-        else if (t === 'editResultShaping') title = "Result Shaping & De-Duplication";
-        else if (t === 'manageFacets') title = "Facet Dimensions & Filters";
-        else if (t === 'editFacet') title = d._isNew ? "Add Facet Dimension" : `Edit Facet: ${d.label || d.alias}`;
-        else if (t === 'editSourceIndexes') title = "Target Examine Indexes";
-        else if (t === 'editSourceEntityTypes') title = "Index Entity Types";
-        else if (t === 'editSourceContentTypes') title = "Include Document Types";
-        else if (t === 'editSourceExcludeContentTypes') title = "Exclude Document Types";
-        else if (t === 'editSourceRoots') title = "Search Subtree Roots";
-        else if (t === 'editSourceProtection') title = "Visibility & Protection Rules";
-        else if (t === 'profileMetadata') title = "Profile Metadata & Settings";
+        let labelTag = "SETTING";
+        if (t === 'manageFields') { title = "Searchable Fields & Weightings"; labelTag = "FIELDS"; }
+        else if (t === 'editField') { title = d._isNew ? "Add Searchable Field" : `Edit Field: ${d.name}`; labelTag = "FIELD"; }
+        else if (t === 'editMatchParameters') { title = "Query Match Parameters"; labelTag = "MATCHING"; }
+        else if (t === 'editStopWords') { title = "Stop Words (Ignored Words)"; labelTag = "STOPWORDS"; }
+        else if (t === 'manageSynonyms') { title = "Query Synonym Groups"; labelTag = "SYNONYMS"; }
+        else if (t === 'editSynonym') { title = "Add Synonym Group"; labelTag = "SYNONYM"; }
+        else if (t === 'manageSort') { title = "Sort Priority Levels"; labelTag = "SORT"; }
+        else if (t === 'editSort') { title = d._isNew ? "Add Sort Level" : "Edit Sort Level"; labelTag = "SORT"; }
+        else if (t === 'manageContentTypeBoosts') { title = "Document Type Relevance Boosts"; labelTag = "BOOSTS"; }
+        else if (t === 'editContentTypeBoost') { title = "Add Content Type Boost"; labelTag = "BOOST"; }
+        else if (t === 'manageBestBets') { title = "Best Bets (Pinned Results)"; labelTag = "BESTBETS"; }
+        else if (t === 'editBestBet') { title = d._isNew ? "Add Best Bet (Pinned Result)" : "Edit Best Bet"; labelTag = "BESTBET"; }
+        else if (t === 'editRecency') { title = "Recency Decay & Time Boost"; labelTag = "RECENCY"; }
+        else if (t === 'editBlockedTerms') { title = "Blocked Search Terms"; labelTag = "BLOCKED"; }
+        else if (t === 'editPaging') { title = "Paging & Result Capacity"; labelTag = "PAGING"; }
+        else if (t === 'editHighlighting') { title = "Highlighting & Snippets"; labelTag = "HIGHLIGHT"; }
+        else if (t === 'editResultShaping') { title = "Result Shaping & De-Duplication"; labelTag = "SHAPING"; }
+        else if (t === 'manageFacets') { title = "Facet Dimensions & Filters"; labelTag = "FILTERS"; }
+        else if (t === 'editFacet') { title = d._isNew ? "Add Facet Dimension" : `Edit Facet: ${d.label || d.alias}`; labelTag = "FILTER"; }
+        else if (t === 'editSourceIndexes') { title = "Target Examine Indexes"; labelTag = "INDEXES"; }
+        else if (t === 'editSourceEntityTypes') { title = "Index Entity Types"; labelTag = "ENTITIES"; }
+        else if (t === 'editSourceContentTypes') { title = "Include Document Types"; labelTag = "DOC TYPES"; }
+        else if (t === 'editSourceExcludeContentTypes') { title = "Exclude Document Types"; labelTag = "DOC TYPES"; }
+        else if (t === 'editSourceRoots') { title = "Search Subtree Roots"; labelTag = "ROOTS"; }
+        else if (t === 'editSourceProtection') { title = "Visibility & Protection Rules"; labelTag = "VISIBILITY"; }
+        else if (t === 'profileMetadata') { title = "Profile Metadata & Settings"; labelTag = "PROFILE"; }
+
+        const itemName = d.label || d.name || d.alias || d.title || title;
 
         return html`
             <div class="side-panel-overlay" @click=${this._closeSidePanel}>
                 <div class="side-panel-wrapper" @click=${e => e.stopPropagation()}>
-                    <div class="sp-header">
-                        <div class="sp-header-content">
-                            <span class="sp-title">${title}</span>
-                            <button class="sp-close" @click=${this._closeSidePanel} title="Close">×</button>
-                        </div>
-                    </div>
-
                     <div class="sp-body">
                         ${t === 'manageFields' ? this._renderManageFieldsSidePanelBody(d) : nothing}
                         ${t === 'editField' ? this._renderFieldSidePanelBody(d) : nothing}
@@ -2868,12 +3248,25 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         ${t === 'profileMetadata' ? this._renderProfileMetadataSidePanelBody(d) : nothing}
                     </div>
 
-                    <div class="sp-footer">
-                        <button class="btn btn-secondary" @click=${this._closeSidePanel}>Cancel</button>
-                        <button class="btn btn-primary" @click=${this._saveSidePanel}>Apply Changes</button>
+                    <div class="builder-footer" style="position: static; height: 60px; flex-shrink: 0;">
+                        <div class="footer-left">
+                            <span class="footer-form-label">${labelTag}</span>
+                            <span class="footer-divider">/</span>
+                            <span class="footer-form-name">${itemName}</span>
+                        </div>
+                        <div class="footer-right">
+                            <button class="footer-btn" @click=${this._closeSidePanel} title="Cancel">
+                                <span class="footer-discard-btn">Cancel</span>
+                            </button>
+                            <div class="header-divider"></div>
+                            <button class="footer-btn" @click=${() => this._saveSidePanel()} title="Submit">
+                                <span class="footer-save-btn">Submit</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
+            ${this._showFilterTypePicker ? this._renderFilterTypePicker() : nothing}
         `;
     }
 
@@ -3659,7 +4052,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                     <strong class="sp-choice-title">${f.label || f.alias}</strong>
                                     <span class="badge badge-info">${f.kind || 'field'}</span>
                                 </div>
-                                <span class="sp-choice-meta">Field: <code>${f.field}</code> | Max buckets: ${f.maxValues || 20}</span>
+                                <span class="sp-choice-meta">Field: <code>${f.field}</code> | Max buckets: ${f.maxValues || 20}${f.ranges?.length ? ` | ${f.ranges.length} range options` : ''}</span>
                             </div>
                             <div style="display: flex; align-items: center; gap: 8px;">
                                 <button class="btn-icon" title="Edit Facet" @click=${() => this._openSidePanel('editFacet', f)}>
@@ -3745,67 +4138,505 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     }
 
     _renderFacetSidePanelBody(d) {
+        if (!Array.isArray(d.ranges)) {
+            d.ranges = [];
+        }
+
+        const filterType = d.filterType || (
+            (d.field === '__NodeTypeAlias' || d.field === 'contentTypeAlias' || d.field === 'contentType') ? 'contentType' :
+            (d.field === '__Path' || d.field === 'path') ? 'contentNode' :
+            (d.kind === 'dateRange') ? 'dateRange' :
+            (d.kind === 'numeric') ? 'numeric' : 'field'
+        );
+
         return html`
-            <div class="sp-group">
-                <label class="sp-label">Facet Alias (Key) *</label>
-                <input type="text"
-                       class="sp-input"
-                       placeholder="e.g. category, docType, priceRange"
-                       .value=${d.alias}
-                       @input=${e => { d.alias = e.target.value; this.requestUpdate(); }}>
-                ${this._sidePanelErrors.alias ? html`<span class="sp-error">${this._sidePanelErrors.alias}</span>` : nothing}
+            <!-- Label & System Alias Row (Forms 80%/20% locked pattern) -->
+            <div class="sp-input-wrapper">
+                <div class="sp-label-alias-row ${this._sidePanelErrors.alias ? 'has-error' : ''}">
+                    <input type="text"
+                           .value=${d.label || ''}
+                           @input=${e => {
+                               d.label = e.target.value;
+                               if (!d._aliasUnlocked) {
+                                   this._generateAliasFromLabel(d);
+                               }
+                               this.requestUpdate();
+                           }}
+                           class="sp-input"
+                           placeholder="Enter a filter name (e.g. Policies, Published Year, Price)" />
+                    <div class="sp-alias-cell">
+                        <input type="text"
+                               .value=${d.alias || ''}
+                               ?readonly=${!d._aliasUnlocked}
+                               @input=${e => { d.alias = e.target.value; }}
+                               class="sp-alias-input ${d._aliasUnlocked ? '' : 'is-locked'}"
+                               placeholder="alias"
+                               title="${d._aliasUnlocked ? 'System Alias' : 'System Alias (locked — click padlock to edit)'}" />
+                        <button type="button"
+                                class="sp-alias-lock-btn ${d._aliasUnlocked ? 'is-unlocked' : ''}"
+                                @click=${() => this._toggleAliasLock(d)}
+                                title="${d._aliasUnlocked ? 'Lock alias' : 'Unlock to edit alias'}">
+                            <i class="${d._aliasUnlocked ? 'icon-unlock' : 'icon-lock'}"></i>
+                        </button>
+                    </div>
+                </div>
+                ${this._sidePanelErrors.alias ? html`<div class="sp-error-msg">${this._sidePanelErrors.alias}</div>` : nothing}
             </div>
 
-            <div class="sp-group">
-                <label class="sp-label">Display Label</label>
-                <input type="text"
-                       class="sp-input"
-                       placeholder="e.g. Categories, Content Type"
-                       .value=${d.label}
-                       @input=${e => { d.label = e.target.value; this.requestUpdate(); }}>
+            <!-- Filter Type Trigger Box (Forms 80%/20% Type Selector) -->
+            <div class="sp-input-wrapper">
+                <div class="sp-field-type-trigger-box" @click=${() => this._openFilterTypePicker()}>
+                    <div class="sp-field-type-left-80">
+                        <span class="sp-field-type-title">${this._getFilterTypeName(filterType)}</span>
+                        <span class="sp-field-type-desc">${this._getFilterTypeDesc(filterType)}</span>
+                    </div>
+                    <div class="sp-field-type-right-20">
+                        <span class="sp-field-type-btn-text">Change</span>
+                        <i class="icon-chevron-right sp-field-type-chevron"></i>
+                    </div>
+                </div>
             </div>
 
-            <div class="sp-group">
-                <label class="sp-label">Examine Index Field *</label>
-                <input type="text"
-                       class="sp-input"
-                       placeholder="e.g. category, __NodeTypeAlias, createDate"
-                       .value=${d.field}
-                       @input=${e => { d.field = e.target.value; this.requestUpdate(); }}>
-                ${this._sidePanelErrors.field ? html`<span class="sp-error">${this._sidePanelErrors.field}</span>` : nothing}
-            </div>
+            <!-- Examine Field Configuration (Automatically mapped for Document Type and Content Page; Dropdown for Field, Date, and Numeric) -->
+            ${(filterType === 'contentType' || filterType === 'contentNode') ? nothing : html`
+                <div class="sp-group">
+                    <label class="sp-floating-label">Examine Index Field</label>
+                    <select class="sp-select"
+                            .value=${this._isFieldInDiscoveredList(d.field, filterType) ? (d.field || (filterType === 'dateRange' ? 'updateDate' : filterType === 'numeric' ? 'price' : 'category')) : '__custom__'}
+                            @change=${e => {
+                                const val = e.target.value;
+                                if (val === '__custom__') {
+                                    d._useCustomField = true;
+                                    if (this._isFieldInDiscoveredList(d.field, filterType)) {
+                                        d.field = '';
+                                    }
+                                } else {
+                                    d._useCustomField = false;
+                                    d.field = val;
+                                }
+                                this.requestUpdate();
+                            }}>
+                        ${filterType === 'dateRange' ? html`
+                            <optgroup label="Common Date Fields">
+                                <option value="updateDate">updateDate (Last Updated Date - Default)</option>
+                                <option value="createDate">createDate (Created Date)</option>
+                            </optgroup>
+                        ` : nothing}
+                        ${filterType === 'numeric' ? html`
+                            <optgroup label="Common Numeric Fields">
+                                <option value="price">price (Price Tier - Default)</option>
+                            </optgroup>
+                        ` : nothing}
+                        <optgroup label="Discovered Index Fields">
+                            ${this._getDiscoveredFields().map(f => html`
+                                <option value="${f.name}">${f.name} (${f.type || 'text'})</option>
+                            `)}
+                        </optgroup>
+                        <option value="__custom__">-- Custom Field (Type manually) --</option>
+                    </select>
 
-            <div class="sp-group">
-                <label class="sp-label">Facet Kind</label>
-                <select class="sp-select"
-                        .value=${d.kind}
-                        @change=${e => { d.kind = e.target.value; this.requestUpdate(); }}>
-                    <option value="field">Field Value Buckets (Distinct values)</option>
-                    <option value="dateRange">Date Range Buckets</option>
-                    <option value="numeric">Numeric Range Buckets</option>
-                </select>
-            </div>
+                    ${(d._useCustomField || (!this._isFieldInDiscoveredList(d.field, filterType) && d.field)) ? html`
+                        <div style="margin-top: 6px;">
+                            <input type="text"
+                                   class="sp-input"
+                                   placeholder="Type custom Examine field name (e.g. productSku, reviewRating)"
+                                   .value=${d.field || ''}
+                                   @input=${e => { d.field = e.target.value; this.requestUpdate(); }}>
+                        </div>
+                    ` : nothing}
 
+                    ${this._sidePanelErrors.field ? html`<div class="sp-error-msg">${this._sidePanelErrors.field}</div>` : nothing}
+                </div>
+            `}
+
+            <!-- TYPE SPECIFIC CONFIGURATION -->
+
+            <!-- 1. Document Types Filter Builder -->
+            ${filterType === 'contentType' ? html`
+                <div class="sp-sub-setting">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <div>
+                            <span class="sp-toggle-title">Document Type Segmentation</span>
+                            <span class="sp-toggle-desc" style="display: block;">Select specific document types or leave empty to aggregate all site types dynamically.</span>
+                        </div>
+                        <button type="button" class="btn btn-secondary btn-sm" @click=${() => {
+                            d.ranges = (this._catalog.contentTypes || []).map(ct => ({
+                                alias: ct.alias,
+                                label: ct.name,
+                                from: ct.alias,
+                                to: ''
+                            }));
+                            this.requestUpdate();
+                        }}>
+                            + Select All (${(this._catalog.contentTypes || []).length})
+                        </button>
+                    </div>
+
+                    <div style="display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto; padding-right: 4px;">
+                        ${(this._catalog.contentTypes || []).map(ct => {
+                            const isSelected = (d.ranges || []).some(r => r.from === ct.alias || r.alias === ct.alias);
+                            const existing = (d.ranges || []).find(r => r.from === ct.alias || r.alias === ct.alias);
+                            return html`
+                                <div style="display: flex; align-items: center; justify-content: space-between; background: #fff; border: 1px solid ${isSelected ? '#93c5fd' : '#e2e8f0'}; border-radius: 6px; padding: 8px 12px;">
+                                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; flex: 1;">
+                                        <input type="checkbox"
+                                               class="switch-input"
+                                               .checked=${isSelected}
+                                               @change=${e => {
+                                                   if (e.target.checked) {
+                                                       if (!d.ranges) d.ranges = [];
+                                                       d.ranges.push({ alias: ct.alias, label: ct.name, from: ct.alias, to: '' });
+                                                   } else {
+                                                       d.ranges = (d.ranges || []).filter(r => r.from !== ct.alias && r.alias !== ct.alias);
+                                                   }
+                                                   this.requestUpdate();
+                                               }} />
+                                        <div>
+                                            <strong style="font-size: 13px; color: #1f2937;">${ct.name}</strong>
+                                            <code style="font-size: 11px; margin-left: 6px; color: #6b7280;">${ct.alias}</code>
+                                        </div>
+                                    </label>
+                                    ${isSelected ? html`
+                                        <div style="display: flex; align-items: center; gap: 6px;">
+                                            <input type="text"
+                                                   class="sp-input"
+                                                   style="font-size: 12px; width: 140px; height: 30px; padding: 2px 8px;"
+                                                   placeholder="Display label"
+                                                   .value=${existing?.label || ct.name}
+                                                   @input=${e => {
+                                                       if (existing) existing.label = e.target.value;
+                                                       this.requestUpdate();
+                                                   }} />
+                                        </div>
+                                    ` : nothing}
+                                </div>
+                            `;
+                        })}
+                    </div>
+                </div>
+            ` : nothing}
+
+            <!-- 2. Content Page / Policy Subtree Builder -->
+            ${filterType === 'contentNode' ? html`
+                <div class="sp-sub-setting">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+                        <div>
+                            <span class="sp-toggle-title">Content Pages & Policy Subtrees</span>
+                            <span class="sp-toggle-desc" style="display: block;">Pick content pages (e.g. Policies, Legal, HR). When filtered, search results scope strictly to that section.</span>
+                        </div>
+                        <button type="button" class="btn btn-primary btn-sm" @click=${() => {
+                            if (!d.ranges) d.ranges = [];
+                            d.ranges.push({ alias: '', label: '', from: '', to: '' });
+                            this.requestUpdate();
+                        }}>
+                            + Add Page Option
+                        </button>
+                    </div>
+
+                    ${(!d.ranges || d.ranges.length === 0) ? html`
+                        <div style="text-align: center; padding: 24px; background: #f9fafb; border: 1px dashed #cbd5e1; border-radius: 6px;">
+                            <p style="margin: 0 0 10px 0; color: #64748b; font-size: 13px;">No content pages added yet.</p>
+                            <button type="button" class="btn btn-primary btn-sm" @click=${() => {
+                                if (!d.ranges) d.ranges = [];
+                                d.ranges.push({ alias: 'policies', label: 'Company Policies', from: '', to: '' });
+                                this.requestUpdate();
+                            }}>
+                                + Add First Page Option
+                            </button>
+                        </div>
+                    ` : html`
+                        <div style="display: flex; flex-direction: column; gap: 10px;">
+                            ${d.ranges.map((r, rIdx) => html`
+                                <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px;">
+                                    <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
+                                        <div style="flex: 1.5;">
+                                            <label class="sp-floating-label" style="font-size: 11px; margin-bottom: 2px;">Option Label</label>
+                                            <input type="text"
+                                                   class="sp-input"
+                                                   style="font-size: 12px; height: 32px;"
+                                                   placeholder="e.g. Policies, News, Legal"
+                                                   .value=${r.label || ''}
+                                                   @input=${e => {
+                                                       r.label = e.target.value;
+                                                       if (!r.alias || r.alias.startsWith('range-')) {
+                                                           r.alias = e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-');
+                                                       }
+                                                       this.requestUpdate();
+                                                   }} />
+                                        </div>
+                                        <div style="flex: 1;">
+                                            <label class="sp-floating-label" style="font-size: 11px; margin-bottom: 2px;">Key / Alias</label>
+                                            <input type="text"
+                                                   class="sp-input"
+                                                   style="font-size: 12px; height: 32px;"
+                                                   placeholder="policies"
+                                                   .value=${r.alias || ''}
+                                                   @input=${e => { r.alias = e.target.value; this.requestUpdate(); }} />
+                                        </div>
+                                        <div style="padding-top: 14px;">
+                                            <button type="button" class="btn-icon btn-icon-danger" title="Remove Option" @click=${() => {
+                                                d.ranges.splice(rIdx, 1);
+                                                this.requestUpdate();
+                                            }}>
+                                                <i class="icon-trash"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label class="sp-floating-label" style="font-size: 11px; margin-bottom: 4px;">Choose Content Page</label>
+                                        <umb-input-document
+                                            .selection=${[r.from].filter(Boolean)}
+                                            @change=${e => {
+                                                const sel = e.target.selection || [];
+                                                r.from = sel.length ? sel[0] : '';
+                                                this.requestUpdate();
+                                            }}>
+                                        </umb-input-document>
+                                    </div>
+                                </div>
+                            `)}
+                        </div>
+                    `}
+                </div>
+            ` : nothing}
+
+            <!-- 3. Date Range & Years Filter Builder -->
+            ${filterType === 'dateRange' ? html`
+                <div class="sp-sub-setting">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; gap: 8px;">
+                        <div>
+                            <span class="sp-toggle-title">Date Range & Year Buckets</span>
+                            <span class="sp-toggle-desc" style="display: block;">Configure date intervals. Supports calendar years (2026, 2025), relative terms ("now-7d", "now-30d", "now-1y") or ISO dates.</span>
+                        </div>
+                        <div style="display: flex; gap: 6px; flex-shrink: 0;">
+                            <button type="button" class="btn btn-secondary btn-sm" @click=${() => {
+                                d.ranges = [
+                                    { alias: '2026', label: '2026', from: '2026-01-01', to: '2027-01-01' },
+                                    { alias: '2025', label: '2025', from: '2025-01-01', to: '2026-01-01' },
+                                    { alias: '2024', label: '2024', from: '2024-01-01', to: '2025-01-01' },
+                                    { alias: '2023-earlier', label: '2023 & Earlier', from: '2000-01-01', to: '2024-01-01' }
+                                ];
+                                this.requestUpdate();
+                            }} title="Load calendar year presets">
+                                📅 Year Presets
+                            </button>
+                            <button type="button" class="btn btn-secondary btn-sm" @click=${() => {
+                                d.ranges = [
+                                    { alias: 'last-24-hours', label: 'Last 24 Hours', from: 'now-24h', to: 'now' },
+                                    { alias: 'past-week', label: 'Past 7 Days', from: 'now-7d', to: 'now' },
+                                    { alias: 'past-month', label: 'Past 30 Days', from: 'now-30d', to: 'now' },
+                                    { alias: 'past-year', label: 'Past Year', from: 'now-1y', to: 'now' }
+                                ];
+                                this.requestUpdate();
+                            }} title="Load relative timeframe presets">
+                                ⚡ Relative Presets
+                            </button>
+                            <button type="button" class="btn btn-primary btn-sm" @click=${() => {
+                                if (!Array.isArray(d.ranges)) d.ranges = [];
+                                d.ranges.push({ alias: '', label: '', from: '', to: '' });
+                                this.requestUpdate();
+                            }}>
+                                + Add Option
+                            </button>
+                        </div>
+                    </div>
+
+                    ${(!d.ranges || d.ranges.length === 0) ? html`
+                        <div style="text-align: center; padding: 24px; background: #f9fafb; border: 1px dashed #cbd5e1; border-radius: 6px;">
+                            <p style="margin: 0 0 10px 0; color: #64748b; font-size: 13px;">No date range options defined yet.</p>
+                            <button type="button" class="btn btn-primary btn-sm" @click=${() => {
+                                if (!Array.isArray(d.ranges)) d.ranges = [];
+                                d.ranges.push({ alias: '2026', label: '2026', from: '2026-01-01', to: '2027-01-01' });
+                                this.requestUpdate();
+                            }}>
+                                + Add First Date Option
+                            </button>
+                        </div>
+                    ` : html`
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                            ${d.ranges.map((r, rIdx) => html`
+                                <div style="display: grid; grid-template-columns: 1.4fr 1.2fr 1fr 1fr auto; gap: 8px; align-items: flex-end; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px;">
+                                    <div>
+                                        <label class="sp-floating-label" style="font-size: 11px; margin-bottom: 2px;">Label</label>
+                                        <input type="text"
+                                               class="sp-input"
+                                               style="font-size: 12px; height: 32px; padding: 4px 8px;"
+                                               placeholder="e.g. 2026, Past 7 Days"
+                                               .value=${r.label || ''}
+                                               @input=${e => {
+                                                   r.label = e.target.value;
+                                                   if (!r.alias || r.alias.startsWith('range-')) {
+                                                       r.alias = e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-');
+                                                   }
+                                                   this.requestUpdate();
+                                               }} />
+                                    </div>
+                                    <div>
+                                        <label class="sp-floating-label" style="font-size: 11px; margin-bottom: 2px;">Key / Alias</label>
+                                        <input type="text"
+                                               class="sp-input"
+                                               style="font-size: 12px; height: 32px; padding: 4px 8px;"
+                                               placeholder="2026"
+                                               .value=${r.alias || ''}
+                                               @input=${e => { r.alias = e.target.value; this.requestUpdate(); }} />
+                                    </div>
+                                    <div>
+                                        <label class="sp-floating-label" style="font-size: 11px; margin-bottom: 2px;">From (Min)</label>
+                                        <input type="text"
+                                               class="sp-input"
+                                               style="font-size: 12px; height: 32px; padding: 4px 8px;"
+                                               placeholder="2026-01-01"
+                                               .value=${r.from || ''}
+                                               @input=${e => { r.from = e.target.value; this.requestUpdate(); }} />
+                                    </div>
+                                    <div>
+                                        <label class="sp-floating-label" style="font-size: 11px; margin-bottom: 2px;">To (Max)</label>
+                                        <input type="text"
+                                               class="sp-input"
+                                               style="font-size: 12px; height: 32px; padding: 4px 8px;"
+                                               placeholder="2027-01-01"
+                                               .value=${r.to || ''}
+                                               @input=${e => { r.to = e.target.value; this.requestUpdate(); }} />
+                                    </div>
+                                    <div style="padding-bottom: 2px;">
+                                        <button type="button" class="btn-icon btn-icon-danger" title="Remove Range Option" @click=${() => {
+                                            d.ranges.splice(rIdx, 1);
+                                            this.requestUpdate();
+                                        }}>
+                                            <i class="icon-trash"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            `)}
+                        </div>
+                    `}
+                </div>
+            ` : nothing}
+
+            <!-- 4. Numeric Range Filter Builder -->
+            ${filterType === 'numeric' ? html`
+                <div class="sp-sub-setting">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; gap: 8px;">
+                        <div>
+                            <span class="sp-toggle-title">Numeric Range Buckets</span>
+                            <span class="sp-toggle-desc" style="display: block;">Configure numeric intervals with inclusive "From" and exclusive "To" bounds (e.g. 0 to 50, 50 to 100).</span>
+                        </div>
+                        <div style="display: flex; gap: 6px; flex-shrink: 0;">
+                            <button type="button" class="btn btn-secondary btn-sm" @click=${() => {
+                                d.ranges = [
+                                    { alias: 'under-25', label: 'Under $25', from: '', to: '25' },
+                                    { alias: '25-to-50', label: '$25 to $50', from: '25', to: '50' },
+                                    { alias: '50-to-100', label: '$50 to $100', from: '50', to: '100' },
+                                    { alias: 'over-100', label: '$100 & Above', from: '100', to: '' }
+                                ];
+                                this.requestUpdate();
+                            }} title="Load standard price tiers">
+                                💰 Price Presets
+                            </button>
+                            <button type="button" class="btn btn-primary btn-sm" @click=${() => {
+                                if (!Array.isArray(d.ranges)) d.ranges = [];
+                                d.ranges.push({ alias: '', label: '', from: '', to: '' });
+                                this.requestUpdate();
+                            }}>
+                                + Add Option
+                            </button>
+                        </div>
+                    </div>
+
+                    ${(!d.ranges || d.ranges.length === 0) ? html`
+                        <div style="text-align: center; padding: 24px; background: #f9fafb; border: 1px dashed #cbd5e1; border-radius: 6px;">
+                            <p style="margin: 0 0 10px 0; color: #64748b; font-size: 13px;">No numeric ranges defined yet.</p>
+                            <button type="button" class="btn btn-primary btn-sm" @click=${() => {
+                                if (!Array.isArray(d.ranges)) d.ranges = [];
+                                d.ranges.push({ alias: '0-50', label: '$0 - $50', from: '0', to: '50' });
+                                this.requestUpdate();
+                            }}>
+                                + Add First Numeric Option
+                            </button>
+                        </div>
+                    ` : html`
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                            ${d.ranges.map((r, rIdx) => html`
+                                <div style="display: grid; grid-template-columns: 1.4fr 1.2fr 1fr 1fr auto; gap: 8px; align-items: flex-end; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px;">
+                                    <div>
+                                        <label class="sp-floating-label" style="font-size: 11px; margin-bottom: 2px;">Label</label>
+                                        <input type="text"
+                                               class="sp-input"
+                                               style="font-size: 12px; height: 32px; padding: 4px 8px;"
+                                               placeholder="Under $50"
+                                               .value=${r.label || ''}
+                                               @input=${e => {
+                                                   r.label = e.target.value;
+                                                   if (!r.alias || r.alias.startsWith('range-')) {
+                                                       r.alias = e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-');
+                                                   }
+                                                   this.requestUpdate();
+                                               }} />
+                                    </div>
+                                    <div>
+                                        <label class="sp-floating-label" style="font-size: 11px; margin-bottom: 2px;">Key / Alias</label>
+                                        <input type="text"
+                                               class="sp-input"
+                                               style="font-size: 12px; height: 32px; padding: 4px 8px;"
+                                               placeholder="under-50"
+                                               .value=${r.alias || ''}
+                                               @input=${e => { r.alias = e.target.value; this.requestUpdate(); }} />
+                                    </div>
+                                    <div>
+                                        <label class="sp-floating-label" style="font-size: 11px; margin-bottom: 2px;">From (Min)</label>
+                                        <input type="text"
+                                               class="sp-input"
+                                               style="font-size: 12px; height: 32px; padding: 4px 8px;"
+                                               placeholder="0"
+                                               .value=${r.from || ''}
+                                               @input=${e => { r.from = e.target.value; this.requestUpdate(); }} />
+                                    </div>
+                                    <div>
+                                        <label class="sp-floating-label" style="font-size: 11px; margin-bottom: 2px;">To (Max)</label>
+                                        <input type="text"
+                                               class="sp-input"
+                                               style="font-size: 12px; height: 32px; padding: 4px 8px;"
+                                               placeholder="50"
+                                               .value=${r.to || ''}
+                                               @input=${e => { r.to = e.target.value; this.requestUpdate(); }} />
+                                    </div>
+                                    <div style="padding-bottom: 2px;">
+                                        <button type="button" class="btn-icon btn-icon-danger" title="Remove Range Option" @click=${() => {
+                                            d.ranges.splice(rIdx, 1);
+                                            this.requestUpdate();
+                                        }}>
+                                            <i class="icon-trash"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            `)}
+                        </div>
+                    `}
+                </div>
+            ` : nothing}
+
+            <!-- Common Display & Bucket Options -->
             <div class="sp-group">
-                <label class="sp-label">Max Returned Buckets</label>
+                <label class="sp-floating-label">Max Returned Buckets / Options</label>
                 <input type="number"
                        class="sp-input"
                        min="1"
                        max="100"
-                       .value=${String(d.maxValues)}
+                       .value=${String(d.maxValues || 20)}
                        @input=${e => { d.maxValues = parseInt(e.target.value) || 20; this.requestUpdate(); }}>
             </div>
 
-            <div class="sp-group">
-                <label class="toggle-item">
-                    <div class="toggle-info">
-                        <strong>Hide Empty Buckets</strong>
-                        <span>Hide buckets that currently have 0 matched results.</span>
-                    </div>
+            <div class="sp-toggle-row">
+                <div class="sp-toggle-info">
+                    <span class="sp-toggle-title">Hide Empty Filter Options</span>
+                    <span class="sp-toggle-desc">Hide options that currently match 0 results for the active query.</span>
+                </div>
+                <label class="switch switch-sm">
                     <input type="checkbox"
-                           class="switch-input"
-                           .checked=${d.hideEmpty}
+                           .checked=${d.hideEmpty !== false}
                            @change=${e => { d.hideEmpty = e.target.checked; this.requestUpdate(); }}>
+                    <span class="slider round"></span>
                 </label>
             </div>
         `;
@@ -5237,32 +6068,43 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         }
 
         /* Side Panel Slide-Over */
+        /* Side Panel Slide-Over & Drawer */
         .side-panel-overlay {
             position: fixed;
-            top: 0;
+            top: 58px;
             left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.45);
+            width: 100%;
+            height: calc(100% - 58px);
+            background: rgba(15, 23, 42, 0.4);
+            backdrop-filter: blur(4px);
+            z-index: 200000;
             display: flex;
             justify-content: flex-end;
-            z-index: 9999;
-            backdrop-filter: blur(2px);
+            opacity: 1;
+            animation: fadeInOverlay 0.3s forwards;
         }
 
         .side-panel-wrapper {
-            width: 640px;
+            width: 680px;
             max-width: 92vw;
+            background: var(--surface);
             height: 100%;
-            background: #ffffff;
-            box-shadow: var(--shadow-lg);
+            box-shadow: -10px 0 50px rgba(0, 0, 0, 0.15);
             display: flex;
             flex-direction: column;
+            transform: translateX(0);
+            animation: slideInPanel 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            border-left: 1px solid var(--border-light);
             box-sizing: border-box;
-            animation: slideInRight 0.22s ease-out;
+            position: relative;
         }
 
-        @keyframes slideInRight {
+        @keyframes fadeInOverlay {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes slideInPanel {
             from { transform: translateX(100%); }
             to { transform: translateX(0); }
         }
@@ -5309,6 +6151,487 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             display: flex;
             flex-direction: column;
             gap: 6px;
+        }
+
+        .sp-input-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            width: 100%;
+        }
+
+        .sp-error-msg {
+            color: var(--error);
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 4px;
+        }
+
+        /* 80% Label + 20% System Alias Row */
+        .sp-label-alias-row {
+            display: flex;
+            width: 100%;
+            height: 48px;
+            border: 1px solid #d1d5db;
+            border-radius: var(--radius-md);
+            overflow: hidden;
+            align-items: stretch;
+            box-sizing: border-box;
+            background: #ffffff;
+            transition: var(--transition);
+        }
+
+        .sp-label-alias-row.has-error {
+            border-color: var(--error);
+        }
+
+        .sp-label-alias-row .sp-input { 
+            flex: 0 0 80%;
+            width: 80%;
+            background: #ffffff;
+            border: none;
+            border-right: 1px solid #d1d5db;
+            border-radius: 0;
+            padding: 7px 14px;
+            font-size: 13.5px;
+            font-weight: 600;
+            color: #1f2937;
+            box-sizing: border-box;
+        }
+
+        .sp-label-alias-row .sp-input:focus {
+            background: #ffffff;
+            border-color: transparent;
+            box-shadow: none;
+            outline: none;
+        }
+
+        .sp-alias-cell {
+            flex: 0 0 20%;
+            width: 20%;
+            display: flex;
+            align-items: stretch;
+            background: #f3f4f6;
+            box-sizing: border-box;
+            min-width: 0;
+        }
+
+        .sp-alias-input {
+            flex: 1 1 auto;
+            min-width: 0;
+            padding: 7px 4px 7px 10px;
+            border: none;
+            border-radius: 0;
+            font-size: 12px;
+            color: var(--text-primary);
+            background: transparent;
+            box-sizing: border-box;
+        }
+
+        .sp-alias-input::placeholder { color: var(--text-tertiary); font-style: italic; }
+
+        .sp-alias-input:focus {
+            background: #e5e7eb;
+            border-color: transparent;
+            box-shadow: none;
+            outline: none;
+        }
+
+        .sp-alias-input.is-locked {
+            color: var(--text-tertiary);
+            cursor: not-allowed;
+        }
+
+        .sp-alias-lock-btn {
+            flex: 0 0 auto;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            padding: 0;
+            border: none;
+            background: transparent;
+            color: var(--text-tertiary);
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .sp-alias-lock-btn:hover { color: #000000; }
+        .sp-alias-lock-btn.is-unlocked { color: #000000; }
+        .sp-alias-lock-btn i { font-size: 13px; }
+
+        .sp-floating-label { 
+            font-size: 12px; 
+            font-weight: 700; 
+            color: var(--text-secondary); 
+            margin-bottom: 6px; 
+            display: block; 
+        }
+
+        /* 80%/20% Type Trigger Box */
+        .sp-field-type-trigger-box {
+            display: flex;
+            width: 100%;
+            min-height: 52px;
+            border: 1px solid #d1d5db;
+            border-radius: var(--radius-md);
+            overflow: hidden;
+            align-items: stretch;
+            box-sizing: border-box;
+            background: #ffffff;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .sp-field-type-trigger-box:hover {
+            border-color: #9ca3af;
+        }
+
+        .sp-field-type-left-80 {
+            flex: 0 0 80%;
+            width: 80%;
+            background: #ffffff;
+            border-right: 1px solid #d1d5db;
+            padding: 8px 14px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 2px;
+            box-sizing: border-box;
+        }
+
+        .sp-field-type-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #1f2937;
+        }
+
+        .sp-field-type-desc {
+            font-size: 11px;
+            color: #6b7280;
+            line-height: 1.25;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .sp-field-type-right-20 {
+            flex: 0 0 20%;
+            width: 20%;
+            background: #f3f4f6;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            padding: 8px 6px;
+            box-sizing: border-box;
+            transition: background 0.2s ease;
+        }
+
+        .sp-field-type-trigger-box:hover .sp-field-type-right-20 {
+            background: #e5e7eb;
+        }
+
+        .sp-field-type-btn-text {
+            font-size: 12px;
+            font-weight: 600;
+            color: #374151;
+        }
+
+        .sp-field-type-chevron {
+            font-size: 11px;
+            color: #4b5563;
+        }
+
+        /* Type Picker Overlay & Drawer */
+        .field-type-picker-overlay {
+            position: fixed;
+            top: 58px;
+            left: 0;
+            width: 100%;
+            height: calc(100% - 58px);
+            background: rgba(15, 23, 42, 0.4);
+            backdrop-filter: blur(4px);
+            z-index: 300000;
+            display: flex;
+            justify-content: flex-end;
+            opacity: 1;
+            animation: fadeInOverlay 0.3s forwards;
+        }
+
+        .field-type-picker-wrapper {
+            width: 680px;
+            max-width: 92vw;
+            background: var(--surface);
+            margin-top: 0;
+            height: 100%;
+            border-top-left-radius: 0;
+            box-shadow: -10px 0 50px rgba(0, 0, 0, 0.15);
+            display: flex;
+            flex-direction: column;
+            transform: translateX(0);
+            animation: slideInPanel 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            overflow: hidden;
+            border-left: 1px solid var(--border-light);
+        }
+
+        .field-type-picker-body {
+            padding: 20px 24px;
+            flex: 1;
+            overflow-y: auto;
+            min-height: 0;
+        }
+
+        .field-type-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .field-type-card {
+            display: flex;
+            align-items: center;
+            padding: 10px 14px;
+            border: 1px solid #e5e7eb;
+            border-radius: var(--radius-md);
+            background: #ffffff;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            gap: 12px;
+        }
+
+        .field-type-card:hover {
+            border-color: #9ca3af;
+            background: #f9fafb;
+        }
+
+        .field-type-card.selected {
+            border-color: #4b5563;
+            background: #f3f4f6;
+            box-shadow: 0 0 0 2px rgba(75, 85, 99, 0.15);
+        }
+
+        .field-type-card-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 6px;
+            background: #f3f4f6;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #4b5563;
+            flex-shrink: 0;
+            transition: all 0.2s ease;
+        }
+
+        .field-type-card.selected .field-type-card-icon {
+            background: #374151;
+            color: #ffffff;
+        }
+
+        .field-type-card-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            flex: 1;
+        }
+
+        .field-type-card-name {
+            font-size: 13px;
+            font-weight: 700;
+            color: #1f2937;
+        }
+
+        .field-type-card-desc {
+            font-size: 11px;
+            color: #6b7280;
+            line-height: 1.3;
+        }
+
+        .field-type-card-check {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #374151;
+        }
+
+        /* Sub-settings & Toggles */
+        .sp-sub-setting { 
+            margin-top: 8px; 
+            padding: 16px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+        }
+
+        .sp-toggle-row { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            padding: 12px 16px; 
+            background: #f9fafb; 
+            border-radius: var(--radius-md); 
+            border: 1px solid #e5e7eb; 
+            transition: var(--transition);
+        }
+
+        .sp-toggle-info { display: flex; flex-direction: column; gap: 2px; }
+
+        .sp-toggle-title { 
+            font-size: 13.5px; 
+            font-weight: 700; 
+            color: var(--text-primary); 
+        }
+
+        .sp-toggle-desc { 
+            font-size: 11.5px; 
+            color: var(--text-tertiary); 
+            font-weight: 500;
+        }
+
+        /* Switch Component */
+        .switch { 
+            position: relative; 
+            display: inline-block; 
+            width: 42px; 
+            height: 22px; 
+            flex-shrink: 0;
+        }
+
+        .switch input { opacity: 0; width: 0; height: 0; }
+
+        .slider { 
+            position: absolute; 
+            cursor: pointer; 
+            top: 0; 
+            left: 0; 
+            right: 0; 
+            bottom: 0; 
+            background-color: #cbd5e1; 
+            transition: var(--transition); 
+            border-radius: 34px; 
+        }
+
+        .slider:before { 
+            position: absolute; 
+            content: ""; 
+            height: 16px; 
+            width: 16px; 
+            left: 3px; 
+            bottom: 3px; 
+            background-color: white; 
+            transition: var(--transition); 
+            border-radius: 50%; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+
+        input:checked + .slider { 
+            background-color: #10b981; 
+        }
+
+        input:checked + .slider:before { 
+            transform: translateX(20px); 
+        }
+
+        .switch-sm { width: 34px; height: 18px; margin: 0; }
+        
+        .switch-sm .slider:before { 
+            height: 12px; 
+            width: 12px; 
+            left: 3px; 
+            bottom: 3px; 
+        }
+        
+        .switch-sm input:checked + .slider:before { 
+            transform: translateX(16px); 
+        }
+
+        /* Docked Builder Footer (Exact Forms UI) */
+        .builder-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: stretch;
+            height: 60px;
+            flex-shrink: 0;
+            background: #ffffff;
+            border: none;
+            border-top: 1px solid #e5e7eb;
+            border-radius: 0;
+            padding: 0 24px;
+            margin: 0;
+            box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.04);
+            box-sizing: border-box;
+        }
+
+        .builder-footer .footer-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .builder-footer .footer-form-label {
+            font-size: 11px;
+            font-weight: 800;
+            color: #94a3b8;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .builder-footer .footer-divider {
+            color: #cbd5e1;
+            font-weight: 300;
+        }
+
+        .builder-footer .footer-form-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: #374151;
+        }
+
+        .builder-footer .footer-right {
+            display: flex;
+            align-items: stretch;
+            gap: 0;
+            height: 100%;
+        }
+
+        .builder-footer .header-divider {
+            width: 1px;
+            background: #e0e0e0;
+            align-self: stretch;
+        }
+
+        .builder-footer .footer-btn {
+            background: transparent !important;
+            border: none !important;
+            padding: 0 16px !important;
+            height: 100% !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            font-size: 13px !important;
+            font-weight: 600 !important;
+            color: #000000 !important;
+            cursor: pointer !important;
+            transition: background 0.15s !important;
+            user-select: none !important;
+            border-radius: 0 !important;
+        }
+
+        .builder-footer .footer-btn:hover {
+            background: #f5f5f5 !important;
+        }
+
+        .builder-footer .footer-save-btn {
+            color: #2ea44f !important;
+            font-size: 13px !important;
+            font-weight: 600 !important;
+        }
+
+        .builder-footer .footer-discard-btn {
+            color: #dc3545 !important;
+            font-size: 13px !important;
+            font-weight: 600 !important;
         }
 
         /* Full Height & Width Multi-Choice Layout */

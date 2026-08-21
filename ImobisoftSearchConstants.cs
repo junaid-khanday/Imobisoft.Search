@@ -83,6 +83,7 @@ public static class ImobisoftSearchConstants
         public const string NodeTypeAlias = "__NodeTypeAlias";
         public const string IndexType = "__IndexType";
         public const string Key = "__Key";
+        public const string NodeId = "__NodeId";
         public const string Path = "__Path";
         public const string Icon = "__Icon";
         public const string Published = "__Published";
