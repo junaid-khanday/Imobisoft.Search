@@ -2616,56 +2616,34 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
 
         return html`
             <div class="source-settings-container">
-                <div class="mf-field">
-                    <div class="field-left-info">
-                        <div class="setting-title">Configured Facet Dimensions</div>
-                        <div class="setting-desc">Facets return dynamic filter dimensions with live counts for your search UI sidebar.</div>
-                    </div>
-                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editFacet')}>
-                        <div class="field-box-header">
-                            <span class="field-type-tag">Facet Dimensions</span>
-                            <span class="field-count-pill">${facets.length ? `${facets.length} filters configured` : 'No Filters'}</span>
-                        </div>
-                        <div class="field-box-content">
-                            ${facets.length ? html`
-                                <div class="selected-chips-wrap">
-                                    ${facets.map(f => html`
-                                        <span class="selected-chip" style="cursor: pointer;" @click=${(e) => { e.stopPropagation(); this._openSidePanel('editFacet', f); }}>
-                                            <strong>${f.label || f.alias}</strong>
-                                            <span class="chip-meta">(kind: <code>${f.kind || 'field'}</code>, field: <code>${f.field}</code>${f.ranges?.length ? `, ${f.ranges.length} options` : ''})</span>
-                                        </span>
-                                    `)}
-                                </div>
-                            ` : html`
-                                <div class="selected-placeholder">
-                                    <span class="placeholder-tag">No Filters Added</span>
-                                    <span class="placeholder-meta">Click to add your first search filter (e.g. Document Types, Policies, Date Range, Price).</span>
-                                </div>
-                            `}
-                        </div>
-                    </div>
-                </div>
+                ${facets.map((f, idx) => {
+                    const isEnabled = f.enabled !== false;
+                    const fField = String(f.field || '').toLowerCase();
+                    const fKind = String(f.kind || '').toLowerCase();
+                    const filterType = (fField === '__nodetypealias' || fField === 'contenttypealias' || fField === 'contenttype') ? 'contentType' :
+                                       (fField === '__path' || fField === 'path' || fField === '__key' || fField === 'key') ? 'contentNode' :
+                                       (fKind === 'daterange') ? 'dateRange' :
+                                       (fKind === 'numeric') ? 'numeric' : 'field';
+                    const typeName = this._getFilterTypeName(filterType);
 
-                ${facets.length > 0 ? html`
-                    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
-                        ${facets.map((f, idx) => {
-                            const isEnabled = f.enabled !== false;
-                            return html`
-                                <div class="sp-choice-card"
-                                     style="cursor: pointer; padding: 12px 18px; opacity: ${isEnabled ? '1' : '0.65'}; transition: opacity 0.2s ease;"
-                                     @click=${() => this._openSidePanel('editFacet', f)}>
-                                    <div class="sp-choice-info">
-                                        <div style="display: flex; align-items: center; gap: 8px;">
-                                            <strong class="sp-choice-title" style="font-size: 14px;">${f.label || f.alias}</strong>
-                                            <span class="badge badge-info">${f.kind || 'field'}</span>
-                                            ${!isEnabled ? html`<span class="badge badge-muted" style="background: #f1f5f9; color: #64748b; font-size: 11px;">Disabled</span>` : nothing}
-                                        </div>
-                                        <span class="sp-choice-meta" style="margin-top: 2px;">
-                                            ${f.kind === 'field' && (!f.ranges || f.ranges.length === 0) ? 'Dynamic Tag / Taxonomy' : (f.ranges?.length ? `${f.ranges.length} option(s) configured` : 'Facet Filter')}
-                                            ${f.hideEmpty !== false ? ' • Hide Empty' : ''}
-                                        </span>
-                                    </div>
-                                    <div style="display: flex; align-items: center; gap: 10px;" @click=${e => e.stopPropagation()}>
+                    return html`
+                        <div class="mf-field" style="opacity: ${isEnabled ? '1' : '0.65'}; transition: opacity 0.2s ease;">
+                            <div class="field-left-info">
+                                <div class="setting-title" style="display: flex; align-items: center; gap: 8px;">
+                                    <span>${f.label || f.alias}</span>
+                                    ${!isEnabled ? html`<span class="badge badge-muted" style="font-size: 10px; padding: 2px 6px;">Disabled</span>` : nothing}
+                                </div>
+                                <div class="setting-desc">
+                                    ${f.kind === 'field' && (!f.ranges || f.ranges.length === 0)
+                                        ? 'Dynamic facet filter aggregating distinct values directly from matched results.'
+                                        : `Provides ${f.ranges?.length || 0} selectable option(s) for filtering search results.`}
+                                    ${f.hideEmpty !== false ? ' (Hides empty options)' : ''}
+                                </div>
+                            </div>
+                            <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editFacet', f)}>
+                                <div class="field-box-header">
+                                    <span class="field-type-tag">${typeName}</span>
+                                    <div style="display: flex; align-items: center; gap: 8px;" @click=${e => e.stopPropagation()}>
                                         <label class="switch switch-sm" title="${isEnabled ? 'Filter is Enabled (click to disable)' : 'Filter is Disabled (click to enable)'}">
                                             <input type="checkbox"
                                                    .checked=${isEnabled}
@@ -2676,9 +2654,9 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                                    }}>
                                             <span class="slider round"></span>
                                         </label>
-                                        <button class="btn-icon" title="Edit Filter" @click=${() => this._openSidePanel('editFacet', f)}>
-                                            <i class="icon-edit"></i>
-                                        </button>
+                                        <span class="field-count-pill ${isEnabled ? '' : 'pill-muted'}">
+                                            ${f.ranges?.length ? `${f.ranges.length} options` : (f.kind === 'field' ? 'Dynamic' : 'Configured')}
+                                        </span>
                                         <button class="btn-icon btn-icon-danger" title="Remove Filter" @click=${async (e) => {
                                             e.stopPropagation();
                                             facets.splice(idx, 1);
@@ -2689,10 +2667,50 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                         </button>
                                     </div>
                                 </div>
-                            `;
-                        })}
+                                <div class="field-box-content">
+                                    ${(f.ranges && f.ranges.length > 0) ? html`
+                                        <div class="selected-chips-wrap">
+                                            ${f.ranges.map(r => html`
+                                                <span class="selected-chip">
+                                                    <strong>${r.label || r.alias}</strong>
+                                                    ${r.alias && r.alias !== r.label ? html`<span class="chip-meta">(${r.alias})</span>` : nothing}
+                                                </span>
+                                            `)}
+                                        </div>
+                                    ` : html`
+                                        <div class="selected-placeholder">
+                                            <span class="placeholder-tag">Dynamic Aggregation</span>
+                                            <span class="placeholder-meta">Values and live counts discovered automatically from index data.</span>
+                                        </div>
+                                    `}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                })}
+
+                ${facets.length === 0 ? html`
+                    <div class="mf-field">
+                        <div class="field-left-info">
+                            <div class="setting-title">Search Filter Dimensions</div>
+                            <div class="setting-desc">Facets return dynamic filter dimensions with live counts for your search UI sidebar.</div>
+                        </div>
+                        <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editFacet')}>
+                            <div class="field-box-header">
+                                <span class="field-type-tag">Facet Dimensions</span>
+                                <span class="field-count-pill">No Filters</span>
+                            </div>
+                            <div class="field-box-content">
+                                <div class="selected-placeholder">
+                                    <span class="placeholder-tag">No Filters Added</span>
+                                    <span class="placeholder-meta">Click to add your first search filter (e.g. Document Types, Policies, Date Range, Price).</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 ` : nothing}
+
+
             </div>
         `;
     }
