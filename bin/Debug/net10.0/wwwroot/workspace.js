@@ -466,6 +466,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         if (!p.rules.sources.includeMediaTypes) p.rules.sources.includeMediaTypes = [];
         if (!p.rules.sources.excludeMediaTypes) p.rules.sources.excludeMediaTypes = [];
         if (!p.rules.sources.rootNodeKeys) p.rules.sources.rootNodeKeys = [];
+        if (!p.rules.sources.startNodeKeys) p.rules.sources.startNodeKeys = p.rules.sources.rootNodeKeys || [];
         if (!p.rules.sources.excludedNodeKeys) p.rules.sources.excludedNodeKeys = [];
         if (p.rules.sources.excludeDescendantsOfExcludedNodes === undefined) p.rules.sources.excludeDescendantsOfExcludedNodes = true;
         if (!p.rules.sources.cultures) p.rules.sources.cultures = [];
@@ -743,6 +744,103 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             if (data) {
                 this._sidePanelData._synonymsInput = (data.synonyms || []).join(', ');
             }
+        } else if (type === 'editSourceIndexes') {
+            this._sidePanelData = {
+                indexes: [...(this._currentProfile.rules?.sources?.indexes || [])]
+            };
+        } else if (type === 'editSourceEntityTypes') {
+            this._sidePanelData = {
+                indexTypes: [...(this._currentProfile.rules?.sources?.indexTypes || [])]
+            };
+        } else if (type === 'editSourceContentTypes') {
+            this._sidePanelData = {
+                includeContentTypes: [...(this._currentProfile.rules?.sources?.includeContentTypes || [])],
+                _searchFilter: ''
+            };
+        } else if (type === 'editSourceExcludeContentTypes') {
+            this._sidePanelData = {
+                excludeContentTypes: [...(this._currentProfile.rules?.sources?.excludeContentTypes || [])],
+                _searchFilter: ''
+            };
+        } else if (type === 'editSourceRoots') {
+            const rootKeys = this._currentProfile.rules?.sources?.rootNodeKeys || this._currentProfile.rules?.sources?.startNodeKeys || [];
+            this._sidePanelData = {
+                rootNodeKeys: [...rootKeys],
+                _rootsInput: rootKeys.join('\n'),
+                excludeDescendantsOfExcludedNodes: this._currentProfile.rules?.sources?.excludeDescendantsOfExcludedNodes !== false
+            };
+        } else if (type === 'editSourceProtection') {
+            this._sidePanelData = {
+                publishedOnly: this._currentProfile.rules?.sources?.publishedOnly !== false,
+                respectNaviHide: this._currentProfile.rules?.sources?.respectNaviHide !== false,
+                excludeProtected: this._currentProfile.rules?.sources?.excludeProtected !== false
+            };
+        } else if (type === 'manageFields') {
+            this._sidePanelData = {
+                fields: JSON.parse(JSON.stringify(this._currentProfile.rules?.matching?.fields || []))
+            };
+        } else if (type === 'editMatchParameters') {
+            this._sidePanelData = {
+                defaultOperator: this._currentProfile.rules?.matching?.defaultOperator || 'or',
+                fuzziness: this._currentProfile.rules?.matching?.fuzziness ?? 0.8,
+                minimumQueryLength: this._currentProfile.rules?.matching?.minimumQueryLength ?? 2,
+                allTermsMustMatch: this._currentProfile.rules?.matching?.allTermsMustMatch || false
+            };
+        } else if (type === 'editStopWords') {
+            const words = this._currentProfile.rules?.matching?.stopWords || [];
+            this._sidePanelData = {
+                stopWords: [...words],
+                _wordsInput: words.join('\n')
+            };
+        } else if (type === 'manageSynonyms') {
+            this._sidePanelData = {
+                synonyms: JSON.parse(JSON.stringify(this._currentProfile.rules?.matching?.synonyms || {}))
+            };
+        } else if (type === 'manageSort') {
+            this._sidePanelData = {
+                sortBy: JSON.parse(JSON.stringify(this._currentProfile.rules?.ranking?.sortBy || []))
+            };
+        } else if (type === 'manageContentTypeBoosts') {
+            this._sidePanelData = {
+                contentTypeBoosts: JSON.parse(JSON.stringify(this._currentProfile.rules?.ranking?.contentTypeBoosts || {}))
+            };
+        } else if (type === 'manageBestBets') {
+            this._sidePanelData = {
+                bestBets: JSON.parse(JSON.stringify(this._currentProfile.rules?.ranking?.bestBets || []))
+            };
+        } else if (type === 'editRecency') {
+            this._sidePanelData = {
+                enabled: this._currentProfile.rules?.ranking?.recency?.enabled || false,
+                halfLifeDays: this._currentProfile.rules?.ranking?.recency?.halfLifeDays ?? 90,
+                weight: this._currentProfile.rules?.ranking?.recency?.weight ?? 0.5
+            };
+        } else if (type === 'editBlockedTerms') {
+            const terms = this._currentProfile.rules?.ranking?.blockedTerms || [];
+            this._sidePanelData = {
+                blockedTerms: [...terms],
+                _termsInput: terms.join('\n')
+            };
+        } else if (type === 'editPaging') {
+            this._sidePanelData = {
+                pageSize: this._currentProfile.rules?.results?.pageSize ?? 10,
+                maxResults: this._currentProfile.rules?.results?.maxResults ?? 500
+            };
+        } else if (type === 'editHighlighting') {
+            this._sidePanelData = {
+                enabled: this._currentProfile.rules?.results?.highlight?.enabled || false,
+                mode: this._currentProfile.rules?.results?.highlight?.mode || 'sentence',
+                snippetLength: this._currentProfile.rules?.results?.highlight?.snippetLength ?? 200,
+                sentenceContext: this._currentProfile.rules?.results?.highlight?.sentenceContext ?? 0
+            };
+        } else if (type === 'editResultShaping') {
+            this._sidePanelData = {
+                deduplicateByField: this._currentProfile.rules?.results?.deduplicateByField || '',
+                groupByContentType: this._currentProfile.rules?.results?.groupByContentType || false
+            };
+        } else if (type === 'manageFacets') {
+            this._sidePanelData = {
+                facets: JSON.parse(JSON.stringify(this._currentProfile.rules?.results?.facets || []))
+            };
         } else if (type === 'profileMetadata') {
             this._sidePanelData = {
                 name: this._currentProfile.name,
@@ -897,6 +995,70 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             }
 
             this._currentProfile.rules.matching.synonyms[d.term.trim().toLowerCase()] = syns;
+        } else if (this._sidePanelType === 'editSourceIndexes') {
+            this._currentProfile.rules.sources.indexes = [...(d.indexes || [])];
+        } else if (this._sidePanelType === 'editSourceEntityTypes') {
+            this._currentProfile.rules.sources.indexTypes = [...(d.indexTypes || [])];
+        } else if (this._sidePanelType === 'editSourceContentTypes') {
+            this._currentProfile.rules.sources.includeContentTypes = [...(d.includeContentTypes || [])];
+        } else if (this._sidePanelType === 'editSourceExcludeContentTypes') {
+            this._currentProfile.rules.sources.excludeContentTypes = [...(d.excludeContentTypes || [])];
+        } else if (this._sidePanelType === 'editSourceRoots') {
+            let keys = d.rootNodeKeys ? [...d.rootNodeKeys] : [];
+            if ((!keys || keys.length === 0) && d._rootsInput) {
+                keys = d._rootsInput.split('\n').map(s => s.trim()).filter(Boolean);
+            }
+            this._currentProfile.rules.sources.rootNodeKeys = keys;
+            this._currentProfile.rules.sources.startNodeKeys = keys;
+            this._currentProfile.rules.sources.excludeDescendantsOfExcludedNodes = d.excludeDescendantsOfExcludedNodes !== false;
+        } else if (this._sidePanelType === 'editSourceProtection') {
+            this._currentProfile.rules.sources.publishedOnly = d.publishedOnly !== false;
+            this._currentProfile.rules.sources.respectNaviHide = d.respectNaviHide !== false;
+            this._currentProfile.rules.sources.excludeProtected = d.excludeProtected !== false;
+        } else if (this._sidePanelType === 'manageFields') {
+            this._currentProfile.rules.matching.fields = d.fields || [];
+        } else if (this._sidePanelType === 'editMatchParameters') {
+            this._currentProfile.rules.matching.defaultOperator = d.defaultOperator || 'or';
+            this._currentProfile.rules.matching.fuzziness = parseFloat(d.fuzziness) || 0.8;
+            this._currentProfile.rules.matching.minimumQueryLength = parseInt(d.minimumQueryLength) || 2;
+            this._currentProfile.rules.matching.allTermsMustMatch = !!d.allTermsMustMatch;
+        } else if (this._sidePanelType === 'editStopWords') {
+            let words = d._wordsInput ? d._wordsInput.split('\n').map(s => s.trim().toLowerCase()).filter(Boolean) : (d.stopWords || []);
+            this._currentProfile.rules.matching.stopWords = Array.from(new Set(words));
+        } else if (this._sidePanelType === 'manageSynonyms') {
+            this._currentProfile.rules.matching.synonyms = d.synonyms || {};
+        } else if (this._sidePanelType === 'manageSort') {
+            this._currentProfile.rules.ranking.sortBy = d.sortBy || [];
+        } else if (this._sidePanelType === 'manageContentTypeBoosts') {
+            this._currentProfile.rules.ranking.contentTypeBoosts = d.contentTypeBoosts || {};
+        } else if (this._sidePanelType === 'manageBestBets') {
+            this._currentProfile.rules.ranking.bestBets = d.bestBets || [];
+        } else if (this._sidePanelType === 'editRecency') {
+            if (!this._currentProfile.rules.ranking.recency) this._currentProfile.rules.ranking.recency = {};
+            this._currentProfile.rules.ranking.recency.enabled = !!d.enabled;
+            this._currentProfile.rules.ranking.recency.halfLifeDays = parseInt(d.halfLifeDays) || 90;
+            this._currentProfile.rules.ranking.recency.weight = parseFloat(d.weight) || 0.5;
+        } else if (this._sidePanelType === 'editBlockedTerms') {
+            let terms = d._termsInput ? d._termsInput.split('\n').map(s => s.trim().toLowerCase()).filter(Boolean) : (d.blockedTerms || []);
+            this._currentProfile.rules.ranking.blockedTerms = Array.from(new Set(terms));
+        } else if (this._sidePanelType === 'editPaging') {
+            if (!this._currentProfile.rules.results) this._currentProfile.rules.results = {};
+            this._currentProfile.rules.results.pageSize = parseInt(d.pageSize) || 10;
+            this._currentProfile.rules.results.maxResults = parseInt(d.maxResults) || 500;
+        } else if (this._sidePanelType === 'editHighlighting') {
+            if (!this._currentProfile.rules.results) this._currentProfile.rules.results = {};
+            if (!this._currentProfile.rules.results.highlight) this._currentProfile.rules.results.highlight = {};
+            this._currentProfile.rules.results.highlight.enabled = !!d.enabled;
+            this._currentProfile.rules.results.highlight.mode = d.mode || 'sentence';
+            this._currentProfile.rules.results.highlight.snippetLength = parseInt(d.snippetLength) || 200;
+            this._currentProfile.rules.results.highlight.sentenceContext = parseInt(d.sentenceContext) || 0;
+        } else if (this._sidePanelType === 'editResultShaping') {
+            if (!this._currentProfile.rules.results) this._currentProfile.rules.results = {};
+            this._currentProfile.rules.results.deduplicateByField = (d.deduplicateByField || '').trim();
+            this._currentProfile.rules.results.groupByContentType = !!d.groupByContentType;
+        } else if (this._sidePanelType === 'manageFacets') {
+            if (!this._currentProfile.rules.results) this._currentProfile.rules.results = {};
+            this._currentProfile.rules.results.facets = d.facets || [];
         } else if (this._sidePanelType === 'profileMetadata') {
             if (!d.name || !d.name.trim()) errs.name = "Profile name is required.";
             if (!d.alias || !d.alias.trim()) errs.alias = "Profile alias is required.";
@@ -1507,190 +1669,193 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
 
     // --- TAB: SOURCES & SCOPE ---
     _renderSourcesTab(p) {
-        const sources = p.rules.sources;
+        const sources = p.rules?.sources || {};
+        const indexes = sources.indexes || [];
+        const indexTypes = sources.indexTypes || [];
+        const includeContentTypes = sources.includeContentTypes || [];
+        const excludeContentTypes = sources.excludeContentTypes || [];
+        const rootKeys = sources.rootNodeKeys || sources.startNodeKeys || [];
 
         return html`
-            <div class="rule-section-grid">
-                <!-- 1. Indexes Selection -->
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title-wrap">
-                            <h4>Target Examine Indexes</h4>
-                            <p class="card-subtitle">Select which Examine indexes to search. Leave empty to query all available indexes automatically.</p>
-                        </div>
+            <div class="source-settings-container">
+                <!-- 1. Target Examine Indexes -->
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Target Examine Indexes</div>
+                        <div class="setting-desc">Select which Examine indexes to search. Leave empty to query all available indexes automatically.</div>
                     </div>
-                    <div class="card-body">
-                        <div class="checkbox-chips-grid">
-                            ${(this._catalog.indexes || []).map(idx => {
-                                const isChecked = sources.indexes.includes(idx.name);
-                                return html`
-                                    <label class="chip-checkbox ${isChecked ? 'chip-checked' : ''}">
-                                        <input type="checkbox"
-                                               .checked=${isChecked}
-                                               @change=${e => {
-                                                   if (e.target.checked) sources.indexes.push(idx.name);
-                                                   else sources.indexes = sources.indexes.filter(n => n !== idx.name);
-                                                   this.requestUpdate();
-                                               }}>
-                                        <div class="chip-content">
-                                            <strong>${idx.name}</strong>
-                                            <span class="chip-meta">${idx.documentCount || 0} docs</span>
-                                        </div>
-                                    </label>
-                                `;
-                            })}
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editSourceIndexes')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Examine Indexes</span>
+                            <span class="field-count-pill">${indexes.length ? `${indexes.length} selected` : 'All Indexes'}</span>
                         </div>
-                        ${sources.indexes.length === 0 ? html`
-                            <div class="info-callout">
-                                <i class="icon-info"></i>
-                                <span>Currently searching <strong>all indexes</strong> discovered on this site.</span>
-                            </div>
-                        ` : nothing}
-                    </div>
-                </div>
-
-                <!-- 2. Index Types -->
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title-wrap">
-                            <h4>Index Entity Types</h4>
-                            <p class="card-subtitle">Filter by Examine entity type (content, media, member).</p>
-                        </div>
-                    </div>
-                    <div class="card-body">
-                        <div class="checkbox-chips-grid">
-                            ${['content', 'media', 'member'].map(type => {
-                                const isChecked = sources.indexTypes.includes(type);
-                                return html`
-                                    <label class="chip-checkbox ${isChecked ? 'chip-checked' : ''}">
-                                        <input type="checkbox"
-                                               .checked=${isChecked}
-                                               @change=${e => {
-                                                   if (e.target.checked) sources.indexTypes.push(type);
-                                                   else sources.indexTypes = sources.indexTypes.filter(t => t !== type);
-                                                   this.requestUpdate();
-                                               }}>
-                                        <div class="chip-content">
-                                            <strong>${type.toUpperCase()}</strong>
-                                        </div>
-                                    </label>
-                                `;
-                            })}
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 3. Document Types Filter -->
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title-wrap">
-                            <h4>Document Types Filter</h4>
-                            <p class="card-subtitle">Choose document types to explicitly include or exclude from search results.</p>
-                        </div>
-                    </div>
-                    <div class="card-body">
-                        <div class="form-row-2col">
-                            <div class="form-group">
-                                <label class="sp-label">Include Document Types (Empty = All)</label>
-                                <select class="sp-select" @change=${e => {
-                                    const val = e.target.value;
-                                    if (val && !sources.includeContentTypes.includes(val)) {
-                                        sources.includeContentTypes.push(val);
-                                        e.target.value = '';
-                                        this.requestUpdate();
-                                    }
-                                }}>
-                                    <option value="">+ Add Document Type to Include...</option>
-                                    ${(this._catalog.contentTypes || []).map(ct => html`
-                                        <option value="${ct.alias}">${ct.name} (${ct.alias})</option>
-                                    `)}
-                                </select>
-                                <div class="tags-container">
-                                    ${sources.includeContentTypes.map(alias => html`
-                                        <span class="tag-badge tag-include">
-                                            <span>${alias}</span>
-                                            <button @click=${() => {
-                                                sources.includeContentTypes = sources.includeContentTypes.filter(a => a !== alias);
-                                                this.requestUpdate();
-                                            }}>×</button>
+                        <div class="field-box-content">
+                            ${indexes.length ? html`
+                                <div class="selected-chips-wrap">
+                                    ${indexes.map(idx => html`
+                                        <span class="selected-chip">
+                                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+                                                <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+                                                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+                                            </svg>
+                                            <strong>${idx}</strong>
                                         </span>
                                     `)}
                                 </div>
-                            </div>
-
-                            <div class="form-group">
-                                <label class="sp-label">Exclude Document Types</label>
-                                <select class="sp-select" @change=${e => {
-                                    const val = e.target.value;
-                                    if (val && !sources.excludeContentTypes.includes(val)) {
-                                        sources.excludeContentTypes.push(val);
-                                        e.target.value = '';
-                                        this.requestUpdate();
-                                    }
-                                }}>
-                                    <option value="">+ Add Document Type to Exclude...</option>
-                                    ${(this._catalog.contentTypes || []).map(ct => html`
-                                        <option value="${ct.alias}">${ct.name} (${ct.alias})</option>
-                                    `)}
-                                </select>
-                                <div class="tags-container">
-                                    ${sources.excludeContentTypes.map(alias => html`
-                                        <span class="tag-badge tag-exclude">
-                                            <span>${alias}</span>
-                                            <button @click=${() => {
-                                                sources.excludeContentTypes = sources.excludeContentTypes.filter(a => a !== alias);
-                                                this.requestUpdate();
-                                            }}>×</button>
-                                        </span>
-                                    `)}
+                            ` : html`
+                                <div class="selected-placeholder">
+                                    <span class="placeholder-tag">All Available Indexes (Automatic)</span>
+                                    <span class="placeholder-meta">Searches across all discovered Examine indexes on this site.</span>
                                 </div>
-                            </div>
+                            `}
                         </div>
                     </div>
                 </div>
 
-                <!-- 4. Tree Scoping & Safety Rules -->
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title-wrap">
-                            <h4>Tree Scoping & Content Restrictions</h4>
-                            <p class="card-subtitle">Control subtree scoping, member-protected pages, and publication state.</p>
+                <!-- 2. Index Entity Types -->
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Index Entity Types</div>
+                        <div class="setting-desc">Filter by Examine entity type (content, media, member). Leave empty for all.</div>
+                    </div>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editSourceEntityTypes')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Entity Categories</span>
+                            <span class="field-count-pill">${indexTypes.length ? `${indexTypes.length} selected` : 'All Categories'}</span>
+                        </div>
+                        <div class="field-box-content">
+                            ${indexTypes.length ? html`
+                                <div class="selected-chips-wrap">
+                                    ${indexTypes.map(t => html`
+                                        <span class="selected-chip">
+                                            <strong>${t.toUpperCase()}</strong>
+                                        </span>
+                                    `)}
+                                </div>
+                            ` : html`
+                                <div class="selected-placeholder">
+                                    <span class="placeholder-tag">All Entity Categories</span>
+                                    <span class="placeholder-meta">Content, Media, and Member entities eligible.</span>
+                                </div>
+                            `}
                         </div>
                     </div>
-                    <div class="card-body">
-                        <div class="toggle-list">
-                            <label class="toggle-item">
-                                <div class="toggle-info">
-                                    <strong>Respect umbracoNaviHide</strong>
-                                    <span>Hides content when the Umbraco navigation hide checkbox is enabled.</span>
-                                </div>
-                                <input type="checkbox"
-                                       class="switch-input"
-                                       .checked=${sources.respectNaviHide}
-                                       @change=${e => { sources.respectNaviHide = e.target.checked; this.requestUpdate(); }}>
-                            </label>
+                </div>
 
-                            <label class="toggle-item">
-                                <div class="toggle-info">
-                                    <strong>Exclude Member-Protected Pages</strong>
-                                    <span>Do not return pages protected by public access / member roles in anonymous searches.</span>
+                <!-- 3. Include Document Types -->
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Include Document Types</div>
+                        <div class="setting-desc">Choose specific document types to include in search results. Leave empty for all.</div>
+                    </div>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editSourceContentTypes')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Included Content Types</span>
+                            <span class="field-count-pill">${includeContentTypes.length ? `${includeContentTypes.length} selected` : 'All Document Types'}</span>
+                        </div>
+                        <div class="field-box-content">
+                            ${includeContentTypes.length ? html`
+                                <div class="selected-chips-wrap">
+                                    ${includeContentTypes.map(ct => html`
+                                        <span class="selected-chip">
+                                            <code>${ct}</code>
+                                        </span>
+                                    `)}
                                 </div>
-                                <input type="checkbox"
-                                       class="switch-input"
-                                       .checked=${sources.excludeProtected}
-                                       @change=${e => { sources.excludeProtected = e.target.checked; this.requestUpdate(); }}>
-                            </label>
+                            ` : html`
+                                <div class="selected-placeholder">
+                                    <span class="placeholder-tag">All Document Types</span>
+                                    <span class="placeholder-meta">No document type restrictions applied.</span>
+                                </div>
+                            `}
+                        </div>
+                    </div>
+                </div>
 
-                            <label class="toggle-item">
-                                <div class="toggle-info">
-                                    <strong>Published Content Only</strong>
-                                    <span>Strictly filter out unpublished or trashed draft content.</span>
+                <!-- 4. Exclude Document Types -->
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Exclude Document Types</div>
+                        <div class="setting-desc">Document types that must be excluded from search results.</div>
+                    </div>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editSourceExcludeContentTypes')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Excluded Content Types</span>
+                            <span class="field-count-pill">${excludeContentTypes.length ? `${excludeContentTypes.length} excluded` : 'None Excluded'}</span>
+                        </div>
+                        <div class="field-box-content">
+                            ${excludeContentTypes.length ? html`
+                                <div class="selected-chips-wrap">
+                                    ${excludeContentTypes.map(ct => html`
+                                        <span class="selected-chip chip-danger">
+                                            <code>${ct}</code>
+                                        </span>
+                                    `)}
                                 </div>
-                                <input type="checkbox"
-                                       class="switch-input"
-                                       .checked=${sources.publishedOnly}
-                                       @change=${e => { sources.publishedOnly = e.target.checked; this.requestUpdate(); }}>
-                            </label>
+                            ` : html`
+                                <div class="selected-placeholder">
+                                    <span class="placeholder-tag">None Excluded</span>
+                                    <span class="placeholder-meta">No content types blocked from results.</span>
+                                </div>
+                            `}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 5. Search Subtree Roots -->
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Search Subtree Roots</div>
+                        <div class="setting-desc">Scope search queries to specific root nodes or content branches. Leave empty for entire site.</div>
+                    </div>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editSourceRoots')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Root Scope</span>
+                            <span class="field-count-pill">${rootKeys.length ? `${rootKeys.length} roots` : 'Entire Site'}</span>
+                        </div>
+                        <div class="field-box-content">
+                            ${rootKeys.length ? html`
+                                <div class="selected-chips-wrap">
+                                    ${rootKeys.map(k => html`
+                                        <span class="selected-chip">
+                                            <code>${k}</code>
+                                        </span>
+                                    `)}
+                                </div>
+                            ` : html`
+                                <div class="selected-placeholder">
+                                    <span class="placeholder-tag">Entire Site (Root Level)</span>
+                                    <span class="placeholder-meta">Searches across the full tree without subtree restrictions.</span>
+                                </div>
+                            `}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 6. Visibility & Protection Rules -->
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Visibility & Protection Rules</div>
+                        <div class="setting-desc">Control subtree scoping, member-protected pages, and publication state.</div>
+                    </div>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editSourceProtection')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Protection & Visibility</span>
+                            <span class="field-count-pill">Configured</span>
+                        </div>
+                        <div class="field-box-content">
+                            <div class="selected-chips-wrap">
+                                <span class="selected-chip ${sources.publishedOnly !== false ? 'chip-success' : 'chip-muted'}">
+                                    ${sources.publishedOnly !== false ? '✓ Published Only' : '✕ Include Unpublished'}
+                                </span>
+                                <span class="selected-chip ${sources.respectNaviHide !== false ? 'chip-success' : 'chip-muted'}">
+                                    ${sources.respectNaviHide !== false ? '✓ Respect NaviHide' : '✕ Ignore NaviHide'}
+                                </span>
+                                <span class="selected-chip ${sources.excludeProtected !== false ? 'chip-success' : 'chip-muted'}">
+                                    ${sources.excludeProtected !== false ? '✓ Exclude Protected' : '✕ Allow Protected'}
+                                </span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1701,189 +1866,135 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     // --- TAB: MATCHING & FIELDS ---
     _renderMatchingTab(p) {
         const matching = p.rules.matching;
+        const fields = matching.fields || [];
+        const stopWords = matching.stopWords || [];
+        const synonyms = matching.synonyms || {};
+        const synEntries = Object.entries(synonyms);
 
         return html`
-            <div class="rule-section-grid">
+            <div class="source-settings-container">
                 <!-- 1. Searchable Fields Table -->
-                <div class="card">
-                    <div class="card-header flex-between">
-                        <div class="card-title-wrap">
-                            <h4>Searchable Fields & Relevance Weighting</h4>
-                            <p class="card-subtitle">Define which index fields are matched, their boost multiplier, and match modes.</p>
-                        </div>
-                        <button class="btn btn-primary btn-sm" @click=${() => this._openSidePanel('editField')}>
-                            <i class="icon-add"></i> Add Field
-                        </button>
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Searchable Fields & Relevance Weighting</div>
+                        <div class="setting-desc">Define which index fields are matched, their boost multiplier, and match modes.</div>
                     </div>
-                    <div class="card-body no-padding">
-                        ${matching.fields.length === 0 ? html`
-                            <div class="card-empty-pad">
-                                <div class="info-callout">
-                                    <i class="icon-info"></i>
-                                    <span>No specific fields configured. Imobisoft Search is searching all text fields automatically. Add fields to customize weighting.</span>
-                                </div>
-                            </div>
-                        ` : html`
-                            <table class="data-table">
-                                <thead>
-                                    <tr>
-                                        <th>Field Name</th>
-                                        <th>Match Mode</th>
-                                        <th>Boost Weight</th>
-                                        <th>Enabled</th>
-                                        <th style="text-align:right;">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${matching.fields.map(f => html`
-                                        <tr>
-                                            <td><strong>${f.name}</strong></td>
-                                            <td><span class="badge badge-info">${f.matchMode || 'prefix'}</span></td>
-                                            <td><span class="boost-tag">${f.boost}x</span></td>
-                                            <td>
-                                                <input type="checkbox"
-                                                       .checked=${f.enabled !== false}
-                                                       @change=${e => { f.enabled = e.target.checked; this.requestUpdate(); }}>
-                                            </td>
-                                            <td style="text-align:right;">
-                                                <button class="btn-icon" title="Edit Field" @click=${() => this._openSidePanel('editField', f)}>
-                                                    <i class="icon-edit"></i>
-                                                </button>
-                                                <button class="btn-icon btn-icon-danger" title="Remove Field" @click=${() => {
-                                                    matching.fields = matching.fields.filter(x => x.name !== f.name);
-                                                    this.requestUpdate();
-                                                }}>
-                                                    <i class="icon-trash"></i>
-                                                </button>
-                                            </td>
-                                        </tr>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('manageFields')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Searchable Fields</span>
+                            <span class="field-count-pill">${fields.length ? `${fields.length} fields configured` : 'All Fields (Automatic)'}</span>
+                        </div>
+                        <div class="field-box-content">
+                            ${fields.length ? html`
+                                <div class="selected-chips-wrap">
+                                    ${fields.map(f => html`
+                                        <span class="selected-chip">
+                                            <strong>${f.name}</strong>
+                                            <span class="chip-meta">${f.boost}x (${f.matchMode || 'prefix'})</span>
+                                        </span>
                                     `)}
-                                </tbody>
-                            </table>
-                        `}
+                                </div>
+                            ` : html`
+                                <div class="selected-placeholder">
+                                    <span class="placeholder-tag">All Text Fields (Automatic)</span>
+                                    <span class="placeholder-meta">Searching across all standard Examine text properties. Click to define specific field weights.</span>
+                                </div>
+                            `}
+                        </div>
                     </div>
                 </div>
 
                 <!-- 2. Matching Engine Parameters -->
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title-wrap">
-                            <h4>Query Match Parameters</h4>
-                            <p class="card-subtitle">Configure logic operators, fuzziness, and length thresholds.</p>
-                        </div>
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Query Match Parameters</div>
+                        <div class="setting-desc">Configure logic operators, fuzziness tolerance, and minimum query length thresholds.</div>
                     </div>
-                    <div class="card-body">
-                        <div class="form-row-3col">
-                            <div class="form-group">
-                                <label class="sp-label">Default Combine Operator</label>
-                                <select class="sp-select"
-                                        .value=${matching.defaultOperator}
-                                        @change=${e => { matching.defaultOperator = e.target.value; this.requestUpdate(); }}>
-                                    <option value="or">OR (Any field/term matches - Broadest)</option>
-                                    <option value="and">AND (All terms must match - Strict)</option>
-                                </select>
-                            </div>
-
-                            <div class="form-group">
-                                <label class="sp-label">Fuzziness Tolerance (0.0 - 1.0)</label>
-                                <input type="number"
-                                       class="sp-input"
-                                       step="0.05"
-                                       min="0.1"
-                                       max="1.0"
-                                       .value=${String(matching.fuzziness)}
-                                       @input=${e => { matching.fuzziness = parseFloat(e.target.value) || 0.8; this.requestUpdate(); }}>
-                            </div>
-
-                            <div class="form-group">
-                                <label class="sp-label">Minimum Query Length</label>
-                                <input type="number"
-                                       class="sp-input"
-                                       min="1"
-                                       max="10"
-                                       .value=${String(matching.minimumQueryLength)}
-                                       @input=${e => { matching.minimumQueryLength = parseInt(e.target.value) || 2; this.requestUpdate(); }}>
-                            </div>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editMatchParameters')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Query Parser Logic</span>
+                            <span class="field-count-pill">Operator: ${(matching.defaultOperator || 'or').toUpperCase()}</span>
                         </div>
-
-                        <div class="toggle-list" style="margin-top: 16px;">
-                            <label class="toggle-item">
-                                <div class="toggle-info">
-                                    <strong>All Terms Must Match</strong>
-                                    <span>Require every word in a multi-word search query to match somewhere in the document.</span>
-                                </div>
-                                <input type="checkbox"
-                                       class="switch-input"
-                                       .checked=${matching.allTermsMustMatch}
-                                       @change=${e => { matching.allTermsMustMatch = e.target.checked; this.requestUpdate(); }}>
-                            </label>
+                        <div class="field-box-content">
+                            <div class="selected-chips-wrap">
+                                <span class="selected-chip">
+                                    <strong>Join:</strong> ${(matching.defaultOperator || 'or').toUpperCase()}
+                                </span>
+                                <span class="selected-chip">
+                                    <strong>Fuzziness:</strong> ${matching.fuzziness ?? 0.8}
+                                </span>
+                                <span class="selected-chip">
+                                    <strong>Min Length:</strong> ${matching.minimumQueryLength ?? 2} chars
+                                </span>
+                                <span class="selected-chip ${matching.allTermsMustMatch ? 'chip-success' : 'chip-muted'}">
+                                    ${matching.allTermsMustMatch ? '✓ All Terms Required' : '✕ Any Term Matches'}
+                                </span>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- 3. Stop Words & Synonyms -->
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title-wrap">
-                            <h4>Stop Words & Query Synonyms</h4>
-                            <p class="card-subtitle">Strip non-informational words and expand query terms with synonyms.</p>
+                <!-- 3. Stop Words -->
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Stop Words (Ignored Words)</div>
+                        <div class="setting-desc">Strip non-informational words automatically from query strings before search.</div>
+                    </div>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editStopWords')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Stop Words</span>
+                            <span class="field-count-pill">${stopWords.length ? `${stopWords.length} words` : 'None Configured'}</span>
+                        </div>
+                        <div class="field-box-content">
+                            ${stopWords.length ? html`
+                                <div class="selected-chips-wrap">
+                                    ${stopWords.slice(0, 15).map(w => html`
+                                        <span class="selected-chip">
+                                            <code>${w}</code>
+                                        </span>
+                                    `)}
+                                    ${stopWords.length > 15 ? html`
+                                        <span class="selected-chip chip-muted">
+                                            +${stopWords.length - 15} more
+                                        </span>
+                                    ` : nothing}
+                                </div>
+                            ` : html`
+                                <div class="selected-placeholder">
+                                    <span class="placeholder-tag">No Stop Words</span>
+                                    <span class="placeholder-meta">All query terms are passed directly to the search index.</span>
+                                </div>
+                            `}
                         </div>
                     </div>
-                    <div class="card-body">
-                        <div class="form-row-2col">
-                            <!-- Stop Words -->
-                            <div class="form-group">
-                                <label class="sp-label">Stop Words (Ignored words)</label>
-                                <div class="tag-input-row">
-                                    <input type="text"
-                                           class="sp-input"
-                                           id="newStopWordInput"
-                                           placeholder="Type word and press Enter"
-                                           @keydown=${e => {
-                                               if (e.key === 'Enter') {
-                                                   e.preventDefault();
-                                                   const val = e.target.value.trim().toLowerCase();
-                                                   if (val && !matching.stopWords.includes(val)) {
-                                                       matching.stopWords.push(val);
-                                                       e.target.value = '';
-                                                       this.requestUpdate();
-                                                   }
-                                               }
-                                           }}>
-                                </div>
-                                <div class="tags-container">
-                                    ${matching.stopWords.map(w => html`
-                                        <span class="tag-badge">
-                                            <span>${w}</span>
-                                            <button @click=${() => {
-                                                matching.stopWords = matching.stopWords.filter(x => x !== w);
-                                                this.requestUpdate();
-                                            }}>×</button>
+                </div>
+
+                <!-- 4. Synonyms -->
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Query Synonym Groups</div>
+                        <div class="setting-desc">Expand search terms into equivalent synonyms for higher result discovery.</div>
+                    </div>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('manageSynonyms')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Synonym Expansion</span>
+                            <span class="field-count-pill">${synEntries.length ? `${synEntries.length} groups` : 'None Configured'}</span>
+                        </div>
+                        <div class="field-box-content">
+                            ${synEntries.length ? html`
+                                <div class="selected-chips-wrap">
+                                    ${synEntries.map(([term, syns]) => html`
+                                        <span class="selected-chip">
+                                            <strong>${term}</strong> ➔ ${(syns || []).join(', ')}
                                         </span>
                                     `)}
                                 </div>
-                            </div>
-
-                            <!-- Synonyms -->
-                            <div class="form-group">
-                                <div class="flex-between">
-                                    <label class="sp-label">Synonym Groups</label>
-                                    <button class="btn btn-secondary btn-sm" @click=${() => this._openSidePanel('editSynonym')}>+ Add Synonym</button>
+                            ` : html`
+                                <div class="selected-placeholder">
+                                    <span class="placeholder-tag">No Synonym Groups</span>
+                                    <span class="placeholder-meta">Click to add synonym groups for query expansion.</span>
                                 </div>
-                                <div class="synonyms-list">
-                                    ${Object.keys(matching.synonyms || {}).length === 0 ? html`
-                                        <div class="text-muted" style="font-size:13px; padding-top:8px;">No synonyms configured.</div>
-                                    ` : Object.entries(matching.synonyms).map(([term, syns]) => html`
-                                        <div class="synonym-item">
-                                            <strong>${term}</strong> ➔ <span>${(syns || []).join(', ')}</span>
-                                            <button class="btn-icon btn-icon-danger" @click=${() => {
-                                                delete matching.synonyms[term];
-                                                this.requestUpdate();
-                                            }}>×</button>
-                                        </div>
-                                    `)}
-                                </div>
-                            </div>
+                            `}
                         </div>
                     </div>
                 </div>
@@ -1894,212 +2005,152 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     // --- TAB: RANKING & BOOSTS ---
     _renderRankingTab(p) {
         const ranking = p.rules.ranking;
+        const sortBy = ranking.sortBy || [];
+        const boosts = ranking.contentTypeBoosts || {};
+        const boostEntries = Object.entries(boosts);
+        const bestBets = ranking.bestBets || [];
+        const blockedTerms = ranking.blockedTerms || [];
+        const recency = ranking.recency || {};
 
         return html`
-            <div class="rule-section-grid">
-                <!-- 1. Multi-Level Sort Rules -->
-                <div class="card">
-                    <div class="card-header flex-between">
-                        <div class="card-title-wrap">
-                            <h4>Sort Levels</h4>
-                            <p class="card-subtitle">Order of priority when sorting results. Default is Score (Relevance Descending).</p>
+            <div class="source-settings-container">
+                <!-- 1. Sort Levels -->
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Sort Priority Levels</div>
+                        <div class="setting-desc">Order of priority when sorting results. Default is Score (Relevance Descending).</div>
+                    </div>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('manageSort')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Sort Order</span>
+                            <span class="field-count-pill">${sortBy.length ? `${sortBy.length} custom levels` : 'Default Relevance'}</span>
                         </div>
-                        <button class="btn btn-primary btn-sm" @click=${() => this._openSidePanel('editSort')}>
-                            <i class="icon-add"></i> Add Sort Level
-                        </button>
-                    </div>
-                    <div class="card-body no-padding">
-                        ${ranking.sortBy.length === 0 ? html`
-                            <div class="card-empty-pad">
-                                <div class="info-callout">
-                                    <i class="icon-info"></i>
-                                    <span>Sorted by <strong>Relevance Score (Descending)</strong> by default.</span>
-                                </div>
-                            </div>
-                        ` : html`
-                            <table class="data-table">
-                                <thead>
-                                    <tr>
-                                        <th>Level</th>
-                                        <th>Field</th>
-                                        <th>Direction</th>
-                                        <th style="text-align:right;">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${ranking.sortBy.map((s, idx) => html`
-                                        <tr>
-                                            <td><strong>#${idx + 1}</strong></td>
-                                            <td>${s.field}</td>
-                                            <td><span class="badge badge-info">${s.direction}</span></td>
-                                            <td style="text-align:right;">
-                                                <button class="btn-icon btn-icon-danger" @click=${() => {
-                                                    ranking.sortBy.splice(idx, 1);
-                                                    this.requestUpdate();
-                                                }}>
-                                                    <i class="icon-trash"></i>
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    `)}
-                                </tbody>
-                            </table>
-                        `}
-                    </div>
-                </div>
-
-                <!-- 2. Content Type Boosts & Recency -->
-                <div class="card">
-                    <div class="card-header flex-between">
-                        <div class="card-title-wrap">
-                            <h4>Document Type Relevance Multipliers</h4>
-                            <p class="card-subtitle">Boost specific document types (e.g. News articles at 2.0x, Products at 1.5x).</p>
-                        </div>
-                        <button class="btn btn-primary btn-sm" @click=${() => this._openSidePanel('editContentTypeBoost')}>
-                            <i class="icon-add"></i> Add Boost
-                        </button>
-                    </div>
-                    <div class="card-body">
-                        <div class="tags-container">
-                            ${Object.entries(ranking.contentTypeBoosts || {}).map(([alias, boost]) => html`
-                                <span class="tag-badge tag-boost">
-                                    <span><strong>${alias}</strong>: ${boost}x</span>
-                                    <button @click=${() => {
-                                        delete ranking.contentTypeBoosts[alias];
-                                        this.requestUpdate();
-                                    }}>×</button>
-                                </span>
-                            `)}
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 3. Best Bets (Pinned Queries) -->
-                <div class="card">
-                    <div class="card-header flex-between">
-                        <div class="card-title-wrap">
-                            <h4>Best Bets (Pinned Curated Results)</h4>
-                            <p class="card-subtitle">Pin specific Umbraco node GUIDs to the very top when visitors search specific terms.</p>
-                        </div>
-                        <button class="btn btn-primary btn-sm" @click=${() => this._openSidePanel('editBestBet')}>
-                            <i class="icon-add"></i> Add Best Bet
-                        </button>
-                    </div>
-                    <div class="card-body no-padding">
-                        ${ranking.bestBets.length === 0 ? html`
-                            <div class="card-empty-pad">
-                                <div class="info-callout">
-                                    <i class="icon-info"></i>
-                                    <span>No best bets configured. Results are ordered purely by calculated relevance.</span>
-                                </div>
-                            </div>
-                        ` : html`
-                            <table class="data-table">
-                                <thead>
-                                    <tr>
-                                        <th>Trigger Search Terms</th>
-                                        <th>Pinned Node Keys</th>
-                                        <th style="text-align:right;">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${ranking.bestBets.map((bet, idx) => html`
-                                        <tr>
-                                            <td>
-                                                <div class="tags-container">
-                                                    ${(bet.terms || []).map(t => html`<span class="tag-badge"><span>${t}</span></span>`)}
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <small>${(bet.nodeKeys || []).join(', ')}</small>
-                                            </td>
-                                            <td style="text-align:right;">
-                                                <button class="btn-icon btn-icon-danger" @click=${() => {
-                                                    ranking.bestBets.splice(idx, 1);
-                                                    this.requestUpdate();
-                                                }}>
-                                                    <i class="icon-trash"></i>
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    `)}
-                                </tbody>
-                            </table>
-                        `}
-                    </div>
-                </div>
-
-                <!-- 4. Recency Boost & Blocked Terms -->
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title-wrap">
-                            <h4>Recency Decay & Blocked Search Terms</h4>
-                            <p class="card-subtitle">Give recently published or modified content a boost and block unwanted queries.</p>
-                        </div>
-                    </div>
-                    <div class="card-body">
-                        <div class="form-row-2col">
-                            <div>
-                                <label class="toggle-item" style="margin-bottom: 12px;">
-                                    <div class="toggle-info">
-                                        <strong>Enable Recency Boost</strong>
-                                        <span>Lift freshly updated content above older pages.</span>
-                                    </div>
-                                    <input type="checkbox"
-                                           class="switch-input"
-                                           .checked=${ranking.recency.enabled}
-                                           @change=${e => { ranking.recency.enabled = e.target.checked; this.requestUpdate(); }}>
-                                </label>
-
-                                ${ranking.recency.enabled ? html`
-                                    <div class="form-row-2col" style="margin-top: 10px;">
-                                        <div class="form-group">
-                                            <label class="sp-label">Half-Life (Days)</label>
-                                            <input type="number"
-                                                   class="sp-input"
-                                                   .value=${String(ranking.recency.halfLifeDays)}
-                                                   @input=${e => { ranking.recency.halfLifeDays = parseInt(e.target.value) || 90; this.requestUpdate(); }}>
-                                        </div>
-                                        <div class="form-group">
-                                            <label class="sp-label">Boost Weight</label>
-                                            <input type="number"
-                                                   class="sp-input"
-                                                   step="0.1"
-                                                   .value=${String(ranking.recency.weight)}
-                                                   @input=${e => { ranking.recency.weight = parseFloat(e.target.value) || 0.5; this.requestUpdate(); }}>
-                                        </div>
-                                    </div>
-                                ` : nothing}
-                            </div>
-
-                            <div class="form-group">
-                                <label class="sp-label">Blocked Query Terms (Return 0 results)</label>
-                                <input type="text"
-                                       class="sp-input"
-                                       placeholder="Type blocked term and press Enter"
-                                       @keydown=${e => {
-                                           if (e.key === 'Enter') {
-                                               e.preventDefault();
-                                               const val = e.target.value.trim().toLowerCase();
-                                               if (val && !ranking.blockedTerms.includes(val)) {
-                                                   ranking.blockedTerms.push(val);
-                                                   e.target.value = '';
-                                                   this.requestUpdate();
-                                               }
-                                           }
-                                       }}>
-                                <div class="tags-container" style="margin-top: 8px;">
-                                    ${ranking.blockedTerms.map(t => html`
-                                        <span class="tag-badge tag-exclude">
-                                            <span>${t}</span>
-                                            <button @click=${() => {
-                                                ranking.blockedTerms = ranking.blockedTerms.filter(x => x !== t);
-                                                this.requestUpdate();
-                                            }}>×</button>
+                        <div class="field-box-content">
+                            ${sortBy.length ? html`
+                                <div class="selected-chips-wrap">
+                                    ${sortBy.map((s, idx) => html`
+                                        <span class="selected-chip">
+                                            <strong>#${idx + 1} ${s.field}</strong> (${(s.direction || 'asc').toUpperCase()})
                                         </span>
                                     `)}
                                 </div>
+                            ` : html`
+                                <div class="selected-placeholder">
+                                    <span class="placeholder-tag">Relevance Score (Descending)</span>
+                                    <span class="placeholder-meta">Default Lucene BM25 relevance score ordering.</span>
+                                </div>
+                            `}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. Content Type Boosts -->
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Document Type Relevance Multipliers</div>
+                        <div class="setting-desc">Boost specific document types (e.g. News articles at 2.0x, Products at 1.5x).</div>
+                    </div>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('manageContentTypeBoosts')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Document Type Boosts</span>
+                            <span class="field-count-pill">${boostEntries.length ? `${boostEntries.length} boosted types` : 'No Type Boosts'}</span>
+                        </div>
+                        <div class="field-box-content">
+                            ${boostEntries.length ? html`
+                                <div class="selected-chips-wrap">
+                                    ${boostEntries.map(([alias, boost]) => html`
+                                        <span class="selected-chip">
+                                            <code>${alias}</code>: <strong>${boost}x</strong>
+                                        </span>
+                                    `)}
+                                </div>
+                            ` : html`
+                                <div class="selected-placeholder">
+                                    <span class="placeholder-tag">Equal Document Weight (1.0x)</span>
+                                    <span class="placeholder-meta">All document types participate with standard weight.</span>
+                                </div>
+                            `}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Best Bets -->
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Best Bets (Pinned Results)</div>
+                        <div class="setting-desc">Pin specific Umbraco node GUIDs to the very top when visitors search specific terms.</div>
+                    </div>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('manageBestBets')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Pinned Best Bets</span>
+                            <span class="field-count-pill">${bestBets.length ? `${bestBets.length} best bets` : 'None Configured'}</span>
+                        </div>
+                        <div class="field-box-content">
+                            ${bestBets.length ? html`
+                                <div class="selected-chips-wrap">
+                                    ${bestBets.map(bet => html`
+                                        <span class="selected-chip">
+                                            <strong>${(bet.terms || []).join(', ')}</strong> ➔ ${(bet.nodeKeys || []).length} pinned nodes
+                                        </span>
+                                    `)}
+                                </div>
+                            ` : html`
+                                <div class="selected-placeholder">
+                                    <span class="placeholder-tag">No Best Bets</span>
+                                    <span class="placeholder-meta">Results are sorted purely by calculated relevance algorithm.</span>
+                                </div>
+                            `}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4. Recency Boost -->
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Recency Decay & Time Boost</div>
+                        <div class="setting-desc">Give recently published or modified content a boost over older historical pages.</div>
+                    </div>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editRecency')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Recency Decay</span>
+                            <span class="field-count-pill">${recency.enabled ? 'Active' : 'Disabled'}</span>
+                        </div>
+                        <div class="field-box-content">
+                            <div class="selected-chips-wrap">
+                                <span class="selected-chip ${recency.enabled ? 'chip-success' : 'chip-muted'}">
+                                    ${recency.enabled ? `✓ Active (Half-life: ${recency.halfLifeDays || 90}d, Weight: ${recency.weight || 0.5}x)` : '✕ Recency Boost Disabled'}
+                                </span>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 5. Blocked Terms -->
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Blocked Search Terms</div>
+                        <div class="setting-desc">Queries containing these terms will return 0 results or be suppressed.</div>
+                    </div>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editBlockedTerms')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Blocked Terms</span>
+                            <span class="field-count-pill">${blockedTerms.length ? `${blockedTerms.length} blocked` : 'None Blocked'}</span>
+                        </div>
+                        <div class="field-box-content">
+                            ${blockedTerms.length ? html`
+                                <div class="selected-chips-wrap">
+                                    ${blockedTerms.map(t => html`
+                                        <span class="selected-chip chip-danger">
+                                            <code>${t}</code>
+                                        </span>
+                                    `)}
+                                </div>
+                            ` : html`
+                                <div class="selected-placeholder">
+                                    <span class="placeholder-tag">No Blocked Queries</span>
+                                    <span class="placeholder-meta">No search terms are suppressed.</span>
+                                </div>
+                            `}
                         </div>
                     </div>
                 </div>
@@ -2109,127 +2160,75 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
 
     // --- TAB: RESULTS & SNIPPETS ---
     _renderResultsTab(p) {
-        const res = p.rules.results;
+        const res = p.rules.results || {};
+        const highlight = res.highlight || {};
 
         return html`
-            <div class="rule-section-grid">
+            <div class="source-settings-container">
                 <!-- 1. Paging & Capacity -->
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title-wrap">
-                            <h4>Paging & Capacity Ceilings</h4>
-                            <p class="card-subtitle">Set page size and total results window considered per search request.</p>
-                        </div>
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Paging & Capacity Ceilings</div>
+                        <div class="setting-desc">Set default page size and maximum total results window considered per search request.</div>
                     </div>
-                    <div class="card-body">
-                        <div class="form-row-2col">
-                            <div class="form-group">
-                                <label class="sp-label">Default Page Size</label>
-                                <input type="number"
-                                       class="sp-input"
-                                       min="1"
-                                       max="100"
-                                       .value=${String(res.pageSize)}
-                                       @input=${e => { res.pageSize = parseInt(e.target.value) || 10; this.requestUpdate(); }}>
-                            </div>
-
-                            <div class="form-group">
-                                <label class="sp-label">Maximum Results Considered</label>
-                                <input type="number"
-                                       class="sp-input"
-                                       min="10"
-                                       max="5000"
-                                       .value=${String(res.maxResults)}
-                                       @input=${e => { res.maxResults = parseInt(e.target.value) || 500; this.requestUpdate(); }}>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editPaging')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Paging Limits</span>
+                            <span class="field-count-pill">Page Size: ${res.pageSize || 10}</span>
+                        </div>
+                        <div class="field-box-content">
+                            <div class="selected-chips-wrap">
+                                <span class="selected-chip">
+                                    <strong>Default Page Size:</strong> ${res.pageSize || 10} items
+                                </span>
+                                <span class="selected-chip">
+                                    <strong>Max Results Window:</strong> ${res.maxResults || 500} items
+                                </span>
                             </div>
                         </div>
                     </div>
                 </div>
 
                 <!-- 2. Highlighting & Snippets -->
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title-wrap">
-                            <h4>Highlighting & Matching Snippets</h4>
-                            <p class="card-subtitle">Extract sentence snippets from documents with highlight markup around matched terms.</p>
-                        </div>
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Highlighting & Matching Snippets</div>
+                        <div class="setting-desc">Extract sentence snippets from documents with highlight markup around matched terms.</div>
                     </div>
-                    <div class="card-body">
-                        <label class="toggle-item" style="margin-bottom: 16px;">
-                            <div class="toggle-info">
-                                <strong>Enable Snippet Highlights</strong>
-                                <span>Return snippet text with matches highlighted.</span>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editHighlighting')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Snippets & Highlights</span>
+                            <span class="field-count-pill">${highlight.enabled ? 'Enabled' : 'Disabled'}</span>
+                        </div>
+                        <div class="field-box-content">
+                            <div class="selected-chips-wrap">
+                                <span class="selected-chip ${highlight.enabled ? 'chip-success' : 'chip-muted'}">
+                                    ${highlight.enabled ? `✓ Snippets Enabled (${highlight.mode || 'sentence'}, max ${highlight.snippetLength || 200} chars)` : '✕ Snippets Disabled'}
+                                </span>
                             </div>
-                            <input type="checkbox"
-                                   class="switch-input"
-                                   .checked=${res.highlight.enabled}
-                                   @change=${e => { res.highlight.enabled = e.target.checked; this.requestUpdate(); }}>
-                        </label>
-
-                        ${res.highlight.enabled ? html`
-                            <div class="form-row-3col" style="margin-top: 12px;">
-                                <div class="form-group">
-                                    <label class="sp-label">Snippet Mode</label>
-                                    <select class="sp-select"
-                                            .value=${res.highlight.mode}
-                                            @change=${e => { res.highlight.mode = e.target.value; this.requestUpdate(); }}>
-                                        <option value="sentence">Full Sentence (Natural cut)</option>
-                                        <option value="characters">Fixed Characters (Truncated)</option>
-                                    </select>
-                                </div>
-
-                                <div class="form-group">
-                                    <label class="sp-label">Max Snippet Length</label>
-                                    <input type="number"
-                                           class="sp-input"
-                                           .value=${String(res.highlight.snippetLength)}
-                                           @input=${e => { res.highlight.snippetLength = parseInt(e.target.value) || 200; this.requestUpdate(); }}>
-                                </div>
-
-                                <div class="form-group">
-                                    <label class="sp-label">Sentence Context (sentences)</label>
-                                    <input type="number"
-                                           class="sp-input"
-                                           min="0"
-                                           max="5"
-                                           .value=${String(res.highlight.sentenceContext)}
-                                           @input=${e => { res.highlight.sentenceContext = parseInt(e.target.value) || 0; this.requestUpdate(); }}>
-                                </div>
-                            </div>
-                        ` : nothing}
+                        </div>
                     </div>
                 </div>
 
                 <!-- 3. De-duplication & Grouping -->
-                <div class="card">
-                    <div class="card-header">
-                        <div class="card-title-wrap">
-                            <h4>Result Shaping & De-Duplication</h4>
-                            <p class="card-subtitle">Collapse duplicates by field and enable content type grouping.</p>
-                        </div>
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Result Shaping & De-Duplication</div>
+                        <div class="setting-desc">Collapse duplicates by field and enable document type grouping.</div>
                     </div>
-                    <div class="card-body">
-                        <div class="form-row-2col">
-                            <div class="form-group">
-                                <label class="sp-label">De-duplicate Results by Field</label>
-                                <input type="text"
-                                       class="sp-input"
-                                       placeholder="e.g. urlName or empty to disable"
-                                       .value=${res.deduplicateByField || ''}
-                                       @input=${e => { res.deduplicateByField = e.target.value; this.requestUpdate(); }}>
-                            </div>
-
-                            <div class="form-group" style="display:flex; align-items:center; padding-top:20px;">
-                                <label class="toggle-item" style="width:100%;">
-                                    <div class="toggle-info">
-                                        <strong>Group by Document Type</strong>
-                                        <span>Compute result counts grouped by content type.</span>
-                                    </div>
-                                    <input type="checkbox"
-                                           class="switch-input"
-                                           .checked=${res.groupByContentType}
-                                           @change=${e => { res.groupByContentType = e.target.checked; this.requestUpdate(); }}>
-                                </label>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editResultShaping')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Result Shaping</span>
+                            <span class="field-count-pill">Configured</span>
+                        </div>
+                        <div class="field-box-content">
+                            <div class="selected-chips-wrap">
+                                <span class="selected-chip ${res.deduplicateByField ? 'chip-success' : 'chip-muted'}">
+                                    ${res.deduplicateByField ? `✓ De-duplicate by: ${res.deduplicateByField}` : '✕ No De-duplication'}
+                                </span>
+                                <span class="selected-chip ${res.groupByContentType ? 'chip-success' : 'chip-muted'}">
+                                    ${res.groupByContentType ? '✓ Group by DocType' : '✕ No DocType Grouping'}
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -2240,71 +2239,37 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
 
     // --- TAB: FACETS & FILTERS ---
     _renderFacetsTab(p) {
-        const facets = p.rules.results.facets || [];
+        const facets = p.rules.results?.facets || [];
 
         return html`
-            <div class="rule-section-grid">
-                <div class="card">
-                    <div class="card-header flex-between">
-                        <div class="card-title-wrap">
-                            <h4>Configured Facet Dimensions</h4>
-                            <p class="card-subtitle">Facets return dynamic filter dimensions with live counts for your search UI sidebar.</p>
-                        </div>
-                        <button class="btn btn-primary btn-sm" @click=${() => this._openSidePanel('editFacet')}>
-                            <i class="icon-add"></i> Add Facet
-                        </button>
+            <div class="source-settings-container">
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Configured Facet Dimensions</div>
+                        <div class="setting-desc">Facets return dynamic filter dimensions with live counts for your search UI sidebar.</div>
                     </div>
-                    <div class="card-body no-padding">
-                        ${facets.length === 0 ? html`
-                            <div class="card-empty-pad">
-                                <div class="empty-state">
-                                    <i class="icon-filter empty-icon"></i>
-                                    <h4>No Facets Configured</h4>
-                                    <p>Add facets on Examine fields (such as Category, Document Type, or Date ranges) to offer filter dimensions.</p>
-                                    <button class="btn btn-primary btn-sm" @click=${() => this._openSidePanel('editFacet')}>
-                                        <i class="icon-add"></i> Add Your First Facet
-                                    </button>
-                                </div>
-                            </div>
-                        ` : html`
-                            <table class="data-table">
-                                <thead>
-                                    <tr>
-                                        <th>Label & Alias</th>
-                                        <th>Target Field</th>
-                                        <th>Facet Kind</th>
-                                        <th>Max Buckets</th>
-                                        <th>Hide Empty</th>
-                                        <th style="text-align:right;">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${facets.map((f, idx) => html`
-                                        <tr>
-                                            <td>
-                                                <strong>${f.label || f.alias}</strong>
-                                                <div class="text-muted" style="font-size:12px;">alias: ${f.alias}</div>
-                                            </td>
-                                            <td><code>${f.field}</code></td>
-                                            <td><span class="badge badge-info">${f.kind || 'field'}</span></td>
-                                            <td>${f.maxValues || 20}</td>
-                                            <td>${f.hideEmpty ? 'Yes' : 'No'}</td>
-                                            <td style="text-align:right;">
-                                                <button class="btn-icon" title="Edit Facet" @click=${() => this._openSidePanel('editFacet', f)}>
-                                                    <i class="icon-edit"></i>
-                                                </button>
-                                                <button class="btn-icon btn-icon-danger" title="Delete Facet" @click=${() => {
-                                                    facets.splice(idx, 1);
-                                                    this.requestUpdate();
-                                                }}>
-                                                    <i class="icon-trash"></i>
-                                                </button>
-                                            </td>
-                                        </tr>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('manageFacets')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Facet Dimensions</span>
+                            <span class="field-count-pill">${facets.length ? `${facets.length} facets configured` : 'No Facets'}</span>
+                        </div>
+                        <div class="field-box-content">
+                            ${facets.length ? html`
+                                <div class="selected-chips-wrap">
+                                    ${facets.map(f => html`
+                                        <span class="selected-chip">
+                                            <strong>${f.label || f.alias}</strong>
+                                            <span class="chip-meta">(field: <code>${f.field}</code>, max: ${f.maxValues || 20})</span>
+                                        </span>
                                     `)}
-                                </tbody>
-                            </table>
-                        `}
+                                </div>
+                            ` : html`
+                                <div class="selected-placeholder">
+                                    <span class="placeholder-tag">No Facet Dimensions</span>
+                                    <span class="placeholder-meta">Click to configure dynamic filter facets (e.g. Category, Document Type, Date).</span>
+                                </div>
+                            `}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -2837,12 +2802,31 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         if (!d) return nothing;
 
         let title = "Configuration";
-        if (t === 'editField') title = d._isNew ? "Add Searchable Field" : `Edit Field: ${d.name}`;
-        else if (t === 'editFacet') title = d._isNew ? "Add Facet Dimension" : `Edit Facet: ${d.label || d.alias}`;
-        else if (t === 'editBestBet') title = d._isNew ? "Add Best Bet (Pinned Result)" : "Edit Best Bet";
-        else if (t === 'editSort') title = d._isNew ? "Add Sort Level" : "Edit Sort Level";
-        else if (t === 'editContentTypeBoost') title = "Add Content Type Boost";
+        if (t === 'manageFields') title = "Searchable Fields & Weightings";
+        else if (t === 'editField') title = d._isNew ? "Add Searchable Field" : `Edit Field: ${d.name}`;
+        else if (t === 'editMatchParameters') title = "Query Match Parameters";
+        else if (t === 'editStopWords') title = "Stop Words (Ignored Words)";
+        else if (t === 'manageSynonyms') title = "Query Synonym Groups";
         else if (t === 'editSynonym') title = "Add Synonym Group";
+        else if (t === 'manageSort') title = "Sort Priority Levels";
+        else if (t === 'editSort') title = d._isNew ? "Add Sort Level" : "Edit Sort Level";
+        else if (t === 'manageContentTypeBoosts') title = "Document Type Relevance Boosts";
+        else if (t === 'editContentTypeBoost') title = "Add Content Type Boost";
+        else if (t === 'manageBestBets') title = "Best Bets (Pinned Results)";
+        else if (t === 'editBestBet') title = d._isNew ? "Add Best Bet (Pinned Result)" : "Edit Best Bet";
+        else if (t === 'editRecency') title = "Recency Decay & Time Boost";
+        else if (t === 'editBlockedTerms') title = "Blocked Search Terms";
+        else if (t === 'editPaging') title = "Paging & Result Capacity";
+        else if (t === 'editHighlighting') title = "Highlighting & Snippets";
+        else if (t === 'editResultShaping') title = "Result Shaping & De-Duplication";
+        else if (t === 'manageFacets') title = "Facet Dimensions & Filters";
+        else if (t === 'editFacet') title = d._isNew ? "Add Facet Dimension" : `Edit Facet: ${d.label || d.alias}`;
+        else if (t === 'editSourceIndexes') title = "Target Examine Indexes";
+        else if (t === 'editSourceEntityTypes') title = "Index Entity Types";
+        else if (t === 'editSourceContentTypes') title = "Include Document Types";
+        else if (t === 'editSourceExcludeContentTypes') title = "Exclude Document Types";
+        else if (t === 'editSourceRoots') title = "Search Subtree Roots";
+        else if (t === 'editSourceProtection') title = "Visibility & Protection Rules";
         else if (t === 'profileMetadata') title = "Profile Metadata & Settings";
 
         return html`
@@ -2856,12 +2840,31 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     </div>
 
                     <div class="sp-body">
+                        ${t === 'manageFields' ? this._renderManageFieldsSidePanelBody(d) : nothing}
                         ${t === 'editField' ? this._renderFieldSidePanelBody(d) : nothing}
-                        ${t === 'editFacet' ? this._renderFacetSidePanelBody(d) : nothing}
-                        ${t === 'editBestBet' ? this._renderBestBetSidePanelBody(d) : nothing}
-                        ${t === 'editSort' ? this._renderSortSidePanelBody(d) : nothing}
-                        ${t === 'editContentTypeBoost' ? this._renderContentTypeBoostSidePanelBody(d) : nothing}
+                        ${t === 'editMatchParameters' ? this._renderMatchParametersSidePanelBody(d) : nothing}
+                        ${t === 'editStopWords' ? this._renderStopWordsSidePanelBody(d) : nothing}
+                        ${t === 'manageSynonyms' ? this._renderManageSynonymsSidePanelBody(d) : nothing}
                         ${t === 'editSynonym' ? this._renderSynonymSidePanelBody(d) : nothing}
+                        ${t === 'manageSort' ? this._renderManageSortSidePanelBody(d) : nothing}
+                        ${t === 'editSort' ? this._renderSortSidePanelBody(d) : nothing}
+                        ${t === 'manageContentTypeBoosts' ? this._renderManageContentTypeBoostsSidePanelBody(d) : nothing}
+                        ${t === 'editContentTypeBoost' ? this._renderContentTypeBoostSidePanelBody(d) : nothing}
+                        ${t === 'manageBestBets' ? this._renderManageBestBetsSidePanelBody(d) : nothing}
+                        ${t === 'editBestBet' ? this._renderBestBetSidePanelBody(d) : nothing}
+                        ${t === 'editRecency' ? this._renderRecencySidePanelBody(d) : nothing}
+                        ${t === 'editBlockedTerms' ? this._renderBlockedTermsSidePanelBody(d) : nothing}
+                        ${t === 'editPaging' ? this._renderPagingSidePanelBody(d) : nothing}
+                        ${t === 'editHighlighting' ? this._renderHighlightingSidePanelBody(d) : nothing}
+                        ${t === 'editResultShaping' ? this._renderResultShapingSidePanelBody(d) : nothing}
+                        ${t === 'manageFacets' ? this._renderManageFacetsSidePanelBody(d) : nothing}
+                        ${t === 'editFacet' ? this._renderFacetSidePanelBody(d) : nothing}
+                        ${t === 'editSourceIndexes' ? this._renderSourceIndexesSidePanelBody(d) : nothing}
+                        ${t === 'editSourceEntityTypes' ? this._renderSourceEntityTypesSidePanelBody(d) : nothing}
+                        ${t === 'editSourceContentTypes' ? this._renderSourceContentTypesSidePanelBody(d, false) : nothing}
+                        ${t === 'editSourceExcludeContentTypes' ? this._renderSourceContentTypesSidePanelBody(d, true) : nothing}
+                        ${t === 'editSourceRoots' ? this._renderSourceRootsSidePanelBody(d) : nothing}
+                        ${t === 'editSourceProtection' ? this._renderSourceProtectionSidePanelBody(d) : nothing}
                         ${t === 'profileMetadata' ? this._renderProfileMetadataSidePanelBody(d) : nothing}
                     </div>
 
@@ -2869,6 +2872,813 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         <button class="btn btn-secondary" @click=${this._closeSidePanel}>Cancel</button>
                         <button class="btn btn-primary" @click=${this._saveSidePanel}>Apply Changes</button>
                     </div>
+                </div>
+            </div>
+        `;
+    }
+
+    _renderSourceIndexesSidePanelBody(d) {
+        const indexes = this._catalog?.indexes || [];
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-choice-header-info">
+                    <p class="sp-choice-desc">
+                        Select which Examine indexes to search. If none are selected, search will automatically query all available indexes on the site.
+                    </p>
+                    <div class="sp-choice-actions">
+                        <button class="btn btn-secondary btn-sm" @click=${() => { d.indexes = []; this.requestUpdate(); }}>
+                            Reset to All (Automatic)
+                        </button>
+                        <button class="btn btn-secondary btn-sm" @click=${() => { d.indexes = indexes.map(i => i.name); this.requestUpdate(); }}>
+                            Select All (${indexes.length})
+                        </button>
+                    </div>
+                </div>
+
+                <div class="sp-choices-list">
+                    ${indexes.map(idx => {
+                        const isChecked = (d.indexes || []).includes(idx.name);
+                        return html`
+                            <label class="sp-choice-card ${isChecked ? 'sp-choice-active' : ''}">
+                                <div class="sp-choice-info">
+                                    <strong class="sp-choice-title">${idx.name}</strong>
+                                    <span class="sp-choice-meta">${idx.documentCount || 0} indexed documents</span>
+                                </div>
+                                <input type="checkbox"
+                                       class="switch-input"
+                                       .checked=${isChecked}
+                                       @change=${e => {
+                                           if (!d.indexes) d.indexes = [];
+                                           if (e.target.checked) d.indexes.push(idx.name);
+                                           else d.indexes = d.indexes.filter(n => n !== idx.name);
+                                           this.requestUpdate();
+                                       }}>
+                            </label>
+                        `;
+                    })}
+                </div>
+            </div>
+        `;
+    }
+
+    _renderSourceEntityTypesSidePanelBody(d) {
+        const types = [
+            { id: 'content', label: 'Content (Documents & Pages)', desc: 'Standard Umbraco published content pages' },
+            { id: 'media', label: 'Media (Files & Images)', desc: 'Media library assets, PDF documents, and images' },
+            { id: 'member', label: 'Members', desc: 'Registered frontend member accounts' }
+        ];
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-choice-header-info">
+                    <p class="sp-choice-desc">
+                        Filter search results by Examine entity category. If none are selected, all categories are eligible.
+                    </p>
+                    <div class="sp-choice-actions">
+                        <button class="btn btn-secondary btn-sm" @click=${() => { d.indexTypes = []; this.requestUpdate(); }}>
+                            Reset to All Categories
+                        </button>
+                        <button class="btn btn-secondary btn-sm" @click=${() => { d.indexTypes = types.map(t => t.id); this.requestUpdate(); }}>
+                            Select All (${types.length})
+                        </button>
+                    </div>
+                </div>
+
+                <div class="sp-choices-list">
+                    ${types.map(t => {
+                        const isChecked = (d.indexTypes || []).includes(t.id);
+                        return html`
+                            <label class="sp-choice-card ${isChecked ? 'sp-choice-active' : ''}">
+                                <div class="sp-choice-info">
+                                    <strong class="sp-choice-title">${t.label}</strong>
+                                    <span class="sp-choice-meta">${t.desc}</span>
+                                </div>
+                                <input type="checkbox"
+                                       class="switch-input"
+                                       .checked=${isChecked}
+                                       @change=${e => {
+                                           if (!d.indexTypes) d.indexTypes = [];
+                                           if (e.target.checked) d.indexTypes.push(t.id);
+                                           else d.indexTypes = d.indexTypes.filter(x => x !== t.id);
+                                           this.requestUpdate();
+                                       }}>
+                            </label>
+                        `;
+                    })}
+                </div>
+            </div>
+        `;
+    }
+
+    _renderSourceContentTypesSidePanelBody(d, isExclude = false) {
+        const contentTypes = [...(this._catalog?.contentTypes || []), ...(this._catalog?.mediaTypes || [])];
+        const q = (d._searchFilter || '').toLowerCase();
+        const filtered = contentTypes.filter(ct => !q || (ct.name && ct.name.toLowerCase().includes(q)) || (ct.alias && ct.alias.toLowerCase().includes(q)));
+        const targetList = isExclude ? (d.excludeContentTypes || []) : (d.includeContentTypes || []);
+
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-choice-header-info">
+                    <div class="search-box-wrap" style="width: 100%; max-width: 100%;">
+                        <i class="icon-search search-box-icon"></i>
+                        <input type="text"
+                               class="search-box-input"
+                               placeholder="Search content types by name or alias..."
+                               .value=${d._searchFilter || ''}
+                               @input=${e => { d._searchFilter = e.target.value; this.requestUpdate(); }}>
+                    </div>
+                    <div class="sp-choice-actions">
+                        <span class="text-muted" style="font-size: 12px; font-weight: 500;">
+                            ${targetList.length} of ${contentTypes.length} ${isExclude ? 'excluded' : 'included'}
+                        </span>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn btn-secondary btn-sm" @click=${() => {
+                                if (isExclude) d.excludeContentTypes = [];
+                                else d.includeContentTypes = [];
+                                this.requestUpdate();
+                            }}>
+                                Clear All
+                            </button>
+                            <button class="btn btn-secondary btn-sm" @click=${() => {
+                                if (isExclude) d.excludeContentTypes = contentTypes.map(c => c.alias);
+                                else d.includeContentTypes = contentTypes.map(c => c.alias);
+                                this.requestUpdate();
+                            }}>
+                                Select All Filtered
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sp-choices-list">
+                    ${filtered.map(ct => {
+                        const isChecked = targetList.includes(ct.alias);
+                        return html`
+                            <label class="sp-choice-card ${isChecked ? 'sp-choice-active' : ''}">
+                                <div class="sp-choice-info">
+                                    <strong class="sp-choice-title">${ct.name}</strong>
+                                    <span class="sp-choice-meta"><code>${ct.alias}</code></span>
+                                </div>
+                                <input type="checkbox"
+                                       class="switch-input"
+                                       .checked=${isChecked}
+                                       @change=${e => {
+                                           if (isExclude) {
+                                               if (!d.excludeContentTypes) d.excludeContentTypes = [];
+                                               if (e.target.checked) d.excludeContentTypes.push(ct.alias);
+                                               else d.excludeContentTypes = d.excludeContentTypes.filter(a => a !== ct.alias);
+                                           } else {
+                                               if (!d.includeContentTypes) d.includeContentTypes = [];
+                                               if (e.target.checked) d.includeContentTypes.push(ct.alias);
+                                               else d.includeContentTypes = d.includeContentTypes.filter(a => a !== ct.alias);
+                                           }
+                                           this.requestUpdate();
+                                       }}>
+                            </label>
+                        `;
+                    })}
+                    ${filtered.length === 0 ? html`
+                        <div class="card-empty-pad" style="text-align: center;">
+                            <span class="text-muted" style="font-size: 13px;">No content types match '${d._searchFilter}'</span>
+                        </div>
+                    ` : nothing}
+                </div>
+            </div>
+        `;
+    }
+
+    _renderSourceRootsSidePanelBody(d) {
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-choice-header-info">
+                    <p class="sp-choice-desc">
+                        Select root content page(s) or branches from the Umbraco tree. Search queries will be scoped strictly to these subtrees. Leave empty to search the entire site.
+                    </p>
+                </div>
+
+                <div class="sp-group" style="margin-bottom: 20px; width: 100%;">
+                    <label class="sp-label" style="font-weight: 700; margin-bottom: 8px;">Content Tree / URL Picker</label>
+                    <umb-input-document
+                        .selection=${d.rootNodeKeys || []}
+                        @change=${e => {
+                            d.rootNodeKeys = e.target.selection || [];
+                            d._rootsInput = (d.rootNodeKeys || []).join('\n');
+                            this.requestUpdate();
+                        }}>
+                    </umb-input-document>
+                </div>
+
+                <div class="sp-group" style="margin-top: 16px;">
+                    <label class="toggle-item">
+                        <div class="toggle-info">
+                            <strong>Exclude Descendants of Excluded Nodes</strong>
+                            <span>If an excluded document has children, automatically exclude all descendants in the tree.</span>
+                        </div>
+                        <input type="checkbox"
+                               class="switch-input"
+                               .checked=${d.excludeDescendantsOfExcludedNodes !== false}
+                               @change=${e => { d.excludeDescendantsOfExcludedNodes = e.target.checked; this.requestUpdate(); }}>
+                    </label>
+                </div>
+            </div>
+        `;
+    }
+
+    _renderSourceProtectionSidePanelBody(d) {
+        return html`
+            <div class="sp-group">
+                <label class="toggle-item" style="margin-bottom: 16px;">
+                    <div class="toggle-info">
+                        <strong>Published Content Only</strong>
+                        <span>Only return content that is currently in a published state.</span>
+                    </div>
+                    <input type="checkbox"
+                           class="switch-input"
+                           .checked=${d.publishedOnly !== false}
+                           @change=${e => { d.publishedOnly = e.target.checked; this.requestUpdate(); }}>
+                </label>
+
+                <label class="toggle-item" style="margin-bottom: 16px;">
+                    <div class="toggle-info">
+                        <strong>Respect Navigation Hide (umbracoNaviHide)</strong>
+                        <span>Exclude content where the umbracoNaviHide property is set to True.</span>
+                    </div>
+                    <input type="checkbox"
+                           class="switch-input"
+                           .checked=${d.respectNaviHide !== false}
+                           @change=${e => { d.respectNaviHide = e.target.checked; this.requestUpdate(); }}>
+                </label>
+
+                <label class="toggle-item">
+                    <div class="toggle-info">
+                        <strong>Exclude Protected Content</strong>
+                        <span>Exclude content restricted by Umbraco Public Access (Members Only).</span>
+                    </div>
+                    <input type="checkbox"
+                           class="switch-input"
+                           .checked=${d.excludeProtected !== false}
+                           @change=${e => { d.excludeProtected = e.target.checked; this.requestUpdate(); }}>
+                </label>
+            </div>
+        `;
+    }
+
+    _renderManageFieldsSidePanelBody(d) {
+        const fields = d.fields || [];
+        const q = (d._searchFilter || '').toLowerCase();
+        const filtered = fields.filter(f => !q || (f.name && f.name.toLowerCase().includes(q)));
+
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-choice-header-info">
+                    <div style="display: flex; gap: 8px; align-items: center; width: 100%;">
+                        <div class="search-box-wrap" style="flex: 1; margin: 0;">
+                            <i class="icon-search search-box-icon"></i>
+                            <input type="text"
+                                   class="search-box-input"
+                                   placeholder="Filter searchable fields..."
+                                   .value=${d._searchFilter || ''}
+                                   @input=${e => { d._searchFilter = e.target.value; this.requestUpdate(); }}>
+                        </div>
+                        <button class="btn btn-primary btn-sm" @click=${() => this._openSidePanel('editField')}>
+                            + Add Field
+                        </button>
+                    </div>
+                    <div class="sp-choice-actions">
+                        <span class="text-muted" style="font-size: 12px; font-weight: 500;">
+                            ${fields.length} search fields defined
+                        </span>
+                    </div>
+                </div>
+
+                <div class="sp-choices-list">
+                    ${filtered.map(f => html`
+                        <div class="sp-choice-card" style="cursor: default;">
+                            <div class="sp-choice-info">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <strong class="sp-choice-title">${f.name}</strong>
+                                    <span class="badge badge-info">${f.boost}x boost</span>
+                                    <span class="badge">${f.matchMode || 'prefix'}</span>
+                                </div>
+                                <span class="sp-choice-meta">Target examine document property</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <input type="checkbox"
+                                       class="switch-input"
+                                       title="Enable/Disable Field"
+                                       .checked=${f.enabled !== false}
+                                       @change=${e => { f.enabled = e.target.checked; this.requestUpdate(); }}>
+                                <button class="btn-icon" title="Edit Field" @click=${() => this._openSidePanel('editField', f)}>
+                                    <i class="icon-edit"></i>
+                                </button>
+                                <button class="btn-icon btn-icon-danger" title="Remove Field" @click=${() => {
+                                    d.fields = d.fields.filter(x => x.name !== f.name);
+                                    this.requestUpdate();
+                                }}>
+                                    <i class="icon-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    `)}
+                    ${filtered.length === 0 ? html`
+                        <div class="card-empty-pad" style="text-align: center;">
+                            <span class="text-muted" style="font-size: 13px;">No fields match '${d._searchFilter}'</span>
+                        </div>
+                    ` : nothing}
+                </div>
+            </div>
+        `;
+    }
+
+    _renderMatchParametersSidePanelBody(d) {
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-group" style="margin-bottom: 16px;">
+                    <label class="sp-label">Default Combine Operator</label>
+                    <select class="sp-select"
+                            .value=${d.defaultOperator}
+                            @change=${e => { d.defaultOperator = e.target.value; this.requestUpdate(); }}>
+                        <option value="or">OR (Any field/term matches - Broadest results)</option>
+                        <option value="and">AND (All terms must match - Strict results)</option>
+                    </select>
+                    <span class="sp-hint">Defines how multiple search words are joined in the underlying query parser.</span>
+                </div>
+
+                <div class="sp-group" style="margin-bottom: 16px;">
+                    <label class="sp-label">Fuzziness Tolerance (0.0 - 1.0)</label>
+                    <div class="sp-slider-row">
+                        <input type="range"
+                               min="0.1"
+                               max="1.0"
+                               step="0.05"
+                               .value=${String(d.fuzziness)}
+                               @input=${e => { d.fuzziness = parseFloat(e.target.value) || 0.8; this.requestUpdate(); }}>
+                        <input type="number"
+                               class="sp-input"
+                               style="width: 80px;"
+                               min="0.1"
+                               max="1.0"
+                               step="0.05"
+                               .value=${String(d.fuzziness)}
+                               @input=${e => { d.fuzziness = parseFloat(e.target.value) || 0.8; this.requestUpdate(); }}>
+                    </div>
+                    <span class="sp-hint">Controls typo tolerance when fuzzy matching is engaged. 0.8 is standard.</span>
+                </div>
+
+                <div class="sp-group" style="margin-bottom: 16px;">
+                    <label class="sp-label">Minimum Query Length (Characters)</label>
+                    <input type="number"
+                           class="sp-input"
+                           min="1"
+                           max="10"
+                           .value=${String(d.minimumQueryLength)}
+                           @input=${e => { d.minimumQueryLength = parseInt(e.target.value) || 2; this.requestUpdate(); }}>
+                    <span class="sp-hint">Queries shorter than this threshold will return empty results immediately.</span>
+                </div>
+
+                <div class="sp-group" style="margin-top: 10px;">
+                    <label class="toggle-item">
+                        <div class="toggle-info">
+                            <strong>All Terms Must Match</strong>
+                            <span>Require every single word in multi-word queries to appear in matching documents.</span>
+                        </div>
+                        <input type="checkbox"
+                               class="switch-input"
+                               .checked=${!!d.allTermsMustMatch}
+                               @change=${e => { d.allTermsMustMatch = e.target.checked; this.requestUpdate(); }}>
+                    </label>
+                </div>
+            </div>
+        `;
+    }
+
+    _renderStopWordsSidePanelBody(d) {
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-choice-header-info">
+                    <p class="sp-choice-desc">
+                        Words that will be automatically stripped from user queries before searching Examine indexes.
+                    </p>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-secondary btn-sm" @click=${() => {
+                            const defaults = ["a","about","an","and","are","as","at","be","by","for","from","how","in","is","it","of","on","or","that","the","this","to","was","what","when","where","who","will","with"];
+                            d._wordsInput = defaults.join('\n');
+                            this.requestUpdate();
+                        }}>
+                            Load Standard English Defaults
+                        </button>
+                        <button class="btn btn-secondary btn-sm" @click=${() => { d._wordsInput = ''; this.requestUpdate(); }}>
+                            Clear All
+                        </button>
+                    </div>
+                </div>
+
+                <div class="sp-group" style="flex: 1; height: 100%; display: flex; flex-direction: column;">
+                    <label class="sp-label">Stop Words (One word per line)</label>
+                    <textarea class="sp-textarea"
+                              style="flex: 1; min-height: 250px; font-family: monospace; font-size: 13px;"
+                              placeholder="e.g.&#10;the&#10;and&#10;is&#10;for"
+                              .value=${d._wordsInput || ''}
+                              @input=${e => { d._wordsInput = e.target.value; this.requestUpdate(); }}></textarea>
+                </div>
+            </div>
+        `;
+    }
+
+    _renderManageSynonymsSidePanelBody(d) {
+        const synonyms = d.synonyms || {};
+        const entries = Object.entries(synonyms);
+
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-choice-header-info">
+                    <p class="sp-choice-desc">
+                        When users search for a term, automatically expand their search to also match equivalent synonyms.
+                    </p>
+                    <button class="btn btn-primary btn-sm" @click=${() => this._openSidePanel('editSynonym')}>
+                        + Add Synonym Group
+                    </button>
+                </div>
+
+                <div class="sp-choices-list">
+                    ${entries.map(([term, syns]) => html`
+                        <div class="sp-choice-card" style="cursor: default;">
+                            <div class="sp-choice-info">
+                                <strong class="sp-choice-title">${term}</strong>
+                                <span class="sp-choice-meta">Expands to: <code>${(syns || []).join(', ')}</code></span>
+                            </div>
+                            <button class="btn-icon btn-icon-danger" title="Delete Synonym" @click=${() => {
+                                delete d.synonyms[term];
+                                this.requestUpdate();
+                            }}>
+                                <i class="icon-trash"></i>
+                            </button>
+                        </div>
+                    `)}
+                    ${entries.length === 0 ? html`
+                        <div class="card-empty-pad" style="text-align: center;">
+                            <span class="text-muted" style="font-size: 13px;">No synonym groups defined yet.</span>
+                        </div>
+                    ` : nothing}
+                </div>
+            </div>
+        `;
+    }
+
+    _renderManageSortSidePanelBody(d) {
+        const sortBy = d.sortBy || [];
+
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-choice-header-info">
+                    <p class="sp-choice-desc">
+                        Define ordered sort rules for search results. If none are specified, results are ordered purely by calculated relevance score.
+                    </p>
+                    <button class="btn btn-primary btn-sm" @click=${() => this._openSidePanel('editSort')}>
+                        + Add Sort Level
+                    </button>
+                </div>
+
+                <div class="sp-choices-list">
+                    ${sortBy.map((s, idx) => html`
+                        <div class="sp-choice-card" style="cursor: default;">
+                            <div class="sp-choice-info">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span class="badge badge-info">Priority #${idx + 1}</span>
+                                    <strong class="sp-choice-title">${s.field}</strong>
+                                </div>
+                                <span class="sp-choice-meta">Sorted in <strong>${s.direction?.toUpperCase() || 'ASCENDING'}</strong> order</span>
+                            </div>
+                            <button class="btn-icon btn-icon-danger" title="Remove Sort Level" @click=${() => {
+                                d.sortBy.splice(idx, 1);
+                                this.requestUpdate();
+                            }}>
+                                <i class="icon-trash"></i>
+                            </button>
+                        </div>
+                    `)}
+                    ${sortBy.length === 0 ? html`
+                        <div class="card-empty-pad" style="text-align: center;">
+                            <span class="text-muted" style="font-size: 13px;">No custom sort levels. Defaulting to Relevance Score (Descending).</span>
+                        </div>
+                    ` : nothing}
+                </div>
+            </div>
+        `;
+    }
+
+    _renderManageContentTypeBoostsSidePanelBody(d) {
+        const boosts = d.contentTypeBoosts || {};
+        const entries = Object.entries(boosts);
+
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-choice-header-info">
+                    <p class="sp-choice-desc">
+                        Apply multiplying weights to specific Umbraco document types (e.g. boost News Articles by 2.0x, Products by 1.5x).
+                    </p>
+                    <button class="btn btn-primary btn-sm" @click=${() => this._openSidePanel('editContentTypeBoost')}>
+                        + Add Document Type Boost
+                    </button>
+                </div>
+
+                <div class="sp-choices-list">
+                    ${entries.map(([alias, boost]) => html`
+                        <div class="sp-choice-card" style="cursor: default;">
+                            <div class="sp-choice-info">
+                                <strong class="sp-choice-title">${alias}</strong>
+                                <span class="sp-choice-meta">Score multiplier: <strong>${boost}x</strong></span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <input type="number"
+                                       class="sp-input"
+                                       style="width: 75px;"
+                                       step="0.1"
+                                       min="0.1"
+                                       max="50"
+                                       .value=${String(boost)}
+                                       @input=${e => {
+                                           d.contentTypeBoosts[alias] = parseFloat(e.target.value) || 1.0;
+                                           this.requestUpdate();
+                                       }}>
+                                <button class="btn-icon btn-icon-danger" title="Remove Boost" @click=${() => {
+                                    delete d.contentTypeBoosts[alias];
+                                    this.requestUpdate();
+                                }}>
+                                    <i class="icon-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    `)}
+                    ${entries.length === 0 ? html`
+                        <div class="card-empty-pad" style="text-align: center;">
+                            <span class="text-muted" style="font-size: 13px;">No document type boosts configured.</span>
+                        </div>
+                    ` : nothing}
+                </div>
+            </div>
+        `;
+    }
+
+    _renderManageBestBetsSidePanelBody(d) {
+        const bets = d.bestBets || [];
+
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-choice-header-info">
+                    <p class="sp-choice-desc">
+                        Pin curated Umbraco content pages to the top of search results when visitors type specific trigger terms.
+                    </p>
+                    <button class="btn btn-primary btn-sm" @click=${() => this._openSidePanel('editBestBet')}>
+                        + Add Best Bet (Pinned Result)
+                    </button>
+                </div>
+
+                <div class="sp-choices-list">
+                    ${bets.map((b, idx) => html`
+                        <div class="sp-choice-card" style="cursor: default;">
+                            <div class="sp-choice-info">
+                                <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px;">
+                                    ${(b.terms || []).map(t => html`<span class="badge badge-info">${t}</span>`)}
+                                </div>
+                                <span class="sp-choice-meta">Pinned nodes: <code>${(b.nodeKeys || []).join(', ')}</code></span>
+                            </div>
+                            <button class="btn-icon btn-icon-danger" title="Remove Best Bet" @click=${() => {
+                                d.bestBets.splice(idx, 1);
+                                this.requestUpdate();
+                            }}>
+                                <i class="icon-trash"></i>
+                            </button>
+                        </div>
+                    `)}
+                    ${bets.length === 0 ? html`
+                        <div class="card-empty-pad" style="text-align: center;">
+                            <span class="text-muted" style="font-size: 13px;">No best bets defined. Results are ordered purely by algorithm.</span>
+                        </div>
+                    ` : nothing}
+                </div>
+            </div>
+        `;
+    }
+
+    _renderRecencySidePanelBody(d) {
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-group" style="margin-bottom: 16px;">
+                    <label class="toggle-item">
+                        <div class="toggle-info">
+                            <strong>Enable Recency Boost</strong>
+                            <span>Lift freshly published or updated documents above older pages.</span>
+                        </div>
+                        <input type="checkbox"
+                               class="switch-input"
+                               .checked=${!!d.enabled}
+                               @change=${e => { d.enabled = e.target.checked; this.requestUpdate(); }}>
+                    </label>
+                </div>
+
+                <div class="sp-group" style="margin-bottom: 16px;">
+                    <label class="sp-label">Half-Life (Days)</label>
+                    <input type="number"
+                           class="sp-input"
+                           min="1"
+                           max="1000"
+                           .value=${String(d.halfLifeDays)}
+                           @input=${e => { d.halfLifeDays = parseInt(e.target.value) || 90; this.requestUpdate(); }}>
+                    <span class="sp-hint">Number of days after which a document's recency score boost drops by 50%.</span>
+                </div>
+
+                <div class="sp-group">
+                    <label class="sp-label">Recency Weight Multiplier</label>
+                    <div class="sp-slider-row">
+                        <input type="range"
+                               min="0.1"
+                               max="5.0"
+                               step="0.1"
+                               .value=${String(d.weight)}
+                               @input=${e => { d.weight = parseFloat(e.target.value) || 0.5; this.requestUpdate(); }}>
+                        <input type="number"
+                               class="sp-input"
+                               style="width: 80px;"
+                               min="0.1"
+                               max="10.0"
+                               step="0.1"
+                               .value=${String(d.weight)}
+                               @input=${e => { d.weight = parseFloat(e.target.value) || 0.5; this.requestUpdate(); }}>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    _renderBlockedTermsSidePanelBody(d) {
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-choice-header-info">
+                    <p class="sp-choice-desc">
+                        Search queries containing these terms will return 0 results or be blocked automatically.
+                    </p>
+                </div>
+
+                <div class="sp-group" style="flex: 1; height: 100%; display: flex; flex-direction: column;">
+                    <label class="sp-label">Blocked Terms (One term per line)</label>
+                    <textarea class="sp-textarea"
+                              style="flex: 1; min-height: 250px; font-family: monospace; font-size: 13px;"
+                              placeholder="e.g.&#10;confidential&#10;internal&#10;draft"
+                              .value=${d._termsInput || ''}
+                              @input=${e => { d._termsInput = e.target.value; this.requestUpdate(); }}></textarea>
+                </div>
+            </div>
+        `;
+    }
+
+    _renderPagingSidePanelBody(d) {
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-group" style="margin-bottom: 20px;">
+                    <label class="sp-label">Default Page Size</label>
+                    <input type="number"
+                           class="sp-input"
+                           min="1"
+                           max="100"
+                           .value=${String(d.pageSize)}
+                           @input=${e => { d.pageSize = parseInt(e.target.value) || 10; this.requestUpdate(); }}>
+                    <span class="sp-hint">Number of results displayed per page by default.</span>
+                </div>
+
+                <div class="sp-group">
+                    <label class="sp-label">Maximum Results Considered</label>
+                    <input type="number"
+                           class="sp-input"
+                           min="10"
+                           max="5000"
+                           .value=${String(d.maxResults)}
+                           @input=${e => { d.maxResults = parseInt(e.target.value) || 500; this.requestUpdate(); }}>
+                    <span class="sp-hint">Upper limit on the total result set evaluated for relevance and pagination.</span>
+                </div>
+            </div>
+        `;
+    }
+
+    _renderHighlightingSidePanelBody(d) {
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-group" style="margin-bottom: 16px;">
+                    <label class="toggle-item">
+                        <div class="toggle-info">
+                            <strong>Enable Snippet Highlights</strong>
+                            <span>Extract snippet text with matched query terms highlighted in bold/markup.</span>
+                        </div>
+                        <input type="checkbox"
+                               class="switch-input"
+                               .checked=${!!d.enabled}
+                               @change=${e => { d.enabled = e.target.checked; this.requestUpdate(); }}>
+                    </label>
+                </div>
+
+                <div class="sp-group" style="margin-bottom: 16px;">
+                    <label class="sp-label">Snippet Mode</label>
+                    <select class="sp-select"
+                            .value=${d.mode || 'sentence'}
+                            @change=${e => { d.mode = e.target.value; this.requestUpdate(); }}>
+                        <option value="sentence">Full Sentence (Natural cut)</option>
+                        <option value="characters">Fixed Characters (Truncated)</option>
+                    </select>
+                </div>
+
+                <div class="sp-group" style="margin-bottom: 16px;">
+                    <label class="sp-label">Max Snippet Length (Characters)</label>
+                    <input type="number"
+                           class="sp-input"
+                           min="50"
+                           max="1000"
+                           .value=${String(d.snippetLength)}
+                           @input=${e => { d.snippetLength = parseInt(e.target.value) || 200; this.requestUpdate(); }}>
+                </div>
+
+                <div class="sp-group">
+                    <label class="sp-label">Sentence Context (Sentences)</label>
+                    <input type="number"
+                           class="sp-input"
+                           min="0"
+                           max="5"
+                           .value=${String(d.sentenceContext)}
+                           @input=${e => { d.sentenceContext = parseInt(e.target.value) || 0; this.requestUpdate(); }}>
+                </div>
+            </div>
+        `;
+    }
+
+    _renderResultShapingSidePanelBody(d) {
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-group" style="margin-bottom: 20px;">
+                    <label class="sp-label">De-Duplicate Results by Field</label>
+                    <input type="text"
+                           class="sp-input"
+                           placeholder="e.g. urlName, parentId (leave empty to disable)"
+                           .value=${d.deduplicateByField || ''}
+                           @input=${e => { d.deduplicateByField = e.target.value; this.requestUpdate(); }}>
+                    <span class="sp-hint">If multiple matches have the same value for this field, only the highest ranking one is returned.</span>
+                </div>
+
+                <div class="sp-group">
+                    <label class="toggle-item">
+                        <div class="toggle-info">
+                            <strong>Group Results by Document Type</strong>
+                            <span>Aggregate result counts grouped by content type alias in search response.</span>
+                        </div>
+                        <input type="checkbox"
+                               class="switch-input"
+                               .checked=${!!d.groupByContentType}
+                               @change=${e => { d.groupByContentType = e.target.checked; this.requestUpdate(); }}>
+                    </label>
+                </div>
+            </div>
+        `;
+    }
+
+    _renderManageFacetsSidePanelBody(d) {
+        const facets = d.facets || [];
+
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-choice-header-info">
+                    <p class="sp-choice-desc">
+                        Define dynamic facet dimensions to return aggregated bucket counts for frontend search filter sidebars.
+                    </p>
+                    <button class="btn btn-primary btn-sm" @click=${() => this._openSidePanel('editFacet')}>
+                        + Add Facet Dimension
+                    </button>
+                </div>
+
+                <div class="sp-choices-list">
+                    ${facets.map((f, idx) => html`
+                        <div class="sp-choice-card" style="cursor: default;">
+                            <div class="sp-choice-info">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <strong class="sp-choice-title">${f.label || f.alias}</strong>
+                                    <span class="badge badge-info">${f.kind || 'field'}</span>
+                                </div>
+                                <span class="sp-choice-meta">Field: <code>${f.field}</code> | Max buckets: ${f.maxValues || 20}</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <button class="btn-icon" title="Edit Facet" @click=${() => this._openSidePanel('editFacet', f)}>
+                                    <i class="icon-edit"></i>
+                                </button>
+                                <button class="btn-icon btn-icon-danger" title="Remove Facet" @click=${() => {
+                                    d.facets.splice(idx, 1);
+                                    this.requestUpdate();
+                                }}>
+                                    <i class="icon-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    `)}
+                    ${facets.length === 0 ? html`
+                        <div class="card-empty-pad" style="text-align: center;">
+                            <span class="text-muted" style="font-size: 13px;">No facet dimensions defined yet.</span>
+                        </div>
+                    ` : nothing}
                 </div>
             </div>
         `;
@@ -3993,6 +4803,178 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         }
 
         /* Rule Section Grid & Cards */
+        .source-settings-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+
+        .mf-field { 
+            display: flex;
+            gap: 24px;
+            align-items: stretch;
+            background: #ffffff !important; 
+            border: none !important; 
+            border-radius: 0 !important; 
+            margin: 0; 
+            padding: 0 !important; 
+            cursor: default !important; 
+            position: relative;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .field-left-info {
+            width: 25%;
+            min-width: 25%;
+            max-width: 25%;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            padding: 10px 0;
+            box-sizing: border-box;
+        }
+
+        .setting-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #1f2937;
+            letter-spacing: -0.01em;
+        }
+
+        .setting-desc {
+            font-size: 12px;
+            color: #6b7280;
+            font-weight: 500;
+            margin-top: 5px;
+            line-height: 1.45;
+        }
+
+        .field-right-box {
+            width: 75%;
+            min-width: 75%;
+            max-width: 75%;
+            flex: 1;
+            background: #f8fafc !important;
+            border: 1px solid #e2e8f0 !important;
+            border-radius: 6px !important;
+            padding: 14px 18px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 74px;
+            box-sizing: border-box;
+            transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .clickable-box {
+            cursor: pointer;
+        }
+
+        .clickable-box:hover {
+            border-color: #000000 !important;
+            background: #f1f5f9 !important;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+        }
+
+        .field-box-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .field-type-tag {
+            font-size: 11px;
+            font-weight: 800;
+            color: #4b5563;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .field-count-pill {
+            font-size: 11.5px;
+            font-weight: 600;
+            color: #374151;
+            background: #e5e7eb;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+
+        .field-box-content {
+            display: flex;
+            align-items: center;
+            flex: 1;
+        }
+
+        .selected-chips-wrap {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .selected-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #ffffff;
+            border: 1px solid #d1d5db;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12.5px;
+            color: #111827;
+            font-weight: 500;
+        }
+
+        .selected-chip svg {
+            color: #4b5563;
+        }
+
+        .selected-chip code {
+            font-size: 12px;
+            font-weight: 600;
+            color: #111827;
+        }
+
+        .selected-chip.chip-danger {
+            border-color: #fca5a5;
+            background: #fef2f2;
+            color: #b91c1c;
+        }
+
+        .selected-chip.chip-success {
+            border-color: #86efac;
+            background: #f0fdf4;
+            color: #166534;
+        }
+
+        .selected-chip.chip-muted {
+            border-color: #e5e7eb;
+            background: #f9fafb;
+            color: #6b7280;
+        }
+
+        .selected-placeholder {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .placeholder-tag {
+            font-size: 13px;
+            font-weight: 600;
+            color: #1f2937;
+        }
+
+        .placeholder-meta {
+            font-size: 11.5px;
+            color: #6b7280;
+        }
+
         .rule-section-grid {
             display: flex;
             flex-direction: column;
@@ -4269,8 +5251,8 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         }
 
         .side-panel-wrapper {
-            width: 500px;
-            max-width: 90vw;
+            width: 640px;
+            max-width: 92vw;
             height: 100%;
             background: #ffffff;
             box-shadow: var(--shadow-lg);
@@ -4286,7 +5268,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         }
 
         .sp-header {
-            padding: 16px 24px;
+            padding: 18px 24px;
             background: var(--primary);
             color: #ffffff;
         }
@@ -4319,12 +5301,114 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             display: flex;
             flex-direction: column;
             gap: 18px;
+            height: 100%;
+            box-sizing: border-box;
         }
 
         .sp-group {
             display: flex;
             flex-direction: column;
             gap: 6px;
+        }
+
+        /* Full Height & Width Multi-Choice Layout */
+        .sp-multi-choice-layout {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            height: 100%;
+            width: 100%;
+            min-height: 0;
+            box-sizing: border-box;
+        }
+
+        .sp-choice-header-info {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 14px;
+            flex-shrink: 0;
+        }
+
+        .sp-choice-desc {
+            font-size: 13px;
+            color: #6b7280;
+            line-height: 1.45;
+            margin: 0;
+        }
+
+        .sp-choice-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .sp-choices-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            flex: 1;
+            height: 100%;
+            min-height: 0;
+            overflow-y: auto;
+            padding-right: 4px;
+            box-sizing: border-box;
+        }
+
+        .sp-choice-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            min-width: 100%;
+            max-width: 100%;
+            padding: 12px 16px;
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            cursor: pointer;
+            box-sizing: border-box;
+            transition: all 0.15s ease;
+        }
+
+        .sp-choice-card:hover {
+            border-color: #000000;
+            background: #f9fafb;
+        }
+
+        .sp-choice-card.sp-choice-active {
+            border-color: #000000;
+            background: #f3f4f6;
+        }
+
+        .sp-choice-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            flex: 1;
+            padding-right: 12px;
+        }
+
+        .sp-choice-title {
+            font-size: 13.5px;
+            font-weight: 700;
+            color: #111827;
+        }
+
+        .sp-choice-meta {
+            font-size: 12px;
+            color: #6b7280;
+        }
+
+        .sp-choice-meta code {
+            font-size: 11.5px;
+            font-weight: 600;
+            color: #374151;
+            background: #e5e7eb;
+            padding: 1px 5px;
+            border-radius: 3px;
         }
 
         .sp-slider-row {
