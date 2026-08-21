@@ -486,9 +486,11 @@ internal sealed partial class SearchResultProcessor
             return item.Path;
         }
 
-        if (field.Equals(ImobisoftSearchConstants.IndexFields.NodeId, StringComparison.OrdinalIgnoreCase) || field.Equals("id", StringComparison.OrdinalIgnoreCase))
+        // Case-insensitive fallback across all field keys on item.Fields
+        var match = item.Fields.FirstOrDefault(kvp => kvp.Key.Equals(field, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrEmpty(match.Key))
         {
-            return item.Id;
+            return match.Value;
         }
 
         return null;
@@ -515,7 +517,7 @@ internal sealed partial class SearchResultProcessor
             var chosenSet = new HashSet<string>(chosen ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
 
             var hasCustomRanges = definition.Ranges != null && definition.Ranges.Count > 0;
-            IList<FacetValue> values = (definition.Kind == FacetKind.Field && !hasCustomRanges)
+            IList<FacetValue> values = (!hasCustomRanges)
                 ? BuildFieldFacet(scope, definition, chosenSet)
                 : BuildRangeFacet(scope, definition, chosenSet);
 
@@ -541,7 +543,7 @@ internal sealed partial class SearchResultProcessor
         FacetDefinition definition,
         IReadOnlySet<string> chosen)
         => items
-            .Select(item => ReadSortableValue(item, definition.Field))
+            .Select(item => FieldValue(item, definition.Field) ?? ReadSortableValue(item, definition.Field))
             .Where(v => !string.IsNullOrEmpty(v))
             .GroupBy(v => v!, StringComparer.OrdinalIgnoreCase)
             .OrderByDescending(g => g.Count())
@@ -595,11 +597,24 @@ internal sealed partial class SearchResultProcessor
             FacetDefinition captured = definition;
             var hasCustomRanges = captured.Ranges != null && captured.Ranges.Count > 0;
 
-            filtered = (captured.Kind == FacetKind.Field && !hasCustomRanges)
-                ? filtered.Where(item => chosenSet.Contains(ReadSortableValue(item, captured.Field) ?? string.Empty))
-                : filtered.Where(item => captured.Ranges!
-                    .Where(r => chosenSet.Contains(r.Alias))
-                    .Any(r => FallsInRange(item, captured, r)));
+            filtered = (!hasCustomRanges)
+                ? filtered.Where(item => {
+                    var val = FieldValue(item, captured.Field) ?? ReadSortableValue(item, captured.Field);
+                    return !string.IsNullOrEmpty(val) && chosenSet.Contains(val);
+                })
+                : filtered.Where(item => {
+                    var matchingRanges = (captured.Ranges ?? Array.Empty<FacetRange>())
+                        .Where(r => chosenSet.Contains(r.Alias))
+                        .ToList();
+
+                    if (matchingRanges.Count > 0)
+                    {
+                        return matchingRanges.Any(r => FallsInRange(item, captured, r));
+                    }
+
+                    // Fallback for ad-hoc selection or aliases without explicit range bounds
+                    return chosenSet.Any(val => FallsInRange(item, captured, new FacetRange { Alias = val, Label = val }));
+                });
         }
 
         var result = filtered.ToList();
@@ -625,6 +640,11 @@ internal sealed partial class SearchResultProcessor
 
             var lower = ParseNumericBound(range.From);
             var upper = ParseNumericBound(range.To);
+
+            if (lower is null && upper is null)
+            {
+                (lower, upper) = ExtractNumericBounds(range.Alias, range.Label);
+            }
 
             return (lower is null || value >= lower) && (upper is null || value < upper);
         }
@@ -698,6 +718,44 @@ internal sealed partial class SearchResultProcessor
 
     private static double? ParseNumericBound(string value)
         => double.TryParse(value, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed) ? parsed : null;
+
+    private static (double? Lower, double? Upper) ExtractNumericBounds(string? alias, string? label)
+    {
+        var combined = $"{alias} {label}".Trim();
+        if (string.IsNullOrWhiteSpace(combined))
+        {
+            return (null, null);
+        }
+
+        // e.g. 25-to-50, 25-50, 25 to 50, 25_50
+        Match matchRange = Regex.Match(combined, @"(\d+(?:\.\d+)?)\s*(?:to|-|_)\s*(\d+(?:\.\d+)?)", RegexOptions.IgnoreCase);
+        if (matchRange.Success)
+        {
+            double? l = double.TryParse(matchRange.Groups[1].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var lVal) ? lVal : null;
+            double? u = double.TryParse(matchRange.Groups[2].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var uVal) ? uVal : null;
+            return (l, u);
+        }
+
+        // e.g. under-25, under 25, <25, less-than-25
+        Match matchUnder = Regex.Match(combined, @"(?:under|<|less(?:_|-|\s)?than)\s*(\d+(?:\.\d+)?)", RegexOptions.IgnoreCase);
+        if (matchUnder.Success && double.TryParse(matchUnder.Groups[1].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var upper))
+        {
+            return (null, upper);
+        }
+
+        // e.g. over-100, 100+, 100-and-above, >100, 100-plus
+        Match matchOver = Regex.Match(combined, @"(?:over|>|above|\+)\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:\+|and(?:_|-|\s)?above|&above|plus)", RegexOptions.IgnoreCase);
+        if (matchOver.Success)
+        {
+            var valStr = !string.IsNullOrEmpty(matchOver.Groups[1].Value) ? matchOver.Groups[1].Value : matchOver.Groups[2].Value;
+            if (double.TryParse(valStr, NumberStyles.Any, CultureInfo.InvariantCulture, out var lower))
+            {
+                return (lower, null);
+            }
+        }
+
+        return (null, null);
+    }
 
     /// <summary>
     /// Accepts an ISO date or a relative expression such as <c>now-7d</c>, so that a "last week"

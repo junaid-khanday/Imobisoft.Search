@@ -44,4 +44,4 @@ D:\imobisoft\Imobisoft.Search\Imobisoft.Search\bin\Debug\net10.0\wwwroot\auth-fe
 D:\imobisoft\Imobisoft.Search\Imobisoft.Search\bin\Debug\net10.0\wwwroot\data-cache.js.gz
 D:\imobisoft\Imobisoft.Search\Imobisoft.Search\bin\Debug\net10.0\wwwroot\umbraco-package.json.gz
 D:\imobisoft\Imobisoft.Search\Imobisoft.Search\bin\Debug\net10.0\wwwroot\workspace.js.gz
-D:\imobisoft\Imobisoft.Search\Imobisoft.Search\obj\Debug\net10.0\compressed\yngxw0rsot-{0}-qzkkbczprq-qzkkbczprq.gz
+D:\imobisoft\Imobisoft.Search\Imobisoft.Search\obj\Debug\net10.0\compressed\yngxw0rsot-{0}-77rhzvnj9t-77rhzvnj9t.gz

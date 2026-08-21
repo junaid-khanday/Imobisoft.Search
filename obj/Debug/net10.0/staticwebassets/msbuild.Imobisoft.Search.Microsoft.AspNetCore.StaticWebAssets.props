@@ -72,12 +72,12 @@
       <RelatedAsset></RelatedAsset>
       <AssetTraitName></AssetTraitName>
       <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>qzkkbczprq</Fingerprint>
-      <Integrity>uk0h5sMsGxaOqDiE7Z7nvduBecdstQO04K0gF5J8qwo=</Integrity>
+      <Fingerprint>77rhzvnj9t</Fingerprint>
+      <Integrity>87KtJ92eF1E6zr9WI0SszwCThiI1hElQRMuV4fv9Gf8=</Integrity>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-      <FileLength>342171</FileLength>
-      <LastWriteTime>Fri, 21 Aug 2026 05:56:10 GMT</LastWriteTime>
+      <FileLength>349193</FileLength>
+      <LastWriteTime>Fri, 21 Aug 2026 06:49:42 GMT</LastWriteTime>
       <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\workspace.js'))</OriginalItemSpec>
     </StaticWebAsset>
   </ItemGroup>
