@@ -577,6 +577,9 @@
         <member name="P:Imobisoft.Search.Models.FacetDefinition.HideEmpty">
             <summary>Hides buckets with no matches instead of returning them at zero.</summary>
         </member>
+        <member name="P:Imobisoft.Search.Models.FacetDefinition.Enabled">
+            <summary>Whether this filter is enabled and active in search results.</summary>
+        </member>
         <member name="T:Imobisoft.Search.Models.FacetValue">
             <summary>One bucket in a computed facet.</summary>
         </member>
@@ -937,6 +940,12 @@
         </member>
         <member name="P:Imobisoft.Search.Models.SearchResponse.TotalResults">
             <summary>Total matches before paging, capped by <see cref="P:Imobisoft.Search.Models.ResultRules.MaxResults"/>.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchResponse.HasMore">
+            <summary>True when there are more results available to fetch for Load More or Infinite Scroll.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchResponse.EnableLoadMore">
+            <summary>Whether Load More pagination is configured for this profile.</summary>
         </member>
         <member name="P:Imobisoft.Search.Models.SearchResponse.Groups">
             <summary>Counts per document type, populated when <see cref="P:Imobisoft.Search.Models.ResultRules.GroupByContentType"/> is on.</summary>

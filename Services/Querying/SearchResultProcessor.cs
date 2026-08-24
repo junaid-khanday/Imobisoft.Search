@@ -42,7 +42,10 @@ internal sealed partial class SearchResultProcessor
         IList<FacetResult> facets = BuildFacets(items, rules.Results.Facets, request.Filters);
 
         items = ApplyFacetFilters(items, rules.Results.Facets, request.Filters, notes);
-        items = ApplyMinimumScore(items, rules.Matching.MinimumScore, notes);
+
+        // A minimum score is a threshold on relevance, and nothing has a relevance score without a
+        // term to be relevant to - applying one to a browse listing would empty it entirely.
+        items = ApplyMinimumScore(items, plan.TermGroups.Count == 0 ? 0 : rules.Matching.MinimumScore, notes);
         items = Deduplicate(items, rules.Results.DeduplicateByField, notes);
         items = Sort(items, rules.Ranking.SortBy);
 
@@ -65,6 +68,7 @@ internal sealed partial class SearchResultProcessor
             TotalResults = total,
             Page = page,
             PageSize = pageSize,
+            EnableLoadMore = rules.Results.EnableLoadMore,
             Facets = facets,
         };
 

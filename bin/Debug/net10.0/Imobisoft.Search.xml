@@ -868,6 +868,14 @@
             within one facet are OR'd together; separate facets are AND'd.
             </summary>
         </member>
+        <member name="P:Imobisoft.Search.Models.SearchRequest.AllowEmptyTerm">
+            <summary>
+            Runs the search even when <see cref="P:Imobisoft.Search.Models.SearchRequest.Term"/> is empty, matching everything the source rules
+            allow. This is what lets a search page show filter dimensions before anything is searched,
+            and what lets a visitor filter without having to type a word first. A short but non-empty
+            term still has to clear the profile's minimum query length.
+            </summary>
+        </member>
         <member name="P:Imobisoft.Search.Models.SearchRequest.IncludeDiagnostics">
             <summary>
             Populates <see cref="P:Imobisoft.Search.Models.SearchResponse.Diagnostics"/> with the queries that ran and the rules
@@ -940,6 +948,12 @@
         </member>
         <member name="P:Imobisoft.Search.Models.SearchResponse.TotalResults">
             <summary>Total matches before paging, capped by <see cref="P:Imobisoft.Search.Models.ResultRules.MaxResults"/>.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchResponse.HasMore">
+            <summary>True when there are more results available to fetch for Load More or Infinite Scroll.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchResponse.EnableLoadMore">
+            <summary>Whether Load More pagination is configured for this profile.</summary>
         </member>
         <member name="P:Imobisoft.Search.Models.SearchResponse.Groups">
             <summary>Counts per document type, populated when <see cref="P:Imobisoft.Search.Models.ResultRules.GroupByContentType"/> is on.</summary>

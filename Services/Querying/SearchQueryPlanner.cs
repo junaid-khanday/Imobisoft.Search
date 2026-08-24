@@ -37,19 +37,24 @@ internal sealed class SearchQueryPlanner
 
         var term = (request.Term ?? string.Empty).Trim();
 
-        if (term.Length == 0)
+        // Browse mode: no term, but the caller asked to run anyway. The plan matches every document
+        // the source rules allow, which is what gives a search page its filter counts before a word
+        // is typed, and what lets a filter selection alone return results.
+        var browse = request.AllowEmptyTerm && term.Length == 0;
+
+        if (term.Length == 0 && !browse)
         {
             return SearchPlan.Blocked(rules, "Empty search term.");
         }
 
-        if (term.Length < Math.Max(1, matching.MinimumQueryLength))
+        if (!browse && term.Length < Math.Max(1, matching.MinimumQueryLength))
         {
             return SearchPlan.Blocked(
                 rules,
                 $"Term is shorter than the {matching.MinimumQueryLength} character minimum.");
         }
 
-        if (IsBlocked(term, rules.Ranking.BlockedTerms))
+        if (!browse && IsBlocked(term, rules.Ranking.BlockedTerms))
         {
             return SearchPlan.Blocked(rules, "Term is on the blocked list.");
         }
@@ -90,7 +95,7 @@ internal sealed class SearchQueryPlanner
 
         foreach (var indexName in indexNames)
         {
-            IndexQueryPlan? plan = BuildIndexPlan(indexName, rules, matching, termGroups, cultures, rootIds);
+            IndexQueryPlan? plan = BuildIndexPlan(indexName, rules, matching, termGroups, cultures, rootIds, browse);
 
             if (plan is not null)
             {
@@ -126,53 +131,70 @@ internal sealed class SearchQueryPlanner
         MatchingRules matching,
         IReadOnlyList<IReadOnlyList<string>> termGroups,
         IReadOnlyList<string> cultures,
-        IReadOnlySet<int> rootIds)
+        IReadOnlySet<int> rootIds,
+        bool browse)
     {
         var available = new HashSet<string>(
             _catalog.GetIndex(indexName)?.Fields.Select(f => f.Name) ?? Enumerable.Empty<string>(),
             StringComparer.OrdinalIgnoreCase);
 
-        IReadOnlyList<SearchFieldRule> fieldRules = ResolveFieldRules(indexName, matching);
         var resolvedFieldNames = new List<string>();
         var fieldClauses = new List<string>();
 
-        foreach (SearchFieldRule rule in fieldRules)
+        if (!browse)
         {
-            foreach (var fieldName in ExpandForCultures(rule.Name, cultures, available))
+            IReadOnlyList<SearchFieldRule> fieldRules = ResolveFieldRules(indexName, matching);
+
+            foreach (SearchFieldRule rule in fieldRules)
             {
-                // An index that does not carry this field simply does not contribute a clause -
-                // searching several indexes with different shapes has to degrade, not fail.
-                if (available.Count > 0 && !available.Contains(fieldName))
+                foreach (var fieldName in ExpandForCultures(rule.Name, cultures, available))
                 {
-                    continue;
+                    // An index that does not carry this field simply does not contribute a clause -
+                    // searching several indexes with different shapes has to degrade, not fail.
+                    if (available.Count > 0 && !available.Contains(fieldName))
+                    {
+                        continue;
+                    }
+
+                    var termClause = BuildTermClause(termGroups, rule.MatchMode, matching);
+
+                    if (string.IsNullOrEmpty(termClause))
+                    {
+                        continue;
+                    }
+
+                    var clause = $"{LuceneSyntax.EscapeFieldName(fieldName)}:{LuceneSyntax.Group(termClause)}";
+                    fieldClauses.Add(LuceneSyntax.Boost(clause, rule.Boost));
+                    resolvedFieldNames.Add(fieldName);
                 }
-
-                var termClause = BuildTermClause(termGroups, rule.MatchMode, matching);
-
-                if (string.IsNullOrEmpty(termClause))
-                {
-                    continue;
-                }
-
-                var clause = $"{LuceneSyntax.EscapeFieldName(fieldName)}:{LuceneSyntax.Group(termClause)}";
-                fieldClauses.Add(LuceneSyntax.Boost(clause, rule.Boost));
-                resolvedFieldNames.Add(fieldName);
             }
         }
 
-        if (fieldClauses.Count == 0)
+        if (fieldClauses.Count == 0 && !browse)
         {
             return null;
         }
 
         var matchOperator = matching.DefaultOperator == SearchOperator.And ? "AND" : "OR";
-        var parts = new List<string> { LuceneSyntax.Require(LuceneSyntax.Join(fieldClauses, matchOperator)) };
+        var parts = new List<string>();
 
-        var typeClause = BuildTypeClause(rules.Sources);
-
-        if (!string.IsNullOrEmpty(typeClause))
+        if (browse)
         {
-            parts.Add(LuceneSyntax.Require(typeClause));
+            // Everything the type rules allow. With no type restrictions at all this is a bare
+            // match-all, which Lucene reads as "every document in the index".
+            var browseTypeClause = BuildTypeClause(rules.Sources);
+            parts.Add(string.IsNullOrEmpty(browseTypeClause) ? "*:*" : LuceneSyntax.Require(browseTypeClause));
+        }
+        else
+        {
+            parts.Add(LuceneSyntax.Require(LuceneSyntax.Join(fieldClauses, matchOperator)));
+
+            var typeClause = BuildTypeClause(rules.Sources);
+
+            if (!string.IsNullOrEmpty(typeClause))
+            {
+                parts.Add(LuceneSyntax.Require(typeClause));
+            }
         }
 
         var excludedTypes = rules.Sources.ExcludeContentTypes

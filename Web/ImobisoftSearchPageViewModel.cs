@@ -17,5 +17,5 @@ public sealed class ImobisoftSearchPageViewModel
     /// <summary>Path the page is served from, used to build its own links.</summary>
     public string PagePath { get; set; } = "/" + ImobisoftSearchConstants.Web.SearchPagePath;
 
-    public bool HasSearched => !string.IsNullOrWhiteSpace(Term);
+    public bool HasSearched { get; set; }
 }

@@ -60,6 +60,7 @@ public sealed class HighlightRules
 public sealed class ResultRules
 {
     public int PageSize { get; set; } = 10;
+    public bool EnableLoadMore { get; set; } = false;
 
     /// <summary>
     /// Hard ceiling on how many documents are pulled from the index before post-processing. Keeps

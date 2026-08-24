@@ -37,6 +37,14 @@ public sealed class SearchRequest
         new Dictionary<string, IList<string>>(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
+    /// Runs the search even when <see cref="Term"/> is empty, matching everything the source rules
+    /// allow. This is what lets a search page show filter dimensions before anything is searched,
+    /// and what lets a visitor filter without having to type a word first. A short but non-empty
+    /// term still has to clear the profile's minimum query length.
+    /// </summary>
+    public bool AllowEmptyTerm { get; set; }
+
+    /// <summary>
     /// Populates <see cref="SearchResponse.Diagnostics"/> with the queries that ran and the rules
     /// that were applied. The dashboard turns this on; site code normally leaves it off.
     /// </summary>

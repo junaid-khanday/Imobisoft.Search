@@ -377,6 +377,13 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
             return;
         }
 
+        // Neither is an empty-term listing: that is a search page loading its filters, not someone
+        // looking for something.
+        if (string.IsNullOrWhiteSpace(request.Term))
+        {
+            return;
+        }
+
         try
         {
             _analytics.Record(response, request.Cultures.FirstOrDefault(), durationMilliseconds);

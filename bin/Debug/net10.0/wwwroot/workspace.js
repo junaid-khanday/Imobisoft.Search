@@ -51,6 +51,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         _testActiveFilters: { state: true },
         _testResults: { state: true },
         _testSearching: { state: true },
+        _testLoadingMore: { state: true },
         _testAutocompleteSuggestions: { state: true },
         _testShowAutocomplete: { state: true },
         _testDiagnosticsOpen: { state: true },
@@ -149,6 +150,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         this._testActiveFilters = {};
         this._testResults = null;
         this._testSearching = false;
+        this._testLoadingMore = false;
         this._testAutocompleteSuggestions = [];
         this._testShowAutocomplete = false;
         this._testDiagnosticsOpen = true;
@@ -333,6 +335,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 results: {
                     pageSize: 10,
                     maxResults: 500,
+                    enableLoadMore: false,
                     returnFields: [],
                     groupByContentType: false,
                     deduplicateByField: '',
@@ -534,6 +537,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         if (!p.rules.results) p.rules.results = {};
         if (p.rules.results.pageSize === undefined) p.rules.results.pageSize = 10;
         if (p.rules.results.maxResults === undefined) p.rules.results.maxResults = 500;
+        if (p.rules.results.enableLoadMore === undefined) p.rules.results.enableLoadMore = false;
         if (!p.rules.results.returnFields) p.rules.results.returnFields = [];
         if (p.rules.results.groupByContentType === undefined) p.rules.results.groupByContentType = false;
         if (!p.rules.results.deduplicateByField) p.rules.results.deduplicateByField = '';
@@ -890,7 +894,8 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         } else if (type === 'editPaging') {
             this._sidePanelData = {
                 pageSize: this._currentProfile.rules?.results?.pageSize ?? 10,
-                maxResults: this._currentProfile.rules?.results?.maxResults ?? 500
+                maxResults: this._currentProfile.rules?.results?.maxResults ?? 500,
+                enableLoadMore: !!this._currentProfile.rules?.results?.enableLoadMore
             };
         } else if (type === 'editHighlighting') {
             this._sidePanelData = {
@@ -1409,6 +1414,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             if (!this._currentProfile.rules.results) this._currentProfile.rules.results = {};
             this._currentProfile.rules.results.pageSize = parseInt(d.pageSize) || 10;
             this._currentProfile.rules.results.maxResults = parseInt(d.maxResults) || 500;
+            this._currentProfile.rules.results.enableLoadMore = !!d.enableLoadMore;
         } else if (this._sidePanelType === 'editHighlighting') {
             if (!this._currentProfile.rules.results) this._currentProfile.rules.results = {};
             if (!this._currentProfile.rules.results.highlight) this._currentProfile.rules.results.highlight = {};
@@ -1455,11 +1461,13 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         this.requestUpdate();
 
         try {
+            // No pageSize override: the profile's "Default Page Size" (and any ad-hoc rules being
+            // edited) must decide how many results a page holds, otherwise the paging settings
+            // would never be visible in the tester.
             const req = {
                 term: this._testQuery.trim(),
                 profileAlias: this._testProfileAlias || 'default',
                 page: 1,
-                pageSize: 20,
                 cultures: this._testCulture ? [this._testCulture] : [],
                 filters: this._testActiveFilters
             };
@@ -1482,6 +1490,47 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             this._showToast("Unexpected error running search test.", "error");
         } finally {
             this._testSearching = false;
+            this.requestUpdate();
+        }
+    }
+
+    async _loadMoreTestResults() {
+        if (!this._testResults || this._testLoadingMore) return;
+
+        this._testLoadingMore = true;
+        this.requestUpdate();
+
+        try {
+            const next = (this._testResults.page || 1) + 1;
+            const req = {
+                term: this._testQuery.trim(),
+                profileAlias: this._testProfileAlias || 'default',
+                page: next,
+                cultures: this._testCulture ? [this._testCulture] : [],
+                filters: this._testActiveFilters
+            };
+
+            if (this._currentView === 'editor' && this._currentProfile && this._currentProfile.alias === this._testProfileAlias) {
+                req.rules = this._currentProfile.rules;
+            }
+
+            const res = await previewSearch(this._fetch.bind(this), req);
+            if (res.ok && res.data) {
+                const merged = this._testResults.results || [];
+                const seen = new Set(merged.map(r => `${r.id}|${r.indexName}`));
+                (res.data.results || []).forEach(r => {
+                    const k = `${r.id}|${r.indexName}`;
+                    if (!seen.has(k)) { seen.add(k); merged.push(r); }
+                });
+                this._testResults = { ...res.data, results: merged };
+            } else {
+                this._showToast("Could not load more results.", "error");
+            }
+        } catch (e) {
+            console.error("Load more error:", e);
+            this._showToast("Error loading more results.", "error");
+        } finally {
+            this._testLoadingMore = false;
             this.requestUpdate();
         }
     }
@@ -2540,17 +2589,32 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 <div class="mf-field">
                     <div class="field-left-info">
                         <div class="setting-title">Paging & Capacity Ceilings</div>
-                        <div class="setting-desc">Set default page size and maximum total results window considered per search request.</div>
+                        <div class="setting-desc">Set default page size, load more behavior, and maximum total results window per search request.</div>
                     </div>
                     <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editPaging')}>
                         <div class="field-box-header">
-                            <span class="field-type-tag">Paging Limits</span>
-                            <span class="field-count-pill">Page Size: ${res.pageSize || 10}</span>
+                            <span class="field-type-tag">Paging & Load More</span>
+                            <div style="display: flex; align-items: center; gap: 8px;" @click=${e => e.stopPropagation()}>
+                                <label class="switch switch-sm" title="${res.enableLoadMore ? 'Load More is Enabled' : 'Standard Numbered Pagination'}">
+                                    <input type="checkbox"
+                                           .checked=${!!res.enableLoadMore}
+                                           @change=${async e => {
+                                               res.enableLoadMore = e.target.checked;
+                                               this.requestUpdate();
+                                               await this._saveCurrentProfile();
+                                           }}>
+                                    <span class="slider round"></span>
+                                </label>
+                                <span class="field-count-pill">${res.enableLoadMore ? 'Load More Mode' : `Page Size: ${res.pageSize || 10}`}</span>
+                            </div>
                         </div>
                         <div class="field-box-content">
                             <div class="selected-chips-wrap">
+                                <span class="selected-chip ${res.enableLoadMore ? 'chip-success' : ''}">
+                                    <strong>Pagination Style:</strong> ${res.enableLoadMore ? '✓ Load More Mode' : 'Numbered Pages'}
+                                </span>
                                 <span class="selected-chip">
-                                    <strong>Default Page Size:</strong> ${res.pageSize || 10} items
+                                    <strong>Page Size:</strong> ${res.pageSize || 10} items
                                 </span>
                                 <span class="selected-chip">
                                     <strong>Max Results Window:</strong> ${res.maxResults || 500} items
@@ -2841,7 +2905,9 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         ` : html`
                             <div class="results-stats-header">
                                 <div>Found <strong>${this._testResults.totalResults || 0}</strong> results in <strong>${this._testResults.diagnostics?.elapsedMilliseconds || 0}ms</strong></div>
-                                <div>Page ${this._testResults.page} of ${this._testResults.totalPages || 1}</div>
+                                ${this._testResults.enableLoadMore
+                                    ? html`<div>Page ${this._testResults.page} of ${this._testResults.totalPages || 1}</div>`
+                                    : html`<div>Showing first ${this._testResults.pageSize || this._testResults.results.length} result(s)</div>`}
                             </div>
 
                             ${this._testResults.results.length === 0 ? html`
@@ -2873,6 +2939,18 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                         </div>
                                     `)}
                                 </div>
+
+                                ${this._testResults.enableLoadMore && this._testResults.page < (this._testResults.totalPages || 1) ? html`
+                                    <div style="display: flex; justify-content: center; margin-top: 16px;">
+                                        <button type="button" class="btn btn-secondary"
+                                                ?disabled=${this._testLoadingMore}
+                                                @click=${() => this._loadMoreTestResults()}>
+                                            ${this._testLoadingMore
+                                                ? 'Loading more results...'
+                                                : `Load more results (${this._testResults.pageSize} per page)`}
+                                        </button>
+                                    </div>
+                                ` : nothing}
                             `}
                         `}
                     </div>
@@ -3942,16 +4020,16 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     _renderRecencySidePanelBody(d) {
         return html`
             <div class="sp-multi-choice-layout">
-                <div class="sp-group" style="margin-bottom: 16px;">
-                    <label class="toggle-item">
-                        <div class="toggle-info">
-                            <strong>Enable Recency Boost</strong>
-                            <span>Lift freshly published or updated documents above older pages.</span>
-                        </div>
+                <div class="sp-toggle-row" style="margin-bottom: 16px;">
+                    <div class="sp-toggle-info">
+                        <span class="sp-toggle-title">Enable Recency Boost</span>
+                        <span class="sp-toggle-desc">Lift freshly published or updated documents above older pages.</span>
+                    </div>
+                    <label class="switch switch-sm">
                         <input type="checkbox"
-                               class="switch-input"
                                .checked=${!!d.enabled}
                                @change=${e => { d.enabled = e.target.checked; this.requestUpdate(); }}>
+                        <span class="slider round"></span>
                     </label>
                 </div>
 
@@ -4013,6 +4091,19 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     _renderPagingSidePanelBody(d) {
         return html`
             <div class="sp-multi-choice-layout">
+                <div class="sp-toggle-row" style="margin-bottom: 20px;">
+                    <div class="sp-toggle-info">
+                        <span class="sp-toggle-title">Enable "Load More" Pagination</span>
+                        <span class="sp-toggle-desc">Use incremental "Load More" button pagination instead of standard numbered pages.</span>
+                    </div>
+                    <label class="switch switch-sm">
+                        <input type="checkbox"
+                               .checked=${!!d.enableLoadMore}
+                               @change=${e => { d.enableLoadMore = e.target.checked; this.requestUpdate(); }}>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
                 <div class="sp-group" style="margin-bottom: 20px;">
                     <label class="sp-label">Default Page Size</label>
                     <input type="number"
@@ -4021,7 +4112,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                            max="100"
                            .value=${String(d.pageSize)}
                            @input=${e => { d.pageSize = parseInt(e.target.value) || 10; this.requestUpdate(); }}>
-                    <span class="sp-hint">Number of results displayed per page by default.</span>
+                    <span class="sp-hint">Number of results loaded per page or per "Load More" click.</span>
                 </div>
 
                 <div class="sp-group">
@@ -4041,16 +4132,16 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     _renderHighlightingSidePanelBody(d) {
         return html`
             <div class="sp-multi-choice-layout">
-                <div class="sp-group" style="margin-bottom: 16px;">
-                    <label class="toggle-item">
-                        <div class="toggle-info">
-                            <strong>Enable Snippet Highlights</strong>
-                            <span>Extract snippet text with matched query terms highlighted in bold/markup.</span>
-                        </div>
+                <div class="sp-toggle-row" style="margin-bottom: 16px;">
+                    <div class="sp-toggle-info">
+                        <span class="sp-toggle-title">Enable Snippet Highlights</span>
+                        <span class="sp-toggle-desc">Extract snippet text with matched query terms highlighted in bold/markup.</span>
+                    </div>
+                    <label class="switch switch-sm">
                         <input type="checkbox"
-                               class="switch-input"
                                .checked=${!!d.enabled}
                                @change=${e => { d.enabled = e.target.checked; this.requestUpdate(); }}>
+                        <span class="slider round"></span>
                     </label>
                 </div>
 
@@ -4623,16 +4714,16 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 ${this._sidePanelErrors.alias ? html`<span class="sp-error">${this._sidePanelErrors.alias}</span>` : nothing}
             </div>
 
-            <div class="sp-group">
-                <label class="toggle-item">
-                    <div class="toggle-info">
-                        <strong>Profile Enabled</strong>
-                        <span>When disabled, searching against this profile returns empty results.</span>
-                    </div>
+            <div class="sp-toggle-row" style="margin-top: 10px;">
+                <div class="sp-toggle-info">
+                    <span class="sp-toggle-title">Profile Enabled</span>
+                    <span class="sp-toggle-desc">When disabled, searching against this profile returns empty results.</span>
+                </div>
+                <label class="switch switch-sm">
                     <input type="checkbox"
-                           class="switch-input"
                            .checked=${d.enabled}
                            @change=${e => { d.enabled = e.target.checked; this.requestUpdate(); }}>
+                    <span class="slider round"></span>
                 </label>
             </div>
         `;
