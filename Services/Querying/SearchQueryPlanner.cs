@@ -61,7 +61,9 @@ internal sealed class SearchQueryPlanner
 
         IReadOnlyList<IReadOnlyList<string>> termGroups = BuildTermGroups(term, matching, notes);
 
-        if (termGroups.Count == 0)
+        // Browse mode legitimately produces no term groups - there was no term. Only a real
+        // search whose every word was a stop word deserves the block.
+        if (termGroups.Count == 0 && !browse)
         {
             return SearchPlan.Blocked(rules, "Every word in the term was a stop word.");
         }

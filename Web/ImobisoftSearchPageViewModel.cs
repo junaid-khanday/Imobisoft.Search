@@ -18,4 +18,11 @@ public sealed class ImobisoftSearchPageViewModel
     public string PagePath { get; set; } = "/" + ImobisoftSearchConstants.Web.SearchPagePath;
 
     public bool HasSearched { get; set; }
+
+    /// <summary>
+    /// The facet dimensions the profile defines. These drive the filter bar so the dropdowns exist
+    /// above the search box from the moment the page opens, with counts joining once a search - or
+    /// the automatic browse pass - has produced them.
+    /// </summary>
+    public IList<FacetDefinition> ConfiguredFacets { get; set; } = new List<FacetDefinition>();
 }

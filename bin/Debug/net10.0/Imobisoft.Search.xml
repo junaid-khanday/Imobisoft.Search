@@ -1958,6 +1958,67 @@
             document needs no schema and no migration when a new setting is added.
             </summary>
         </member>
+        <member name="T:Imobisoft.Search.Web.ImobisoftSearchListingViewComponent">
+            <summary>
+            The whole search experience as a single embeddable component, so any site - not just the
+            package's own page - gets it by writing one line:
+            <para><c>@await Component.InvokeAsync("ImobisoftSearchListing")</c></para>
+            <para>
+            Filter dropdowns render above the search box from the moment the page opens (with live
+            counts across everything the profile can see), picking one searches on its own without a
+            term, and Load More only ever appears when the profile enables it. Everything is driven by
+            the profile configured in the backoffice; sites customise styling only.
+            </para>
+            <para>
+            The default view lives in this package; a site can take over the markup by creating
+            <c>Views/Shared/Components/ImobisosoftSearchListing/Default.cshtml</c> in its own project -
+            that copy wins, nothing else changes.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Web.ImobisoftSearchListingViewComponent.InvokeAsync(System.String,System.Nullable{System.Int32},System.Nullable{System.Int32},System.String)">
+            <summary>
+            Renders the listing. Every argument is optional: anything left null is read from the
+            query string, which keeps the page bookmarkable and means "Load more" works by fetching
+            the same URL at the next page.
+            </summary>
+            <param name="searchTerm">Overrides the q query parameter when given.</param>
+            <param name="pageNumber">Overrides the page query parameter when given.</param>
+            <param name="pageSize">Overrides the profile's results-per-page rule when set.</param>
+            <param name="profileAlias">
+            Which saved profile to run. Null or empty uses the default profile - the same one the
+            dashboard toggles apply to.
+            </param>
+        </member>
+        <member name="T:Imobisoft.Search.Web.ImobisoftSearchListingViewModel">
+            <summary>
+            What the embeddable search listing component renders. A site drops
+            <c>@await Component.InvokeAsync("ImobisoftSearchListing")</c> into any template and gets the
+            whole experience - filter dropdowns above the search box from the moment the page opens,
+            results, spelling suggestions and Load More - driven entirely by the profile configured in
+            the backoffice.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Web.ImobisoftSearchListingViewModel.Term">
+            <summary>What the visitor typed.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Web.ImobisoftSearchListingViewModel.Page">
+            <summary>1-based page number this listing shows.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Web.ImobisoftSearchListingViewModel.Response">
+            <summary>Null before a search has run, which is how the view knows to show the welcome box.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Web.ImobisoftSearchListingViewModel.HasSearched">
+            <summary>True once the visitor searched or picked a filter - controls results vs welcome box.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Web.ImobisoftSearchListingViewModel.ConfiguredFacets">
+            <summary>
+            The facet dimensions the profile defines. These drive the filter bar rather than the
+            response's facet results do alone, which is what guarantees the dropdowns exist above the
+            search box from the moment the page opens - even before any search has run to fill in
+            their counts.
+            </summary>
+        </member>
         <member name="T:Imobisoft.Search.Web.ImobisoftSearchController">
             <summary>
             A working search page, served by the package.
@@ -1996,6 +2057,13 @@
         </member>
         <member name="P:Imobisoft.Search.Web.ImobisoftSearchPageViewModel.PagePath">
             <summary>Path the page is served from, used to build its own links.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Web.ImobisoftSearchPageViewModel.ConfiguredFacets">
+            <summary>
+            The facet dimensions the profile defines. These drive the filter bar so the dropdowns exist
+            above the search box from the moment the page opens, with counts joining once a search - or
+            the automatic browse pass - has produced them.
+            </summary>
         </member>
         <member name="T:Imobisoft.Search.Web.SearchContextExtensions">
             <summary>

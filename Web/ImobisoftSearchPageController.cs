@@ -85,6 +85,9 @@ public sealed class ImobisoftSearchController : Controller
             Page = page < 1 ? 1 : page,
             PagePath = "/" + ImobisoftSearchConstants.Web.SearchPagePath,
             HasSearched = hasQuery,
+            ConfiguredFacets = profile?.Rules.Results.Facets
+                .Where(f => f.Enabled && !string.IsNullOrWhiteSpace(f.Alias))
+                .ToList() ?? new List<FacetDefinition>(),
         };
 
         // With Load More disabled the profile serves exactly one page of PageSize items: later

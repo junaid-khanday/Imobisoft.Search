@@ -99,7 +99,11 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
         SearchRuleSet rules = request.Rules ?? profile!.Rules;
         var profileAlias = request.Rules is not null ? AdHocProfileAlias : profile!.Alias;
 
-        var pageSize = request.PageSize is > 0 ? request.PageSize.Value : Math.Max(1, rules.Results.PageSize);
+        // An unset or zeroed rule must fall back to the rule's own default rather than clamp to a
+        // nonsensical one-result-per-page - that is what a bad save would otherwise serve.
+        var pageSize = request.PageSize is > 0
+            ? request.PageSize.Value
+            : rules.Results.PageSize > 0 ? rules.Results.PageSize : new ResultRules().PageSize;
 
         if (!_options.Enabled)
         {

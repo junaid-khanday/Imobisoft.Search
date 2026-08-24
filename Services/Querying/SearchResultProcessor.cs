@@ -49,7 +49,10 @@ internal sealed partial class SearchResultProcessor
         items = Deduplicate(items, rules.Results.DeduplicateByField, notes);
         items = Sort(items, rules.Ranking.SortBy);
 
-        var pageSize = request.PageSize is > 0 ? request.PageSize.Value : Math.Max(1, rules.Results.PageSize);
+        // Same fallback as the service: a zeroed rule serves the default page size, never one.
+        var pageSize = request.PageSize is > 0
+            ? request.PageSize.Value
+            : rules.Results.PageSize > 0 ? rules.Results.PageSize : new ResultRules().PageSize;
         var page = Math.Max(1, request.Page);
         var total = items.Count;
 

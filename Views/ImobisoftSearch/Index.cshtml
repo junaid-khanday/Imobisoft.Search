@@ -4,7 +4,7 @@
     SearchResponse? response = Model.Response;
     var activeFilters = Context.GetActiveFilters();
     var hasActiveFilters = Context.HasActiveFilters();
-    var facets = Context.GetSearchFilters();
+    var facetCounts = Context.GetSearchFilters();
 }
 <!DOCTYPE html>
 <html lang="en">
@@ -175,49 +175,35 @@
             color: var(--imobisoft-primary);
         }
 
-        /* 2-Column Responsive Layout */
-        .imobisoft-search-layout {
-            display: grid;
-            grid-template-columns: 270px 1fr;
-            gap: 28px;
-            align-items: start;
-        }
-
-        @@media (max-width: 768px) {
-            .imobisoft-search-layout {
-                grid-template-columns: 1fr;
-                gap: 20px;
-            }
-        }
-
-        /* Filters Sidebar */
-        .imobisoft-sidebar {
+        /* Filter bar: sits above the search box and is there the moment the page opens */
+        .imobisoft-filter-bar {
             display: flex;
-            flex-direction: column;
-            gap: 16px;
-        }
-
-        .imobisoft-filter-box {
+            gap: 14px;
+            align-items: flex-end;
+            flex-wrap: wrap;
             background: var(--imobisoft-card-bg);
             border: 1px solid var(--imobisoft-border);
             border-radius: var(--imobisoft-radius);
-            padding: 16px;
+            padding: 14px 16px;
+            margin-bottom: 24px;
             box-shadow: var(--imobisoft-shadow);
         }
 
-        .imobisoft-filter-title {
-            font-size: 14px;
+        .imobisoft-filter-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .imobisoft-filter-label {
+            font-size: 12px;
             font-weight: 700;
             color: var(--imobisoft-primary);
-            margin-bottom: 12px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
         }
 
         /* Filter dropdowns */
         .imobisoft-filter-select {
-            width: 100%;
+            min-width: 190px;
             height: 36px;
             padding: 0 10px;
             font-size: 13px;
@@ -236,13 +222,13 @@
         }
 
         .imobisoft-clear-filters {
-            display: block;
-            text-align: center;
+            display: inline-flex;
+            align-items: center;
             font-size: 12.5px;
             color: #dc2626;
             text-decoration: none;
             font-weight: 600;
-            padding: 6px;
+            padding: 8px 10px;
             border-radius: 6px;
             transition: background 0.12s ease;
         }
@@ -442,6 +428,55 @@
         @* One GET form holds the search box and every filter dropdown, so picking an option
            re-runs the search with the term and every other selection intact. *@
         <form method="get" action="@Model.PagePath">
+        @* The filters sit on top, before the search box, and are here the moment the page
+           opens - the bar is driven by the profile's facet definitions, with live counts joining
+           from the response once a search (or the automatic browse pass) has produced them. *@
+        @if (Model.ConfiguredFacets.Count > 0)
+        {
+            <div class="imobisoft-filter-bar">
+                @foreach (FacetDefinition definition in Model.ConfiguredFacets)
+                {
+                    FacetResult? counts = facetCounts.FirstOrDefault(f =>
+                        f.Alias.Equals(definition.Alias, StringComparison.OrdinalIgnoreCase));
+                    var label = string.IsNullOrWhiteSpace(definition.Label) ? definition.Alias : definition.Label;
+
+                    <label class="imobisoft-filter-item">
+                        <span class="imobisoft-filter-label">@label</span>
+                        <select class="imobisoft-filter-select"
+                                name="f_@definition.Alias"
+                                aria-label="@label"
+                                onchange="this.form.submit()">
+                            <option value="">All @label</option>
+                            @if (counts is not null)
+                            {
+                                @foreach (FacetValue choice in counts.Values)
+                                {
+                                    <option value="@choice.Value" selected="@choice.IsSelected">@choice.Label (@choice.Count)</option>
+                                }
+                            }
+                        </select>
+                    </label>
+                }
+
+                @if (hasActiveFilters)
+                {
+                    <a href="@Context.ClearFiltersUrl()" class="imobisoft-clear-filters" rel="nofollow">
+                        ✕ Clear all filters
+                    </a>
+                }
+            </div>
+        }
+
+        @* Filter selections for which no dropdown is rendered (an alias since renamed, say)
+           still have to survive the round trip. *@
+        @foreach (var filter in activeFilters.Where(f => !Model.ConfiguredFacets.Any(x => x.Alias.Equals(f.Key, StringComparison.OrdinalIgnoreCase))))
+            {
+                foreach (var value in filter.Value)
+                {
+                    <input type="hidden" name="f_@filter.Key" value="@value" />
+                }
+            }
+
             <header class="imobisoft-header">
                 <h1>Search</h1>
                 <div class="imobisoft-search-form">
@@ -458,198 +493,128 @@
                 </div>
             </header>
 
-            @* Filter selections for which no dropdown is rendered (an alias since renamed, say)
-               still have to survive the round trip. *@
-            @foreach (var filter in activeFilters.Where(f => !facets.Any(x => x.Alias.Equals(f.Key, StringComparison.OrdinalIgnoreCase))))
-            {
-                foreach (var value in filter.Value)
-                {
-                    <input type="hidden" name="f_@filter.Key" value="@value" />
-                }
-            }
-
-            @{
-                var showLayout = facets.Count > 0 || response is not null;
-            }
-
-            @if (!showLayout)
+            @if (response is null || !Model.HasSearched)
             {
                 <div class="imobisoft-empty-box">
                     <h3>Welcome to Search</h3>
-                    <p>Type keywords into the search box above to find pages, articles, media, and documents.</p>
+                    <p>Type keywords into the search box above, or pick a filter, to find pages, articles, media, and documents.</p>
                 </div>
             }
             else
             {
-                <div class="imobisoft-search-layout">
-                    <!-- Filters Sidebar -->
-                    <aside class="imobisoft-sidebar">
-                        @if (facets.Count == 0)
+                @* Did You Mean Suggestion *@
+                @if (!string.IsNullOrWhiteSpace(response.Suggestion))
+                {
+                    <div class="imobisoft-suggestion">
+                        Did you mean
+                        <a href="@Model.PagePath?q=@Uri.EscapeDataString(response.Suggestion)">@response.Suggestion</a>?
+                    </div>
+                }
+
+                <div class="imobisoft-stats-bar">
+                    <div>
+                        Found <strong>@response.TotalResults</strong> result@(response.TotalResults == 1 ? "" : "s")
+                        @if (!string.IsNullOrWhiteSpace(response.Term))
                         {
-                            <div class="imobisoft-filter-box" style="color: var(--imobisoft-text-muted); font-size: 13px;">
-                                <span>No filter dimensions configured for this profile.</span>
-                            </div>
+                            <span>for &ldquo;<strong>@response.Term</strong>&rdquo;</span>
                         }
-                        else
-                        {
-                            @* The filters are here before anything is searched: each dropdown shows
-                               live counts across everything the profile can see, and picking an
-                               option runs the search on its own - no term required. *@
-                            foreach (FacetResult facet in facets)
-                            {
-                                <div class="imobisoft-filter-box">
-                                    <div class="imobisoft-filter-title">
-                                        <span>@facet.Label</span>
-                                    </div>
-                                    <select class="imobisoft-filter-select"
-                                            name="f_@facet.Alias"
-                                            aria-label="@facet.Label"
-                                            onchange="this.form.submit()">
-                                        <option value="">All @facet.Label</option>
-                                        @foreach (FacetValue choice in facet.Values)
-                                        {
-                                            <option value="@choice.Value" selected="@choice.IsSelected">@choice.Label (@choice.Count)</option>
-                                        }
-                                    </select>
-                                </div>
-                            }
-
-                            @if (hasActiveFilters)
-                            {
-                                <a href="@Context.ClearFiltersUrl()" class="imobisoft-clear-filters" rel="nofollow">
-                                    ✕ Clear all filters
-                                </a>
-                            }
-                        }
-                    </aside>
-
-                    <!-- Search Results -->
-                    <main class="imobisoft-main">
-                        @if (response is null || !Model.HasSearched)
-                        {
-                            <div class="imobisoft-empty-box">
-                                <h3>Welcome to Search</h3>
-                                <p>Type keywords into the search box above to find pages, articles, media, and documents.</p>
-                            </div>
-                        }
-                        else
-                        {
-                            @* Did You Mean Suggestion *@
-                            @if (!string.IsNullOrWhiteSpace(response.Suggestion))
-                            {
-                                <div class="imobisoft-suggestion">
-                                    Did you mean
-                                    <a href="@Model.PagePath?q=@Uri.EscapeDataString(response.Suggestion)">@response.Suggestion</a>?
-                                </div>
-                            }
-
-                            <div class="imobisoft-stats-bar">
-                                <div>
-                                    Found <strong>@response.TotalResults</strong> result@(response.TotalResults == 1 ? "" : "s")
-                                    @if (!string.IsNullOrWhiteSpace(response.Term))
-                                    {
-                                        <span>for &ldquo;<strong>@response.Term</strong>&rdquo;</span>
-                                    }
-                                </div>
-                                @if (response.TotalResults > 0 && response.EnableLoadMore)
-                                {
-                                    <div>Page <strong>@response.Page</strong> of <strong>@Math.Max(1, response.TotalPages)</strong></div>
-                                }
-                            </div>
-
-                            @* Content Type Group Breakdown *@
-                            @if (response.Groups.Count > 0)
-                            {
-                                <div class="imobisoft-groups-pills">
-                                    @foreach (var group in response.Groups)
-                                    {
-                                        <span class="imobisoft-group-pill">@group.Key: <strong>@group.Value</strong></span>
-                                    }
-                                </div>
-                            }
-
-                            @if (response.Results.Count == 0)
-                            {
-                                <div class="imobisoft-empty-box">
-                                    <h3>No results matched your search</h3>
-                                    <p>Try searching with different keywords, checking your spelling, or clearing active filters.</p>
-                                    @if (hasActiveFilters)
-                                    {
-                                        <p style="margin-top: 14px;">
-                                            <a href="@Context.ClearFiltersUrl()" class="imobisoft-btn imobisoft-btn-secondary" style="height: 36px; padding: 0 16px; font-size: 13px;">Clear active filters</a>
-                                        </p>
-                                    }
-                                </div>
-                            }
-                            else
-                            {
-                                <ol id="imobisoft-search-results" class="imobisoft-results-list">
-                                    <partial name="_Results" model="Model" />
-                                </ol>
-
-                                @* Load More pagination: rendered only when the profile enables it and
-                                   further pages exist. When disabled, the profile serves exactly one page
-                                   of PageSize items and nothing beyond it. *@
-                                @if (response.EnableLoadMore && response.Page < response.TotalPages)
-                                {
-                                    <div id="imobisoft-load-more-wrap" class="imobisoft-pagination-wrap">
-                                        <button id="imobisoft-search-more"
-                                                type="button"
-                                                class="imobisoft-btn-load-more"
-                                                data-next-page="@(response.Page + 1)"
-                                                data-total-pages="@response.TotalPages">
-                                            Load more results
-                                        </button>
-                                    </div>
-
-                                    <script>
-                                        (function () {
-                                            var btn = document.getElementById('imobisoft-search-more');
-                                            var list = document.getElementById('imobisoft-search-results');
-                                            if (!btn || !list) return;
-
-                                            btn.addEventListener('click', async function (e) {
-                                                e.preventDefault();
-
-                                                var next = parseInt(btn.getAttribute('data-next-page'), 10);
-                                                var total = parseInt(btn.getAttribute('data-total-pages'), 10);
-
-                                                btn.disabled = true;
-                                                btn.textContent = 'Loading more results...';
-
-                                                var params = new URLSearchParams(window.location.search);
-                                                params.set('page', next);
-
-                                                try {
-                                                    var fetchUrl = '@(Model.PagePath.TrimEnd('/'))/results?' + params.toString();
-                                                    var res = await fetch(fetchUrl);
-                                                    if (!res.ok) throw new Error('Failed to fetch results');
-
-                                                    var html = await res.text();
-                                                    list.insertAdjacentHTML('beforeend', html);
-
-                                                    if (next >= total) {
-                                                        var wrap = document.getElementById('imobisoft-load-more-wrap');
-                                                        if (wrap) wrap.parentNode.removeChild(wrap);
-                                                        else btn.parentNode.removeChild(btn);
-                                                    } else {
-                                                        btn.setAttribute('data-next-page', next + 1);
-                                                        btn.disabled = false;
-                                                        btn.textContent = 'Load more results';
-                                                    }
-                                                } catch (err) {
-                                                    console.error('Error loading more results:', err);
-                                                    btn.disabled = false;
-                                                    btn.textContent = 'Load more results';
-                                                }
-                                            });
-                                        })();
-                                    </script>
-                                }
-                            }
-                        }
-                    </main>
+                    </div>
+                    @if (response.TotalResults > 0 && response.EnableLoadMore)
+                    {
+                        <div>Page <strong>@response.Page</strong> of <strong>@Math.Max(1, response.TotalPages)</strong></div>
+                    }
                 </div>
+
+                @* Content Type Group Breakdown *@
+                @if (response.Groups.Count > 0)
+                {
+                    <div class="imobisoft-groups-pills">
+                        @foreach (var group in response.Groups)
+                        {
+                            <span class="imobisoft-group-pill">@group.Key: <strong>@group.Value</strong></span>
+                        }
+                    </div>
+                }
+
+                @if (response.Results.Count == 0)
+                {
+                    <div class="imobisoft-empty-box">
+                        <h3>No results matched your search</h3>
+                        <p>Try searching with different keywords, checking your spelling, or clearing active filters.</p>
+                        @if (hasActiveFilters)
+                        {
+                            <p style="margin-top: 14px;">
+                                <a href="@Context.ClearFiltersUrl()" class="imobisoft-btn imobisoft-btn-secondary" style="height: 36px; padding: 0 16px; font-size: 13px;">Clear active filters</a>
+                            </p>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <ol id="imobisoft-search-results" class="imobisoft-results-list">
+                        <partial name="_Results" model="Model" />
+                    </ol>
+
+                    @* Load More pagination: rendered only when the profile enables it and
+                       further pages exist. When disabled, the profile serves exactly one page
+                       of PageSize items and nothing beyond it. *@
+                    @if (response.EnableLoadMore && response.Page < response.TotalPages)
+                    {
+                        <div id="imobisoft-load-more-wrap" class="imobisoft-pagination-wrap">
+                            <button id="imobisoft-search-more"
+                                    type="button"
+                                    class="imobisoft-btn-load-more"
+                                    data-next-page="@(response.Page + 1)"
+                                    data-total-pages="@response.TotalPages">
+                                Load more results
+                            </button>
+                        </div>
+
+                        <script>
+                            (function () {
+                                var btn = document.getElementById('imobisoft-search-more');
+                                var list = document.getElementById('imobisoft-search-results');
+                                if (!btn || !list) return;
+
+                                btn.addEventListener('click', async function (e) {
+                                    e.preventDefault();
+
+                                    var next = parseInt(btn.getAttribute('data-next-page'), 10);
+                                    var total = parseInt(btn.getAttribute('data-total-pages'), 10);
+
+                                    btn.disabled = true;
+                                    btn.textContent = 'Loading more results...';
+
+                                    var params = new URLSearchParams(window.location.search);
+                                    params.set('page', next);
+
+                                    try {
+                                        var fetchUrl = '@(Model.PagePath.TrimEnd('/'))/results?' + params.toString();
+                                        var res = await fetch(fetchUrl);
+                                        if (!res.ok) throw new Error('Failed to fetch results');
+
+                                        var html = await res.text();
+                                        list.insertAdjacentHTML('beforeend', html);
+
+                                        if (next >= total) {
+                                            var wrap = document.getElementById('imobisoft-load-more-wrap');
+                                            if (wrap) wrap.parentNode.removeChild(wrap);
+                                            else btn.parentNode.removeChild(btn);
+                                        } else {
+                                            btn.setAttribute('data-next-page', next + 1);
+                                            btn.disabled = false;
+                                            btn.textContent = 'Load more results';
+                                        }
+                                    } catch (err) {
+                                        console.error('Error loading more results:', err);
+                                        btn.disabled = false;
+                                        btn.textContent = 'Load more results';
+                                    }
+                                });
+                            })();
+                        </script>
+                    }
+                }
             }
         </form>
     </div>
