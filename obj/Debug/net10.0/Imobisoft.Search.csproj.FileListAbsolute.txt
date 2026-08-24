@@ -44,5 +44,5 @@ D:\imobisoft\Imobisoft.Search\Imobisoft.Search\bin\Debug\net10.0\wwwroot\data-ca
 D:\imobisoft\Imobisoft.Search\Imobisoft.Search\bin\Debug\net10.0\wwwroot\umbraco-package.json.gz
 D:\imobisoft\Imobisoft.Search\Imobisoft.Search\bin\Debug\net10.0\wwwroot\workspace.js.gz
 D:\imobisoft\Imobisoft.Search\Imobisoft.Search\obj\Debug\net10.0\compressed\ee9apxmh1x-{0}-letvvmbh2w-letvvmbh2w.gz
-D:\imobisoft\Imobisoft.Search\Imobisoft.Search\obj\Debug\net10.0\compressed\yngxw0rsot-{0}-dj3rvt0n8e-dj3rvt0n8e.gz
+D:\imobisoft\Imobisoft.Search\Imobisoft.Search\obj\Debug\net10.0\compressed\yngxw0rsot-{0}-trdw0egim7-trdw0egim7.gz
 D:\imobisoft\Imobisoft.Search\Imobisoft.Search\obj\Debug\net10.0\staticwebassets.upToDateCheck.txt

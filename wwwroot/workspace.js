@@ -87,7 +87,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             alias: 'dateRange',
             name: 'Date Range & Year',
             desc: 'Filter search results by calendar years (2026, 2025, 2024) or relative intervals',
-            defaultField: 'updateDate',
+            defaultField: 'createDate',
             defaultKind: 'dateRange'
         },
         {
@@ -1104,7 +1104,9 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             } else if (ft.alias === 'dateRange') {
                 this._sidePanelData.kind = 'dateRange';
                 if (!this._sidePanelData.field || this._sidePanelData.field.startsWith('__')) {
-                    this._sidePanelData.field = 'updateDate';
+                    // createDate is stable - updateDate moves every time a page is re-saved,
+                    // which would drag old articles into the current year.
+                    this._sidePanelData.field = 'createDate';
                 }
                 if (!this._sidePanelData.label) this._sidePanelData.label = 'Date / Year';
                 if (!this._sidePanelData.ranges || this._sidePanelData.ranges.length === 0) {
@@ -1307,10 +1309,10 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 d.kind = 'field';
             } else if (d.filterType === 'dateRange') {
                 d.kind = 'dateRange';
-                if (!d.field || !d.field.trim()) d.field = 'updateDate';
+                if (!d.field || !d.field.trim()) d.field = 'createDate';
             } else if (d.filterType === 'numeric') {
                 d.kind = 'numeric';
-                d.field = (d.alias || d.field || 'price').trim();
+                d.field = (d.field || d.alias || 'price').trim();
             } else {
                 d.kind = 'field';
                 if (!d.field || !d.field.trim()) d.field = (d.alias || 'category').trim();
@@ -4660,6 +4662,22 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                     }}>
                                 + Add All Types (${(this._catalog?.contentTypes || []).length})
                             </button>
+                        ` : nothing}
+                        ${filterType === 'dateRange' || filterType === 'numeric' ? html`
+                            <label class="sp-label" style="margin-top: 12px; font-size: 11px;">Index Field</label>
+                            <input type="text"
+                                   class="sp-input"
+                                   style="font-size: 12px;"
+                                   placeholder="${filterType === 'dateRange' ? 'createDate' : 'price'}"
+                                   .value=${d.field || ''}
+                                   @input=${e => { d.field = e.target.value; this.requestUpdate(); }} />
+                            ${filterType === 'dateRange' ? html`
+                                <span class="sp-clean-toggle-sub" style="margin-top: 6px;">
+                                    Tip: <code>updateDate</code> changes every time a page is re-saved, which drags old
+                                    articles into the current year. Use your article's own date property, or
+                                    <code>createDate</code> / <code>updateDate</code>.
+                                </span>
+                            ` : nothing}
                         ` : nothing}
                     </div>
                     <div class="sp-options-right">

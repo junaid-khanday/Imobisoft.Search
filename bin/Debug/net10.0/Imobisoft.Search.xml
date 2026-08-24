@@ -1388,6 +1388,9 @@
         <member name="F:Imobisoft.Search.Services.ImobisoftSearchService.AlwaysReturnedFields">
             <summary>Fields every result carries, whatever the profile asked to return.</summary>
         </member>
+        <member name="F:Imobisoft.Search.Services.ImobisoftSearchService._facetNodeIdCache">
+            <summary>Facet subtree keys resolved to numeric ids, cached for the service lifetime.</summary>
+        </member>
         <member name="M:Imobisoft.Search.Services.ImobisoftSearchService.SearchAsync(System.String,System.String,System.Int32,System.Nullable{System.Int32},System.Threading.CancellationToken)">
             <inheritdoc />
         </member>
@@ -1402,6 +1405,14 @@
             SortBy list in place would leak one visitor's sort into everyone else's results.
             </summary>
             <returns>The effective rules plus the applied alias, or null when the profile default stands.</returns>
+        </member>
+        <member name="M:Imobisoft.Search.Services.ImobisoftSearchService.ResolveNodeIdForFacets(System.Guid)">
+            <summary>
+            Resolves a content or media key for facet subtree matching. Facet buckets store the picked
+            page as a GUID/UDI while the index path field carries numeric ids; the processor calls this
+            through a delegate so it never needs Umbraco services directly. Results are cached because
+            the same handful of roots is resolved on every search request.
+            </summary>
         </member>
         <member name="M:Imobisoft.Search.Services.ImobisoftSearchService.ApplyQueryStringFilters(Imobisoft.Search.Models.SearchRequest)">
             <summary>
@@ -1706,10 +1717,16 @@
             </para>
             </summary>
         </member>
-        <member name="M:Imobisoft.Search.Services.Querying.SearchResultProcessor.#ctor(System.Func{System.String,System.Boolean})">
+        <member name="M:Imobisoft.Search.Services.Querying.SearchResultProcessor.#ctor(System.Func{System.String,System.Boolean},System.Func{System.Guid,System.Nullable{System.Int32}})">
             <param name="isProtectedPath">
             Answers whether a node path sits behind public access. Injected as a delegate so the
             processor stays free of Umbraco services and can be exercised on its own.
+            </param>
+            <param name="nodeIdResolver">
+            Turns a content/media key into its numeric Umbraco id. Facet buckets that pick a subtree
+            store the picked page as a GUID or UDI, while the index's path field holds comma-separated
+            numeric ids - without this bridge only the picked page itself would ever match, never its
+            descendants. Optional so tests can run without Umbraco.
             </param>
         </member>
         <member name="M:Imobisoft.Search.Services.Querying.SearchResultProcessor.ApplySourceFilters(System.Collections.Generic.IReadOnlyList{Imobisoft.Search.Models.SearchResultItem},Imobisoft.Search.Services.Querying.SearchPlan,System.Collections.Generic.List{System.String})">
@@ -1749,6 +1766,14 @@
             <summary>
             Accepts an ISO date or a relative expression such as <c>now-7d</c>, so that a "last week"
             facet keeps meaning last week rather than going stale the day it is configured.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Querying.SearchResultProcessor.ResolveDateValue(Imobisoft.Search.Models.SearchResultItem,System.String)">
+            <summary>
+            Finds the first parseable date for a document, trying the facet's configured field first
+            and then Umbraco's standard date fields. <c>updateDate</c> moves every time an editor
+            re-saves a page, so <c>createDate</c> - which never changes - is kept in the chain as a
+            stable fallback for content that lacks the configured property.
             </summary>
         </member>
         <member name="M:Imobisoft.Search.Services.Querying.SearchResultProcessor.TryParseDate(System.String,System.DateTime@)">

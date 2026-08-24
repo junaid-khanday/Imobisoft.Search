@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -17,12 +17,25 @@ namespace Imobisoft.Search.Services.Querying;
 internal sealed partial class SearchResultProcessor
 {
     private readonly Func<string, bool> _isProtectedPath;
+    private readonly Func<Guid, int?>? _nodeIdResolver;
 
     /// <param name="isProtectedPath">
     /// Answers whether a node path sits behind public access. Injected as a delegate so the
     /// processor stays free of Umbraco services and can be exercised on its own.
     /// </param>
-    public SearchResultProcessor(Func<string, bool> isProtectedPath) => _isProtectedPath = isProtectedPath;
+    /// <param name="nodeIdResolver">
+    /// Turns a content/media key into its numeric Umbraco id. Facet buckets that pick a subtree
+    /// store the picked page as a GUID or UDI, while the index's path field holds comma-separated
+    /// numeric ids - without this bridge only the picked page itself would ever match, never its
+    /// descendants. Optional so tests can run without Umbraco.
+    /// </param>
+    public SearchResultProcessor(
+        Func<string, bool> isProtectedPath,
+        Func<Guid, int?>? nodeIdResolver = null)
+    {
+        _isProtectedPath = isProtectedPath;
+        _nodeIdResolver = nodeIdResolver;
+    }
 
     public SearchResponse Process(
         IReadOnlyList<SearchResultItem> matches,
@@ -513,7 +526,7 @@ internal sealed partial class SearchResultProcessor
         return null;
     }
 
-    private static IList<FacetResult> BuildFacets(
+    private IList<FacetResult> BuildFacets(
         IReadOnlyList<SearchResultItem> items,
         IList<FacetDefinition> definitions,
         IDictionary<string, IList<string>> selected)
@@ -555,7 +568,7 @@ internal sealed partial class SearchResultProcessor
         return results;
     }
 
-    private static IList<FacetValue> BuildFieldFacet(
+    private IList<FacetValue> BuildFieldFacet(
         IReadOnlyList<SearchResultItem> items,
         FacetDefinition definition,
         IReadOnlySet<string> chosen)
@@ -579,7 +592,7 @@ internal sealed partial class SearchResultProcessor
             .ToList();
     }
 
-    private static IList<FacetValue> BuildRangeFacet(
+    private IList<FacetValue> BuildRangeFacet(
         IReadOnlyList<SearchResultItem> items,
         FacetDefinition definition,
         IReadOnlySet<string> chosen)
@@ -593,7 +606,7 @@ internal sealed partial class SearchResultProcessor
             })
             .ToList();
 
-    private static IReadOnlyList<SearchResultItem> ApplyFacetFilters(
+    private IReadOnlyList<SearchResultItem> ApplyFacetFilters(
         IReadOnlyList<SearchResultItem> items,
         IList<FacetDefinition> definitions,
         IDictionary<string, IList<string>> selected,
@@ -651,7 +664,7 @@ internal sealed partial class SearchResultProcessor
         return result;
     }
 
-    private static bool FallsInRange(SearchResultItem item, FacetDefinition definition, FacetRange range)
+    private bool FallsInRange(SearchResultItem item, FacetDefinition definition, FacetRange range)
     {
         if (item is null || definition is null || range is null)
         {
@@ -681,7 +694,12 @@ internal sealed partial class SearchResultProcessor
 
         if (definition.Kind == FacetKind.DateRange)
         {
-            if (string.IsNullOrEmpty(raw) || !TryParseDate(raw, out DateTime date))
+            // Resolve the document's date through the fallback chain rather than trusting one
+            // field name outright: content that never had the configured property still buckets
+            // by its real dates instead of silently vanishing from every bucket.
+            string? dateRaw = ResolveDateValue(item, fieldName);
+
+            if (dateRaw is null || !TryParseDate(dateRaw, out DateTime date))
             {
                 return false;
             }
@@ -715,6 +733,19 @@ internal sealed partial class SearchResultProcessor
             {
                 matchTarget = matchTarget.Substring("umb://document/".Length).Replace("-", "");
             }
+            else if (matchTarget.StartsWith("umb://media/", StringComparison.OrdinalIgnoreCase))
+            {
+                matchTarget = matchTarget.Substring("umb://media/".Length).Replace("-", "");
+            }
+
+            // The picked page may be stored as a GUID while paths carry numeric ids; resolve once
+            // so both the id comparison and the path-segment comparison below can hit.
+            var resolvedTarget = matchTarget;
+            if (_nodeIdResolver is not null &&
+                Guid.TryParse(matchTarget, out Guid nodeKey))
+            {
+                resolvedTarget = _nodeIdResolver(nodeKey)?.ToString(CultureInfo.InvariantCulture) ?? matchTarget;
+            }
 
             if (item.Key.HasValue)
             {
@@ -727,7 +758,9 @@ internal sealed partial class SearchResultProcessor
                 }
             }
 
-            if (!string.IsNullOrEmpty(item.Id) && item.Id.Equals(matchTarget, StringComparison.OrdinalIgnoreCase))
+            if (!string.IsNullOrEmpty(item.Id) &&
+                (item.Id.Equals(matchTarget, StringComparison.OrdinalIgnoreCase) ||
+                 item.Id.Equals(resolvedTarget, StringComparison.Ordinal)))
             {
                 return true;
             }
@@ -735,7 +768,8 @@ internal sealed partial class SearchResultProcessor
             if (!string.IsNullOrEmpty(item.Path))
             {
                 var segments = item.Path.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                if (segments.Contains(matchTarget, StringComparer.OrdinalIgnoreCase))
+                if (segments.Contains(matchTarget, StringComparer.OrdinalIgnoreCase) ||
+                    segments.Contains(resolvedTarget, StringComparer.Ordinal))
                 {
                     return true;
                 }
@@ -892,6 +926,48 @@ internal sealed partial class SearchResultProcessor
     }
 
     /// <summary>
+    /// Finds the first parseable date for a document, trying the facet's configured field first
+    /// and then Umbraco's standard date fields. <c>updateDate</c> moves every time an editor
+    /// re-saves a page, so <c>createDate</c> - which never changes - is kept in the chain as a
+    /// stable fallback for content that lacks the configured property.
+    /// </summary>
+    private static string? ResolveDateValue(SearchResultItem item, string fieldName)
+    {
+        foreach (string candidate in DateFieldCandidates(fieldName))
+        {
+            var raw = FieldValue(item, candidate) ?? ReadSortableValue(item, candidate);
+
+            if (!string.IsNullOrEmpty(raw) && TryParseDate(raw, out _))
+            {
+                return raw;
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<string> DateFieldCandidates(string configured)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var cfg = (configured ?? string.Empty).Trim();
+
+        if (cfg.Length > 0 && !cfg.Equals(SortRule.ScoreField, StringComparison.OrdinalIgnoreCase))
+        {
+            seen.Add(cfg);
+            yield return cfg;
+        }
+
+        foreach (string standard in new[] { ImobisoftSearchConstants.IndexFields.UpdateDate, ImobisoftSearchConstants.IndexFields.CreateDate })
+        {
+            if (seen.Add(standard))
+            {
+                yield return standard;
+            }
+        }
+    }
+
+    /// <summary>
     /// Reads a date out of an index, whichever way it was written.
     /// <para>
     /// A date can reach us three ways: Lucene's <c>yyyyMMddHHmmssfff</c> string, a raw tick count
@@ -933,6 +1009,23 @@ internal sealed partial class SearchResultProcessor
         {
             date = new DateTime(ticks, DateTimeKind.Utc);
             return true;
+        }
+
+        // Unix epoch values - seconds or milliseconds - as written by some external indexers.
+        if (raw.All(char.IsDigit)
+            && long.TryParse(raw, NumberStyles.None, CultureInfo.InvariantCulture, out var epoch))
+        {
+            if (epoch >= 1_000_000_000_000)
+            {
+                date = DateTimeOffset.FromUnixTimeMilliseconds(epoch).UtcDateTime;
+                return true;
+            }
+
+            if (epoch >= 1_000_000_000 && raw.Length <= 11)
+            {
+                date = DateTimeOffset.FromUnixTimeSeconds(epoch).UtcDateTime;
+                return true;
+            }
         }
 
         return DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out date);
