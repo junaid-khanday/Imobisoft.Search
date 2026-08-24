@@ -1,0 +1,21 @@
+@model Imobisoft.Search.Web.ImobisoftSearchListingViewModel
+@* Load More pagination: rendered only when the profile enables it and further pages exist.
+   Override at Views/Partials/Search/loadmore.cshtml to restyle the button. Keep the
+   data-imobisoft-more, data-next-page and data-total-pages attributes (and a wrapper the
+   script may remove) - the built-in script fetches the next page and appends new <li>
+   elements into [data-imobisoft-results] for you. *@
+@{
+    Imobisoft.Search.Models.SearchResponse? response = Model.Response;
+}
+@if (response!.EnableLoadMore && response.Page < response.TotalPages)
+{
+    <div class="isl-loadmore">
+        <button type="button"
+                class="isl-btn-more"
+                data-imobisoft-more
+                data-next-page="@(response.Page + 1)"
+                data-total-pages="@response.TotalPages">
+            Load more results
+        </button>
+    </div>
+}

@@ -19,8 +19,9 @@ public enum SnippetMode
 /// <summary>Controls the text snippet returned alongside each result.</summary>
 public sealed class HighlightRules
 {
-    /// <summary>Whether to return a snippet of matching text at all.</summary>
-    public bool Enabled { get; set; }
+    /// <summary>Whether to return a snippet of matching text at all. On by default - snippets are
+    /// what make a result list scannable.</summary>
+    public bool Enabled { get; set; } = true;
 
     /// <summary>
     /// Whether the matched word is wrapped in <see cref="StartTag"/> and <see cref="EndTag"/> inside

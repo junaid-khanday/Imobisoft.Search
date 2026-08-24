@@ -2,8 +2,9 @@ namespace Imobisoft.Search.Models;
 
 /// <summary>
 /// Defines <em>what</em> is searchable: which indexes are queried and which documents inside them
-/// are eligible. Every collection here follows the same convention - an empty collection means
-/// "no restriction", which is what makes a freshly installed package search everything.
+/// are eligible. Per-type lists narrow an index that is already in scope through
+/// <see cref="IndexTypes"/>; a profile that names neither stays dark, which is the "include to
+/// switch search on" model.
 /// </summary>
 public sealed class SourceRules
 {

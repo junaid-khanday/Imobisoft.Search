@@ -88,8 +88,9 @@ public sealed class ImobisoftSearchInstaller : INotificationAsyncHandler<Umbraco
     }
 
     /// <summary>
-    /// Seeds the profile that makes the package useful the moment it is installed: no include or
-    /// exclude rules at all, which the engine reads as "search every index and every document type".
+    /// Seeds the profile that makes the package useful the moment it is installed: the content and
+    /// media indexes are in scope with no per-type narrowing, which the engine reads as "search
+    /// everything in those indexes".
     /// </summary>
     private void SeedDefaultProfile()
     {

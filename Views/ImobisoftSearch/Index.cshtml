@@ -505,18 +505,8 @@
 
             <header class="imobisoft-header">
                 <h1>Search</h1>
-                <div class="imobisoft-search-form">
-                    <div class="imobisoft-input-wrap">
-                        <input type="search"
-                               id="q"
-                               name="q"
-                               class="imobisoft-input"
-                               value="@Model.Term"
-                               placeholder="Type a word or phrase to search..."
-                               autocomplete="off" />
-                    </div>
-                    <button type="submit" class="imobisoft-btn imobisoft-btn-primary">Search</button>
-                </div>
+                <partial name="~/Views/Partials/Search/searchbar.cshtml"
+                         model="new Imobisoft.Search.Models.SearchBarModel { Term = Model.Term }" />
             </header>
 
             @if (response is null)
@@ -564,7 +554,7 @@
                     </div>
                 }
 
-                @if (response.Results.Count == 0)
+                @if (response.Results.Count == 0 && response.TotalResults == 0)
                 {
                     <div class="imobisoft-empty-box">
                         <h3>No results matched your search</h3>
@@ -575,6 +565,16 @@
                                 <a href="@Context.ClearFiltersUrl()" class="imobisoft-btn imobisoft-btn-secondary" style="height: 36px; padding: 0 16px; font-size: 13px;">Clear active filters</a>
                             </p>
                         }
+                    </div>
+                }
+                else if (response.Results.Count == 0)
+                {
+                    @* Matches exist but this page holds none of them: the visitor paged past the
+                       end, or the profile's "results before searching" limit is set to zero. *@
+                    <div class="imobisoft-empty-box">
+                        <h3>Nothing to show on this page</h3>
+                        <p>@response.TotalResults result@(response.TotalResults == 1 ? " matches" : " matches") were found.
+                           Use the page controls above, or ask your editor to raise the profile's page limits in the Search section.</p>
                     </div>
                 }
                 else

@@ -47,8 +47,9 @@ public sealed class SearchProfile
     public SearchRuleSet Rules { get; set; } = new();
 
     /// <summary>
-    /// The profile the package seeds on install: no restrictions anywhere, so every index and every
-    /// document type is searched until an editor narrows it down.
+    /// The profile the package seeds on install: both published content and media indexes are in
+    /// scope and nothing is narrowed down further, so a fresh site searches everything the moment
+    /// the package lands - editors then narrow it from the dashboard at their own pace.
     /// </summary>
     public static SearchProfile CreateDefault() => new()
     {
@@ -59,6 +60,20 @@ public sealed class SearchProfile
         Enabled = true,
         CreateDate = DateTime.UtcNow,
         UpdateDate = DateTime.UtcNow,
-        Rules = new SearchRuleSet(),
+        Rules = new SearchRuleSet
+        {
+            Sources = new SourceRules
+            {
+                // Without an explicit entity-type selection the engine treats the profile as
+                // "nothing included yet", so the seeded profile names the two indexes every
+                // Umbraco site ships with.
+                IndexTypes =
+                {
+                    ImobisoftSearchConstants.IndexTypes.Content,
+                    ImobisoftSearchConstants.IndexTypes.Media,
+                },
+            },
+            Results = new ResultRules { Highlight = new HighlightRules { Enabled = true } },
+        },
     };
 }

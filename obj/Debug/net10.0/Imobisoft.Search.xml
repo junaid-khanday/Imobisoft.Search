@@ -407,8 +407,9 @@
         </member>
         <member name="M:Imobisoft.Search.Migrations.ImobisoftSearchInstaller.SeedDefaultProfile">
             <summary>
-            Seeds the profile that makes the package useful the moment it is installed: no include or
-            exclude rules at all, which the engine reads as "search every index and every document type".
+            Seeds the profile that makes the package useful the moment it is installed: the content and
+            media indexes are in scope with no per-type narrowing, which the engine reads as "search
+            everything in those indexes".
             </summary>
         </member>
         <member name="M:Imobisoft.Search.Migrations.ImobisoftSearchInstaller.GrantSectionToAdministratorsAsync">
@@ -741,7 +742,8 @@
             <summary>Controls the text snippet returned alongside each result.</summary>
         </member>
         <member name="P:Imobisoft.Search.Models.HighlightRules.Enabled">
-            <summary>Whether to return a snippet of matching text at all.</summary>
+            <summary>Whether to return a snippet of matching text at all. On by default - snippets are
+            what make a result list scannable.</summary>
         </member>
         <member name="P:Imobisoft.Search.Models.HighlightRules.HighlightMatches">
             <summary>
@@ -833,6 +835,38 @@
             profile's ranking order for that request; otherwise <see cref="P:Imobisoft.Search.Models.RankingRules.SortBy"/> rules.
             </summary>
         </member>
+        <member name="T:Imobisoft.Search.Models.SearchBarModel">
+            <summary>
+            Everything the overridable search-bar partial needs. The package renders its own copy of
+            <c>Views/Partials/Search/searchbar.cshtml</c>; a consuming site that creates a file at that
+            exact path replaces it everywhere, and is free to ignore this model and hard-code its own
+            markup - the only contract is a text input named "q" inside a GET form.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBarModel.Action">
+            <summary>Form action URL. Empty submits to the current page, which is what both built-in views want.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBarModel.Term">
+            <summary>The current query text, echoed back into the box.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBarModel.Placeholder">
+            <summary>Placeholder text shown inside an empty box.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBarModel.FormClass">
+            <summary>CSS class for the form element.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBarModel.WrapClass">
+            <summary>CSS class for the wrapper around the input.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBarModel.InputClass">
+            <summary>CSS class for the text input itself.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBarModel.ButtonClass">
+            <summary>CSS class for the submit button.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBarModel.ButtonText">
+            <summary>Submit button label.</summary>
+        </member>
         <member name="T:Imobisoft.Search.Models.SearchRuleSet">
             <summary>
             The complete set of rules the search engine obeys. This is what gets serialised into the
@@ -872,8 +906,9 @@
         </member>
         <member name="M:Imobisoft.Search.Models.SearchProfile.CreateDefault">
             <summary>
-            The profile the package seeds on install: no restrictions anywhere, so every index and every
-            document type is searched until an editor narrows it down.
+            The profile the package seeds on install: both published content and media indexes are in
+            scope and nothing is narrowed down further, so a fresh site searches everything the moment
+            the package lands - editors then narrow it from the dashboard at their own pace.
             </summary>
         </member>
         <member name="T:Imobisoft.Search.Models.SearchRequest">
@@ -1112,8 +1147,9 @@
         <member name="T:Imobisoft.Search.Models.SourceRules">
             <summary>
             Defines <em>what</em> is searchable: which indexes are queried and which documents inside them
-            are eligible. Every collection here follows the same convention - an empty collection means
-            "no restriction", which is what makes a freshly installed package search everything.
+            are eligible. Per-type lists narrow an index that is already in scope through
+            <see cref="P:Imobisoft.Search.Models.SourceRules.IndexTypes"/>; a profile that names neither stays dark, which is the "include to
+            switch search on" model.
             </summary>
         </member>
         <member name="P:Imobisoft.Search.Models.SourceRules.Indexes">
