@@ -431,7 +431,7 @@
         @* The filters sit on top, before the search box, and are here the moment the page
            opens - the bar is driven by the profile's facet definitions, with live counts joining
            from the response once a search (or the automatic browse pass) has produced them. *@
-        @if (Model.ConfiguredFacets.Count > 0)
+        @if (Model.ConfiguredFacets.Count > 0 || Model.ConfiguredSortOptions.Count > 0)
         {
             <div class="imobisoft-filter-bar">
                 @foreach (FacetDefinition definition in Model.ConfiguredFacets)
@@ -453,6 +453,26 @@
                                 {
                                     <option value="@choice.Value" selected="@choice.IsSelected">@choice.Label (@choice.Count)</option>
                                 }
+                            }
+                        </select>
+                    </label>
+                }
+
+                @if (Model.ConfiguredSortOptions.Count > 0)
+                {
+                    <label class="imobisoft-filter-item">
+                        <span class="imobisoft-filter-label">Sort by</span>
+                        <select class="imobisoft-filter-select"
+                                name="sort"
+                                aria-label="Sort by"
+                                onchange="this.form.submit()">
+                            <option value="" selected="@string.IsNullOrEmpty(Model.SelectedSort)">Relevance</option>
+                            @foreach (SortOption option in Model.ConfiguredSortOptions)
+                            {
+                                <option value="@option.Alias"
+                                        selected="@option.Alias.Equals(Model.SelectedSort, StringComparison.OrdinalIgnoreCase)">
+                                    @option.Label
+                                </option>
                             }
                         </select>
                     </label>

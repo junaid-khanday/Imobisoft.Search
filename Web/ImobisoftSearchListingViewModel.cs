@@ -30,4 +30,14 @@ public sealed class ImobisoftSearchListingViewModel
     /// their counts.
     /// </summary>
     public IList<FacetDefinition> ConfiguredFacets { get; set; } = new List<FacetDefinition>();
+
+    /// <summary>
+    /// The sort choices the profile defines (A-Z, Z-A, price low-to-high, ...). These drive the
+    /// "Sort by" dropdown the same way <see cref="ConfiguredFacets"/> drives the filter bar: from
+    /// definitions, so the dropdown exists before any search has run.
+    /// </summary>
+    public IList<SortOption> ConfiguredSortOptions { get; set; } = new List<SortOption>();
+
+    /// <summary>The currently selected sort alias, echoed so the right option renders selected.</summary>
+    public string? SelectedSort { get; set; }
 }

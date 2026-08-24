@@ -37,6 +37,13 @@ public sealed class SearchRequest
         new Dictionary<string, IList<string>>(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
+    /// Alias of the <see cref="SortOption"/> the visitor picked in the sort dropdown. Must match an
+    /// <em>enabled</em> option on the resolved profile; anything else is ignored and the profile's
+    /// ranking order applies. Null or empty means "relevance / profile default".
+    /// </summary>
+    public string? Sort { get; set; }
+
+    /// <summary>
     /// Runs the search even when <see cref="Term"/> is empty, matching everything the source rules
     /// allow. This is what lets a search page show filter dimensions before anything is searched,
     /// and what lets a visitor filter without having to type a word first. A short but non-empty

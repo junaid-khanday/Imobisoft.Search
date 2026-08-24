@@ -256,7 +256,7 @@
            moment the page opens - before any word is typed - exactly as configured in the CMS.
            Counts merge in from the response once a search (including the automatic browse pass)
            has produced them. *@
-        @if (Model.ConfiguredFacets.Count > 0)
+        @if (Model.ConfiguredFacets.Count > 0 || Model.ConfiguredSortOptions.Count > 0)
         {
             <div class="isl-filter-bar">
                 @foreach (FacetDefinition definition in Model.ConfiguredFacets)
@@ -285,6 +285,28 @@
                                 @* Counts arrive with the first search; until then keep the visitor's
                                    selection visible rather than silently resetting it. *@
                                 <option value="@picked[0]" selected>@picked[0]</option>
+                            }
+                        </select>
+                    </label>
+                }
+
+                @if (Model.ConfiguredSortOptions.Count > 0)
+                {
+                    @* The sort filter works like every other dropdown here: it lives in the form,
+                       submits on change, and its alias rides along when filters or pages change. *@
+                    <label class="isl-filter-item">
+                        <span class="isl-filter-label">Sort by</span>
+                        <select class="isl-select"
+                                name="sort"
+                                aria-label="Sort by"
+                                onchange="this.form.submit()">
+                            <option value="" selected="@string.IsNullOrEmpty(Model.SelectedSort)">Relevance</option>
+                            @foreach (SortOption option in Model.ConfiguredSortOptions)
+                            {
+                                <option value="@option.Alias"
+                                        selected="@option.Alias.Equals(Model.SelectedSort, StringComparison.OrdinalIgnoreCase)">
+                                    @option.Label
+                                </option>
                             }
                         </select>
                     </label>

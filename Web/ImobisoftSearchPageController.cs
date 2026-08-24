@@ -76,8 +76,21 @@ public sealed class ImobisoftSearchController : Controller
     private async Task<ImobisoftSearchPageViewModel> BuildModel(string? q, int page, CancellationToken cancellationToken)
     {
         var term = (q ?? string.Empty).Trim();
-        var hasQuery = !string.IsNullOrWhiteSpace(term) || (Request != null && Request.Query.ContainsKey("q")) || HttpContext.HasActiveFilters();
+        var hasQuery = !string.IsNullOrWhiteSpace(term)
+                       || (Request != null && Request.Query.ContainsKey("q"))
+                       || (Request != null && Request.Query.ContainsKey("sort"))
+                       || HttpContext.HasActiveFilters();
         SearchProfile? profile = _profiles.ResolveForSearch(null);
+
+        List<SortOption> configuredSorts = profile?.Rules.Results.SortOptions
+            .Where(s => s.Enabled && !string.IsNullOrWhiteSpace(s.Alias) && !string.IsNullOrWhiteSpace(s.Label))
+            .ToList() ?? new List<SortOption>();
+
+        var selectedSort = Request?.Query["sort"].ToString() ?? string.Empty;
+        if (!configuredSorts.Any(s => s.Alias.Equals(selectedSort, StringComparison.OrdinalIgnoreCase)))
+        {
+            selectedSort = string.Empty;
+        }
 
         var model = new ImobisoftSearchPageViewModel
         {
@@ -88,6 +101,8 @@ public sealed class ImobisoftSearchController : Controller
             ConfiguredFacets = profile?.Rules.Results.Facets
                 .Where(f => f.Enabled && !string.IsNullOrWhiteSpace(f.Alias))
                 .ToList() ?? new List<FacetDefinition>(),
+            ConfiguredSortOptions = configuredSorts,
+            SelectedSort = selectedSort,
         };
 
         // With Load More disabled the profile serves exactly one page of PageSize items: later
@@ -102,16 +117,18 @@ public sealed class ImobisoftSearchController : Controller
         // filters, so the dropdowns can show their live counts on an untouched page. An empty term
         // with filters selected is a real request too: picking a filter without typing anything
         // must list what matches it.
-        if (model.HasSearched || (profile?.Rules.Results.Facets.Count ?? 0) > 0)
+        if (model.HasSearched || (profile?.Rules.Results.Facets.Count ?? 0) > 0 || configuredSorts.Count > 0)
         {
-            // Filters are read off the query string by the package, so nothing is passed for them
-            // here. Page size comes from the profile unless the profile says otherwise.
+            // Filters and the sort choice are read off the query string by the package, so nothing
+            // is passed for them here. Page size comes from the profile unless the profile says
+            // otherwise.
             model.Response = await _search.SearchAsync(
                 new SearchRequest
                 {
                     Term = term,
                     Page = model.Page,
                     AllowEmptyTerm = string.IsNullOrWhiteSpace(term),
+                    Sort = string.IsNullOrWhiteSpace(selectedSort) ? null : selectedSort,
                 },
                 cancellationToken);
         }

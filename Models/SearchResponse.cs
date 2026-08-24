@@ -108,6 +108,12 @@ public sealed class SearchResponse
     public IList<FacetResult> Facets { get; set; } = new List<FacetResult>();
 
     /// <summary>
+    /// Alias of the <see cref="SortOption"/> applied to this response, echoed back so the site can
+    /// mark the right choice as selected. Null when the profile's default ranking was used.
+    /// </summary>
+    public string? SelectedSort { get; set; }
+
+    /// <summary>
     /// A corrected term to offer as "did you mean", set when the query returned little or nothing
     /// and a close alternative exists in the index.
     /// </summary>

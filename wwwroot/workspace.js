@@ -19,7 +19,8 @@ import {
     getSettings,
     updateSettings,
     previewSearch,
-    getAutocomplete
+    getAutocomplete,
+    getNodeName
 } from "./data-cache.js";
 
 const VERSION = "1.0.0";
@@ -102,6 +103,13 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             desc: 'Filter search results dynamically by distinct values in Examine fields',
             defaultField: '',
             defaultKind: 'field'
+        },
+        {
+            alias: 'sort',
+            name: 'Sort By Options',
+            desc: 'Visitor-facing sort dropdown - A-Z, Z-A, lowest, highest, newest first',
+            defaultField: '',
+            defaultKind: 'sort'
         }
     ];
 
@@ -132,6 +140,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         this._originalProfileJson = '';
         this._showProfilesDropdown = true;
         this._catalog = { indexes: [], contentTypes: [], mediaTypes: [], languages: [] };
+        this._nodeNames = {};
         this._insights = null;
         this._insightsDays = 30;
         this._insightsActiveReport = 'zero';
@@ -238,6 +247,35 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         } catch (e) {
             console.error("Failed to load catalog:", e);
         }
+    }
+
+    // Node keys are stored raw in profile rules; fetch their display names once so chips and
+    // summaries show "Home" instead of a GUID. Failed lookups stay null and fall back to the
+    // truncated key, so a deleted node never blocks rendering.
+    async _resolveNodeNames(keys) {
+        const missing = [...new Set((keys || []).filter(k => k && this._nodeNames[k] === undefined))];
+        if (!missing.length) return;
+
+        missing.forEach(k => { this._nodeNames[k] = null; });
+
+        await Promise.all(missing.map(async (k) => {
+            try {
+                const res = await getNodeName(this._fetch.bind(this), k);
+                this._nodeNames[k] = res.ok && res.data?.name ? res.data.name : null;
+            } catch {
+                this._nodeNames[k] = null;
+            }
+        }));
+
+        this.requestUpdate();
+    }
+
+    _nodeDisplayName(key) {
+        const name = key && this._nodeNames[key];
+        if (name) return name;
+
+        const s = String(key ?? '');
+        return s.length > 8 ? `${s.slice(0, 8)}…` : (s || 'unknown');
     }
 
     async _loadSettings(force = false) {
@@ -543,6 +581,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         if (!p.rules.results.deduplicateByField) p.rules.results.deduplicateByField = '';
         if (!p.rules.results.highlight) p.rules.results.highlight = { enabled: false, highlightMatches: true, mode: 'sentence', field: '', snippetLength: 200, sentenceContext: 0, startTag: '<mark>', endTag: '</mark>' };
         if (!p.rules.results.facets) p.rules.results.facets = [];
+        if (!Array.isArray(p.rules.results.sortOptions)) p.rules.results.sortOptions = [];
     }
 
     // ----------------- PROFILE CRUD OPERATIONS -----------------
@@ -744,42 +783,55 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 _isNew: !data
             };
         } else if (type === 'editFacet') {
-            this._sidePanelData = data ? JSON.parse(JSON.stringify(data)) : {
-                alias: '',
-                label: '',
-                field: '',
-                kind: 'field',
-                filterType: '',
-                maxValues: 20,
-                hideEmpty: true,
-                enabled: true,
-                ranges: [],
-                _isNew: !data
-            };
-            if (data && data.enabled === undefined) {
-                this._sidePanelData.enabled = true;
-            }
-            if (!Array.isArray(this._sidePanelData.ranges)) {
-                this._sidePanelData.ranges = [];
-            }
-            if (data) {
-                this._showFilterTypePicker = false;
-                this._sidePanelData._origAlias = data.alias;
-                const k = String(data.kind || '').toLowerCase();
-                const f = String(data.field || '').toLowerCase();
-                if (f === '__nodetypealias' || f === 'contenttypealias' || f === 'contenttype') {
-                    this._sidePanelData.filterType = 'contentType';
-                } else if (f === '__path' || f === 'path' || f === '__key' || f === 'key') {
-                    this._sidePanelData.filterType = 'contentNode';
-                } else if (k === 'daterange') {
-                    this._sidePanelData.filterType = 'dateRange';
-                } else if (k === 'numeric') {
-                    this._sidePanelData.filterType = 'numeric';
-                } else {
-                    this._sidePanelData.filterType = 'field';
+            if (data && String(data.kind).toLowerCase() === 'sort') {
+                // Opening the saved sort configuration: it lives in rules.results.sortOptions,
+                // not in the facets array, so load its options for the editor.
+                this._sidePanelData = JSON.parse(JSON.stringify(data));
+                this._sidePanelData.filterType = 'sort';
+                if (!Array.isArray(this._sidePanelData.options)) {
+                    this._sidePanelData.options = JSON.parse(
+                        JSON.stringify(this._currentProfile?.rules?.results?.sortOptions || []));
                 }
+                this._showFilterTypePicker = false;
+                this._loadSortFieldOptions();
             } else {
-                this._showFilterTypePicker = true;
+                this._sidePanelData = data ? JSON.parse(JSON.stringify(data)) : {
+                    alias: '',
+                    label: '',
+                    field: '',
+                    kind: 'field',
+                    filterType: '',
+                    maxValues: 20,
+                    hideEmpty: true,
+                    enabled: true,
+                    ranges: [],
+                    _isNew: !data
+                };
+                if (data && data.enabled === undefined) {
+                    this._sidePanelData.enabled = true;
+                }
+                if (!Array.isArray(this._sidePanelData.ranges)) {
+                    this._sidePanelData.ranges = [];
+                }
+                if (data) {
+                    this._showFilterTypePicker = false;
+                    this._sidePanelData._origAlias = data.alias;
+                    const k = String(data.kind || '').toLowerCase();
+                    const f = String(data.field || '').toLowerCase();
+                    if (f === '__nodetypealias' || f === 'contenttypealias' || f === 'contenttype') {
+                        this._sidePanelData.filterType = 'contentType';
+                    } else if (f === '__path' || f === 'path' || f === '__key' || f === 'key') {
+                        this._sidePanelData.filterType = 'contentNode';
+                    } else if (k === 'daterange') {
+                        this._sidePanelData.filterType = 'dateRange';
+                    } else if (k === 'numeric') {
+                        this._sidePanelData.filterType = 'numeric';
+                    } else {
+                        this._sidePanelData.filterType = 'field';
+                    }
+                } else {
+                    this._showFilterTypePicker = true;
+                }
             }
         } else if (type === 'editBestBet') {
             this._sidePanelData = data ? JSON.parse(JSON.stringify(data)) : {
@@ -835,6 +887,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             };
         } else if (type === 'editSourceRoots') {
             const rootKeys = this._currentProfile.rules?.sources?.rootNodeKeys || this._currentProfile.rules?.sources?.startNodeKeys || [];
+            this._resolveNodeNames(rootKeys);
             this._sidePanelData = {
                 rootNodeKeys: [...rootKeys],
                 _rootsInput: rootKeys.join('\n'),
@@ -996,6 +1049,8 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 return html`<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>`;
             case 'numeric':
                 return html`<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="9" x2="20" y2="9"></line><line x1="4" y1="15" x2="20" y2="15"></line><line x1="10" y1="3" x2="8" y2="21"></line><line x1="16" y1="3" x2="14" y2="21"></line></svg>`;
+            case 'sort':
+                return html`<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5h10"></path><path d="M11 9h7"></path><path d="M11 13h4"></path><path d="M8.5 4l-3.5 4L1.5 4"></path><path d="M5 8V20"></path><path d="M15 16l3 3 3-3"></path><path d="M18 19v-8"></path></svg>`;
             case 'field':
             default:
                 return html`<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>`;
@@ -1083,6 +1138,21 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     this._sidePanelData.field = 'category';
                 }
                 if (!this._sidePanelData.label) this._sidePanelData.label = 'Tag / Category';
+            } else if (ft.alias === 'sort') {
+                this._sidePanelData.kind = 'sort';
+                this._sidePanelData.field = '';
+                this._sidePanelData.ranges = [];
+                if (!this._sidePanelData.label) this._sidePanelData.label = 'Sort by';
+                if (!Array.isArray(this._sidePanelData.options) || this._sidePanelData.options.length === 0) {
+                    const existing = this._currentProfile?.rules?.results?.sortOptions || [];
+                    this._sidePanelData.options = existing.length
+                        ? JSON.parse(JSON.stringify(existing))
+                        : [
+                              { alias: '', label: 'A - Z', field: '__nodeName', direction: 'ascending', enabled: true },
+                              { alias: '', label: 'Z - A', field: '__nodeName', direction: 'descending', enabled: true }
+                          ];
+                }
+                this._loadSortFieldOptions();
             }
             if (!this._sidePanelData._aliasUnlocked) {
                 this._generateAliasFromLabel(this._sidePanelData);
@@ -1200,6 +1270,32 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 else fields.push(cleanField);
             }
         } else if (this._sidePanelType === 'editFacet') {
+            if (d.filterType === 'sort' || d.kind === 'sort') {
+                // The sort "filter" is one configuration, not a facet: its options land in
+                // rules.results.sortOptions and nothing is added to the facets array.
+                if (!this._currentProfile.rules) this._currentProfile.rules = {};
+                if (!this._currentProfile.rules.results) this._currentProfile.rules.results = {};
+
+                const cleanedSorts = (d.options || [])
+                    .filter(s => s.label && s.label.trim())
+                    .map(s => ({
+                        alias: (s.alias && String(s.alias).trim()) || this._sortSlug(s.label),
+                        label: s.label.trim(),
+                        field: ((s.field || '').trim() || 'score').toLowerCase(),
+                        direction: s.direction === 'descending' ? 'descending' : 'ascending',
+                        enabled: s.enabled !== false
+                    }));
+
+                const seenSorts = new Set();
+                for (const s of cleanedSorts) {
+                    while (!s.alias || seenSorts.has(s.alias)) {
+                        s.alias = (s.alias || 'sort') + '-' + Math.random().toString(36).slice(2, 6);
+                    }
+                    seenSorts.add(s.alias);
+                }
+
+                this._currentProfile.rules.results.sortOptions = cleanedSorts;
+            } else {
             if (!d.alias || !d.alias.trim()) errs.alias = "Facet alias is required.";
             
             // Auto-assign Examine field based on filter preset
@@ -1292,6 +1388,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 } else {
                     facets.push(cleanFacet);
                 }
+            }
             }
         } else if (this._sidePanelType === 'editBestBet') {
             const terms = (d._termsInput || '').split(',').map(t => t.trim()).filter(t => t.length > 0);
@@ -2095,6 +2192,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         const includeContentTypes = sources.includeContentTypes || [];
         const excludeContentTypes = sources.excludeContentTypes || [];
         const rootKeys = sources.rootNodeKeys || sources.startNodeKeys || [];
+        this._resolveNodeNames(rootKeys);
 
         return html`
             <div class="source-settings-container">
@@ -2239,7 +2337,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                 <div class="selected-chips-wrap">
                                     ${rootKeys.map(k => html`
                                         <span class="selected-chip">
-                                            <code>${k}</code>
+                                            <code>${this._nodeDisplayName(k)}</code>
                                         </span>
                                     `)}
                                 </div>
@@ -2293,38 +2391,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
 
         return html`
             <div class="source-settings-container">
-                <!-- 1. Searchable Fields Table -->
-                <div class="mf-field">
-                    <div class="field-left-info">
-                        <div class="setting-title">Searchable Fields & Relevance Weighting</div>
-                        <div class="setting-desc">Define which index fields are matched, their boost multiplier, and match modes.</div>
-                    </div>
-                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('manageFields')}>
-                        <div class="field-box-header">
-                            <span class="field-type-tag">Searchable Fields</span>
-                            <span class="field-count-pill">${fields.length ? `${fields.length} fields configured` : 'All Fields (Automatic)'}</span>
-                        </div>
-                        <div class="field-box-content">
-                            ${fields.length ? html`
-                                <div class="selected-chips-wrap">
-                                    ${fields.map(f => html`
-                                        <span class="selected-chip">
-                                            <strong>${f.name}</strong>
-                                            <span class="chip-meta">${f.boost}x (${f.matchMode || 'prefix'})</span>
-                                        </span>
-                                    `)}
-                                </div>
-                            ` : html`
-                                <div class="selected-placeholder">
-                                    <span class="placeholder-tag">All Text Fields (Automatic)</span>
-                                    <span class="placeholder-meta">Searching across all standard Examine text properties. Click to define specific field weights.</span>
-                                </div>
-                            `}
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 2. Matching Engine Parameters -->
+                <!-- 1. Matching Engine Parameters -->
                 <div class="mf-field">
                     <div class="field-left-info">
                         <div class="setting-title">Query Match Parameters</div>
@@ -2677,6 +2744,8 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         if (!p.rules.results) p.rules.results = {};
         if (!Array.isArray(p.rules.results.facets)) p.rules.results.facets = [];
         const facets = p.rules.results.facets;
+        if (!Array.isArray(p.rules.results.sortOptions)) p.rules.results.sortOptions = [];
+        const sorts = p.rules.results.sortOptions;
 
         return html`
             <div class="source-settings-container">
@@ -2768,6 +2837,56 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                 <div class="selected-placeholder">
                                     <span class="placeholder-tag">No Filters Added</span>
                                     <span class="placeholder-meta">Click to add your first search filter (e.g. Document Types, Policies, Date Range, Price).</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                ` : nothing}
+
+                <!-- Sort By Options - appears in the filter list once configured, edited like any other filter -->
+                ${sorts.length ? html`
+                    <div class="mf-field">
+                        <div class="field-left-info">
+                            <div class="setting-title" style="display: flex; align-items: center; gap: 8px;">
+                                <span>Sort by Options</span>
+                            </div>
+                            <div class="setting-desc">A "Sort by" dropdown on the frontend - A-Z, Z-A, lowest, highest. Enabled options show; disabled ones don't.</div>
+                        </div>
+                        <div class="field-right-box clickable-box" @click=${() => this._openEditSortPanel()}>
+                            <div class="field-box-header">
+                                <span class="field-type-tag">${this._getFilterTypeName('sort')}</span>
+                                <div style="display: flex; align-items: center; gap: 8px;" @click=${e => e.stopPropagation()}>
+                                    <label class="switch switch-sm" title="${sorts.some(s => s.enabled !== false) ? 'Sort options Enabled (click to disable all)' : 'Sort options Disabled (click to enable all)'}">
+                                        <input type="checkbox"
+                                               .checked=${sorts.some(s => s.enabled !== false)}
+                                               @change=${async e => {
+                                                   sorts.forEach(s => { s.enabled = e.target.checked; });
+                                                   this.requestUpdate();
+                                                   await this._saveCurrentProfile();
+                                               }}>
+                                        <span class="slider round"></span>
+                                    </label>
+                                    <span class="field-count-pill ${sorts.some(s => s.enabled !== false) ? '' : 'pill-muted'}">
+                                        ${sorts.filter(s => s.enabled !== false).length} of ${sorts.length} enabled
+                                    </span>
+                                    <button class="btn-icon btn-icon-danger" title="Remove Sort Filter" @click=${async (e) => {
+                                        e.stopPropagation();
+                                        p.rules.results.sortOptions = [];
+                                        this.requestUpdate();
+                                        await this._saveCurrentProfile();
+                                    }}>
+                                        <i class="icon-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="field-box-content">
+                                <div class="selected-chips-wrap">
+                                    ${sorts.map(s => html`
+                                        <span class="selected-chip ${s.enabled === false ? 'chip-muted' : ''}">
+                                            <strong>${s.label || s.alias}</strong>
+                                            <span class="chip-meta">${s.field || 'score'} · ${s.direction === 'descending' ? 'desc' : 'asc'}</span>
+                                        </span>
+                                    `)}
                                 </div>
                             </div>
                         </div>
@@ -3369,7 +3488,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         else if (t === 'editHighlighting') { title = "Highlighting & Snippets"; labelTag = "HIGHLIGHT"; }
         else if (t === 'editResultShaping') { title = "Result Shaping & De-Duplication"; labelTag = "SHAPING"; }
         else if (t === 'manageFacets') { title = "Facet Dimensions & Filters"; labelTag = "FILTERS"; }
-        else if (t === 'editFacet') { title = d._isNew ? "Add Facet Dimension" : `Edit Facet: ${d.label || d.alias}`; labelTag = "FILTER"; }
+        else if (t === 'editFacet') { title = d._isNew ? "Add Facet Dimension" : `Edit Facet: ${d.label || d.alias}`; labelTag = d.kind === 'sort' ? "SORT BY" : "FILTER"; }
         else if (t === 'editSourceIndexes') { title = "Target Examine Indexes"; labelTag = "INDEXES"; }
         else if (t === 'editSourceEntityTypes') { title = "Index Entity Types"; labelTag = "ENTITIES"; }
         else if (t === 'editSourceContentTypes') { title = "Include Document Types"; labelTag = "DOC TYPES"; }
@@ -3675,6 +3794,146 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                            .checked=${d.excludeProtected !== false}
                            @change=${e => { d.excludeProtected = e.target.checked; this.requestUpdate(); }}>
                 </label>
+            </div>
+        `;
+    }
+
+    // --- SORT OPTIONS FILTER (Filters tab) ---
+
+    // Opens the sort configuration through the standard facet editor panel, so it edits exactly
+    // like any other filter dimension added from the type picker.
+    _openEditSortPanel() {
+        const sorts = this._currentProfile?.rules?.results?.sortOptions || [];
+        this._openSidePanel('editFacet', {
+            alias: 'sort-by',
+            label: 'Sort by',
+            kind: 'sort',
+            enabled: sorts.some(s => s.enabled !== false),
+            options: JSON.parse(JSON.stringify(sorts)),
+            _isNew: false
+        });
+    }
+
+    // Field suggestions come from the profile's first target index; common Umbraco fields are
+    // always offered as a floor. Best-effort only - the input stays free-text regardless.
+    async _loadSortFieldOptions() {
+        const indexes = this._currentProfile?.rules?.sources?.indexes || [];
+        const names = [];
+
+        try {
+            if (indexes.length) {
+                const res = await getSearchableFields(this._fetch.bind(this), indexes[0]);
+                if (res.ok && Array.isArray(res.data)) {
+                    for (const f of res.data) {
+                        const n = typeof f === 'string' ? f : (f.name || f.fieldName || '');
+                        if (n && !names.includes(n)) names.push(n);
+                    }
+                }
+            }
+        } catch { /* suggestions are best-effort */ }
+
+        for (const extra of ['__nodeName', 'nodeName', 'updateDate', 'createDate', 'score']) {
+            if (!names.includes(extra)) names.push(extra);
+        }
+
+        if (this._sidePanelData) this._sidePanelData._fieldOptions = names;
+        this.requestUpdate();
+    }
+
+    _sortSlug(label) {
+        return String(label || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '') || 'sort';
+    }
+
+    _addSortOption(d, label, field, direction) {
+        if (!Array.isArray(d.options)) d.options = [];
+        d.options.push({ alias: '', label: label, field: field || '', direction: direction, enabled: true });
+        this.requestUpdate();
+    }
+
+    _renderSortOptionsSidePanelBody(d) {
+        const options = d.options || [];
+        const fields = d._fieldOptions || [];
+
+        const row = (s, idx) => html`
+            <div class="sp-group" style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin-bottom: 12px; width: 100%; display: flex; flex-direction: column; gap: 10px; opacity: ${s.enabled !== false ? 1 : 0.55};">
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <input type="text"
+                           class="sp-input"
+                           style="flex: 1;"
+                           placeholder='Option label (e.g. "A - Z")'
+                           .value=${s.label || ''}
+                           @input=${e => { s.label = e.target.value; this.requestUpdate(); }}>
+                    <button class="btn-icon btn-icon-danger" title="Remove Option"
+                            @click=${() => { d.options.splice(idx, 1); this.requestUpdate(); }}>
+                        <i class="icon-trash"></i>
+                    </button>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <div style="flex: 1;">
+                        <label class="sp-label" style="font-size: 11px;">Index Field</label>
+                        <input type="text"
+                               class="sp-input"
+                               list="sort-field-options"
+                               placeholder="__nodeName, price, updateDate..."
+                               .value=${s.field || ''}
+                               @input=${e => { s.field = e.target.value; this.requestUpdate(); }}>
+                    </div>
+                    <div style="width: 210px;">
+                        <label class="sp-label" style="font-size: 11px;">Direction</label>
+                        <select class="sp-select-sm" style="width: 100%;"
+                                .value=${s.direction === 'descending' ? 'descending' : 'ascending'}
+                                @change=${e => { s.direction = e.target.value; this.requestUpdate(); }}>
+                            <option value="ascending">Ascending (A-Z / low-high)</option>
+                            <option value="descending">Descending (Z-A / high-low)</option>
+                        </select>
+                    </div>
+                </div>
+                <label class="toggle-item">
+                    <div class="toggle-info">
+                        <strong>Enabled</strong>
+                        <span>Disabled options are hidden from the frontend dropdown.</span>
+                    </div>
+                    <input type="checkbox"
+                           class="switch-input"
+                           .checked=${s.enabled !== false}
+                           @change=${e => { s.enabled = e.target.checked; this.requestUpdate(); }}>
+                </label>
+            </div>
+        `;
+
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-choice-header-info">
+                    <p class="sp-choice-desc">
+                        Adds a "Sort by" dropdown next to the frontend filters - A-Z, Z-A, lowest, highest, newest...
+                        Each option sorts results by one index field; leave it as <code>score</code> for relevance order.
+                        Enabled options appear on the site, disabled ones don't.
+                    </p>
+                </div>
+
+                <div class="sp-group" style="display: flex; gap: 8px; flex-wrap: wrap; width: 100%;">
+                    <button class="btn btn-secondary btn-sm" @click=${() => this._addSortOption(d, 'A - Z', '__nodeName', 'ascending')}>+ A-Z</button>
+                    <button class="btn btn-secondary btn-sm" @click=${() => this._addSortOption(d, 'Z - A', '__nodeName', 'descending')}>+ Z-A</button>
+                    <button class="btn btn-secondary btn-sm" @click=${() => this._addSortOption(d, 'Lowest first', '', 'ascending')}>+ Lowest first</button>
+                    <button class="btn btn-secondary btn-sm" @click=${() => this._addSortOption(d, 'Highest first', '', 'descending')}>+ Highest first</button>
+                    <button class="btn btn-secondary btn-sm" @click=${() => this._addSortOption(d, 'Newest first', 'updateDate', 'descending')}>+ Newest first</button>
+                </div>
+
+                <datalist id="sort-field-options">
+                    ${fields.map(f => html`<option value=${f}></option>`)}
+                </datalist>
+
+                ${options.map((s, idx) => row(s, idx))}
+
+                ${options.length === 0 ? html`
+                    <div class="selected-placeholder" style="width: 100%;">
+                        <span class="placeholder-tag">No sort options yet</span>
+                        <span class="placeholder-meta">Use a quick-add button above, then set the field each option sorts on.</span>
+                    </div>
+                ` : nothing}
             </div>
         `;
     }
@@ -4315,6 +4574,10 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     }
 
     _renderFacetSidePanelBody(d) {
+        if (d.filterType === 'sort' || d.kind === 'sort') {
+            return this._renderSortOptionsSidePanelBody(d);
+        }
+
         if (!Array.isArray(d.ranges)) {
             d.ranges = [];
         }

@@ -90,4 +90,11 @@ public sealed class ResultRules
     /// means no faceting, which is the default.
     /// </summary>
     public IList<FacetDefinition> Facets { get; set; } = new List<FacetDefinition>();
+
+    /// <summary>
+    /// The visitor-facing sort filter: the choices offered in a "Sort by" dropdown, such as A-Z,
+    /// Z-A, price lowest-first or highest-first. When a visitor picks one it overrides the
+    /// profile's ranking order for that request; otherwise <see cref="RankingRules.SortBy"/> rules.
+    /// </summary>
+    public IList<SortOption> SortOptions { get; set; } = new List<SortOption>();
 }

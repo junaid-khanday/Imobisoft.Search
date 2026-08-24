@@ -64,6 +64,18 @@ public sealed class ImobisoftSearchListingViewComponent : ViewComponent
             .Where(f => f.Enabled && !string.IsNullOrWhiteSpace(f.Alias))
             .ToList() ?? new List<FacetDefinition>();
 
+        // Sort options follow the same definitions-first pattern: the dropdown exists as soon as
+        // the profile defines enabled options, whether or not a search has run yet.
+        List<SortOption> configuredSorts = profile?.Rules.Results.SortOptions
+            .Where(s => s.Enabled && !string.IsNullOrWhiteSpace(s.Alias) && !string.IsNullOrWhiteSpace(s.Label))
+            .ToList() ?? new List<SortOption>();
+
+        var selectedSort = Request.Query["sort"].ToString();
+        if (!configuredSorts.Any(s => s.Alias.Equals(selectedSort, StringComparison.OrdinalIgnoreCase)))
+        {
+            selectedSort = string.Empty;
+        }
+
         // With Load More disabled the profile serves exactly one page of PageSize items: later
         // pages are not served even when the URL asks for them.
         if (profile?.Rules.Results.EnableLoadMore != true)
@@ -73,15 +85,16 @@ public sealed class ImobisoftSearchListingViewComponent : ViewComponent
 
         var hasSearched = !string.IsNullOrWhiteSpace(term)
                           || Request.Query.ContainsKey("q")
+                          || Request.Query.ContainsKey("sort")
                           || HttpContext.HasActiveFilters();
 
         SearchResponse? response = null;
 
         // A search runs once the visitor has asked for one - or before that, when the profile
-        // defines filters, so the dropdowns show live counts on an untouched page. AllowEmptyTerm
-        // is what lets an empty box still answer: picking a filter without typing anything lists
-        // everything the profile can see that matches it.
-        if (hasSearched || (profile?.Rules.Results.Facets.Count ?? 0) > 0)
+        // defines filters or sort options, so the dropdowns show live counts on an untouched page.
+        // AllowEmptyTerm is what lets an empty box still answer: picking a filter without typing
+        // anything lists everything the profile can see that matches it.
+        if (hasSearched || (profile?.Rules.Results.Facets.Count ?? 0) > 0 || configuredSorts.Count > 0)
         {
             response = await _search.SearchAsync(
                 new SearchRequest
@@ -91,6 +104,7 @@ public sealed class ImobisoftSearchListingViewComponent : ViewComponent
                     ProfileAlias = profileAlias,
                     PageSize = pageSize > 0 ? pageSize : null,
                     AllowEmptyTerm = string.IsNullOrWhiteSpace(term),
+                    Sort = string.IsNullOrWhiteSpace(selectedSort) ? null : selectedSort,
                 });
 
             // Leave the response on the request so Context.GetSearchFilters() and friends work in
@@ -105,6 +119,8 @@ public sealed class ImobisoftSearchListingViewComponent : ViewComponent
             Response = response,
             HasSearched = hasSearched,
             ConfiguredFacets = configuredFacets,
+            ConfiguredSortOptions = configuredSorts,
+            SelectedSort = selectedSort,
         });
     }
 }

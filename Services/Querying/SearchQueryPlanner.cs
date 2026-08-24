@@ -248,6 +248,26 @@ internal sealed class SearchQueryPlanner
                 ImobisoftSearchConstants.IndexTypes.Member,
             };
 
+        // Naming document types to include has to close the branches that carry no rule of their
+        // own - otherwise including one page type still serves every media item and member,
+        // which reads as "the rule did nothing".
+        if (!hasIndexTypeRule && (hasContentRule || hasMediaRule))
+        {
+            var scoped = new List<string>();
+
+            if (hasContentRule)
+            {
+                scoped.Add(ImobisoftSearchConstants.IndexTypes.Content);
+            }
+
+            if (hasMediaRule)
+            {
+                scoped.Add(ImobisoftSearchConstants.IndexTypes.Media);
+            }
+
+            allowed = scoped;
+        }
+
         var clauses = new List<string>();
 
         foreach (var indexType in allowed)

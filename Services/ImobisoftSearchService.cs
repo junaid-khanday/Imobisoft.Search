@@ -119,7 +119,11 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
 
         ApplyQueryStringFilters(request);
 
-        SearchResponse response = Execute(rules, request, profileAlias, pageSize, stopwatch, cancellationToken);
+        (SearchRuleSet effectiveRules, string? appliedSort) = ApplyRequestedSort(rules, request);
+
+        SearchResponse response = Execute(effectiveRules, request, profileAlias, pageSize, stopwatch, cancellationToken);
+
+        response.SelectedSort = appliedSort;
 
         AddSuggestion(response, rules, request, profileAlias, cancellationToken);
 
@@ -134,6 +138,66 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
         PublishToRequest(response);
 
         return Task.FromResult(response);
+    }
+
+    /// <summary>
+    /// Resolves the visitor's sort choice against the profile's enabled sort options. A match
+    /// overrides the ranking order for this request; both the rule set and its ranking are cloned
+    /// because the saved profile instance is cached and shared across requests - mutating its
+    /// SortBy list in place would leak one visitor's sort into everyone else's results.
+    /// </summary>
+    /// <returns>The effective rules plus the applied alias, or null when the profile default stands.</returns>
+    private (SearchRuleSet Rules, string? Alias) ApplyRequestedSort(SearchRuleSet rules, SearchRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Sort) && _options.ReadFiltersFromQueryString)
+        {
+            request.Sort = _httpContextAccessor.HttpContext?.Request.Query["sort"].ToString();
+        }
+
+        var alias = (request.Sort ?? string.Empty).Trim();
+
+        if (alias.Length == 0 || rules.Results.SortOptions.Count == 0)
+        {
+            return (rules, null);
+        }
+
+        SortOption? option = rules.Results.SortOptions.FirstOrDefault(o =>
+            o.Enabled &&
+            !string.IsNullOrWhiteSpace(o.Alias) &&
+            o.Alias.Equals(alias, StringComparison.OrdinalIgnoreCase));
+
+        if (option is null)
+        {
+            return (rules, null);
+        }
+
+        RankingRules ranking = new()
+        {
+            SortBy = new List<SortRule>
+            {
+                new()
+                {
+                    Field = string.IsNullOrWhiteSpace(option.Field) ? SortRule.ScoreField : option.Field,
+                    Direction = option.Direction,
+                },
+            },
+            ContentTypeBoosts = rules.Ranking.ContentTypeBoosts,
+            BestBets = rules.Ranking.BestBets,
+            BlockedTerms = rules.Ranking.BlockedTerms,
+            Recency = rules.Ranking.Recency,
+        };
+
+        // Best bets still pin their nodes to the top; everything below them follows the visitor's
+        // chosen order, which is what a "Sort by" dropdown promises.
+        SearchRuleSet effective = new()
+        {
+            Sources = rules.Sources,
+            Matching = rules.Matching,
+            Ranking = ranking,
+            Results = rules.Results,
+        };
+
+        return (effective, option.Alias);
     }
 
     /// <summary>

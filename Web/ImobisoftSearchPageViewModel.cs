@@ -25,4 +25,10 @@ public sealed class ImobisoftSearchPageViewModel
     /// the automatic browse pass - has produced them.
     /// </summary>
     public IList<FacetDefinition> ConfiguredFacets { get; set; } = new List<FacetDefinition>();
+
+    /// <summary>The sort choices the profile defines, driving the page's "Sort by" dropdown.</summary>
+    public IList<SortOption> ConfiguredSortOptions { get; set; } = new List<SortOption>();
+
+    /// <summary>The currently selected sort alias, echoed so the right option renders selected.</summary>
+    public string? SelectedSort { get; set; }
 }

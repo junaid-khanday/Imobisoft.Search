@@ -142,12 +142,37 @@ public static class SearchContextExtensions
             parts.Add($"{prefix}{Uri.EscapeDataString(facetAlias)}={Uri.EscapeDataString(value)}");
         }
 
+        AppendSort(parts, context);
+
         return "?" + string.Join("&", parts);
+    }
+
+    /// <summary>
+    /// Appends the visitor's current sort choice to a URL being rebuilt, so changing a filter or
+    /// page never silently drops the "Sort by" selection.
+    /// </summary>
+    private static void AppendSort(IList<string> parts, HttpContext? context)
+    {
+        var sort = context?.Request.Query["sort"].ToString();
+
+        if (!string.IsNullOrWhiteSpace(sort))
+        {
+            parts.Add("sort=" + Uri.EscapeDataString(sort));
+        }
     }
 
     /// <summary>The current search with every filter cleared.</summary>
     public static string ClearFiltersUrl(this HttpContext? context)
-        => "?q=" + Uri.EscapeDataString(context?.Request.Query["q"].ToString() ?? string.Empty);
+    {
+        var parts = new List<string>
+        {
+            "q=" + Uri.EscapeDataString(context?.Request.Query["q"].ToString() ?? string.Empty),
+        };
+
+        AppendSort(parts, context);
+
+        return "?" + string.Join("&", parts);
+    }
 
     /// <summary>
     /// The current search at a different page, keeping the term and every filter. This is the href
@@ -172,6 +197,8 @@ public static class SearchContextExtensions
                 parts.Add($"{prefix}{Uri.EscapeDataString(filter.Key)}={Uri.EscapeDataString(value)}");
             }
         }
+
+        AppendSort(parts, context);
 
         if (page > 1)
         {
