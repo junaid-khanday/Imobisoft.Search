@@ -1,6 +1,7 @@
 ﻿using System.Globalization;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Imobisoft.Search.Models;
 
@@ -54,12 +55,21 @@ internal sealed partial class SearchResultProcessor
         // own, which is what lets a visitor widen a selection without the other counts collapsing.
         IList<FacetResult> facets = BuildFacets(items, rules.Results.Facets, request.Filters);
 
-        items = ApplyFacetFilters(items, rules.Results.Facets, request.Filters, notes);
+        items = ApplyFacetFilters(
+            items,
+            rules.Results.Facets,
+            request.Filters,
+            notes,
+            rules.Results.MinimumActiveFilters);
 
         // A minimum score is a threshold on relevance, and nothing has a relevance score without a
         // term to be relevant to - applying one to a browse listing would empty it entirely.
         items = ApplyMinimumScore(items, plan.TermGroups.Count == 0 ? 0 : rules.Matching.MinimumScore, notes);
-        items = Deduplicate(items, rules.Results.DeduplicateByField, notes);
+        // De-duplication is CMS-controlled: off means the same page may appear once per index it
+        // was found in; on collapses identical pages and applies the optional field rule as well.
+        items = rules.Results.EnableDeduplication
+            ? Deduplicate(items, rules.Results.DeduplicateByField, notes)
+            : items;
         items = Sort(items, rules.Ranking.SortBy);
 
         // Same fallback as the service: a zeroed rule serves the default page size, never one.
@@ -69,7 +79,20 @@ internal sealed partial class SearchResultProcessor
         var page = Math.Max(1, request.Page);
         var total = items.Count;
 
-        List<SearchResultItem> pageItems = items.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        // Browse mode (no search term yet) answers to its own cap: an editor can open the search
+        // page with a handful of results, or with none at all, while filters keep their counts.
+        // An explicit caller-supplied page size still wins over the profile.
+        var browseCap = Math.Max(0, rules.Results.BrowsePageSize);
+        var isBrowse = plan.TermGroups.Count == 0;
+
+        if (isBrowse && request.PageSize is not > 0)
+        {
+            pageSize = Math.Min(pageSize, browseCap);
+        }
+
+        List<SearchResultItem> pageItems = pageSize <= 0
+            ? new List<SearchResultItem>()
+            : items.Skip((page - 1) * pageSize).Take(pageSize).ToList();
 
         if (rules.Results.Highlight.Enabled)
         {
@@ -364,10 +387,27 @@ internal sealed partial class SearchResultProcessor
         string field,
         List<string> notes)
     {
-        if (string.IsNullOrWhiteSpace(field))
+        var beforeCount = items.Count;
+
+        // The same node can surface from more than one index - Umbraco's internal and external
+        // indexes both carry published content - so identity de-duplication always runs. Items
+        // arrive score-ordered, which makes keep-first equivalent to keep-best.
+        var seenIdentities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var identityKept = new List<SearchResultItem>(items.Count);
+
+        foreach (SearchResultItem item in items)
         {
-            return items;
+            var identity = item.Key.HasValue
+                ? "k:" + item.Key.Value.ToString("N")
+                : "i:" + item.Id;
+
+            if (seenIdentities.Add(identity))
+            {
+                identityKept.Add(item);
+            }
         }
+
+        items = identityKept;
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var kept = new List<SearchResultItem>();
@@ -383,9 +423,9 @@ internal sealed partial class SearchResultProcessor
             }
         }
 
-        if (kept.Count != items.Count)
+        if (kept.Count != beforeCount)
         {
-            notes.Add($"De-duplication on '{field}' removed {items.Count - kept.Count} result(s).");
+            notes.Add($"De-duplication removed {beforeCount - kept.Count} result(s).");
         }
 
         return kept;
@@ -610,10 +650,26 @@ internal sealed partial class SearchResultProcessor
         IReadOnlyList<SearchResultItem> items,
         IList<FacetDefinition> definitions,
         IDictionary<string, IList<string>> selected,
-        List<string> notes)
+        List<string> notes,
+        int minimumActiveFilters = 0)
     {
         if (selected.Count == 0 || definitions.Count == 0)
         {
+            return items;
+        }
+
+        // Which filter groups actually carry a selection right now - the basis for both the
+        // global minimum rule and per-facet dependency rules.
+        var activeAliases = new HashSet<string>(
+            selected.Where(kvp => kvp.Value is { Count: > 0 }).Select(kvp => kvp.Key),
+            StringComparer.OrdinalIgnoreCase);
+
+        // Combination rule: until enough filters are active, none of them narrow anything.
+        if (minimumActiveFilters > 0 && activeAliases.Count < minimumActiveFilters)
+        {
+            notes.Add(
+                $"Combination rule: {activeAliases.Count} filter(s) active, "
+                + $"{minimumActiveFilters} required before any take effect.");
             return items;
         }
 
@@ -624,6 +680,20 @@ internal sealed partial class SearchResultProcessor
         {
             if (!selected.TryGetValue(definition.Alias, out IList<string>? chosen) || chosen.Count == 0)
             {
+                continue;
+            }
+
+            // Dependency rule: this facet stays inert while a facet it depends on has no
+            // selection of its own ("News works only together with Date").
+            var missingRequirements = (definition.Requires ?? new List<string>())
+                .Select(r => r?.Trim() ?? string.Empty)
+                .Where(r => r.Length > 0 && !activeAliases.Contains(r))
+                .ToList();
+
+            if (missingRequirements.Count > 0)
+            {
+                notes.Add(
+                    $"'{definition.Alias}' is waiting for: {string.Join(", ", missingRequirements)}.");
                 continue;
             }
 
@@ -1044,7 +1114,11 @@ internal sealed partial class SearchResultProcessor
             return;
         }
 
-        var pattern = string.Join("|", words.Select(Regex.Escape));
+        // The index matched each term as a prefix (created* also hits creates/creative), so the
+        // highlight has to do the same: anchor the literal word and let any tail continue.
+        // Matching the bare word alone leaves prefix-matched documents - where the exact spelling
+        // never occurs - with a snippet but nothing marked inside it.
+        var pattern = string.Join("|", words.Select(w => Regex.Escape(w) + "\\w*"));
         var matcher = new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
         foreach (SearchResultItem item in items)
@@ -1068,6 +1142,11 @@ internal sealed partial class SearchResultProcessor
     /// to come first - often a short one like a title or a URL segment - which shows the word with
     /// no sentence around it. The word has to be read in context to be worth showing at all.
     /// </para>
+    /// <para>
+    /// Block-list properties (Umbraco's "modules", "banner" and friends) are indexed as raw JSON, so
+    /// the value that matched may be a serialized blob rather than prose. Flattening it first lets
+    /// the snippet show the sentence a visitor actually wrote instead of JSON soup.
+    /// </para>
     /// </summary>
     private static string? ResolveHighlightSource(
         SearchResultItem item,
@@ -1077,7 +1156,7 @@ internal sealed partial class SearchResultProcessor
     {
         if (!string.IsNullOrWhiteSpace(highlight.Field))
         {
-            return FieldValue(item, highlight.Field);
+            return FlattenStructuredValue(FieldValue(item, highlight.Field));
         }
 
         string? containingTerm = null;
@@ -1085,7 +1164,7 @@ internal sealed partial class SearchResultProcessor
 
         foreach (var fieldName in plan.Indexes.SelectMany(x => x.Fields).Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            var value = FieldValue(item, fieldName);
+            var value = FlattenStructuredValue(FieldValue(item, fieldName));
 
             if (string.IsNullOrWhiteSpace(value))
             {
@@ -1104,6 +1183,88 @@ internal sealed partial class SearchResultProcessor
         // does not return - so fall back to any text this document has, then to its name.
         return containingTerm ?? anyValue ?? item.Name;
     }
+
+    private static readonly HashSet<string> JsonNoiseKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "contentTypeKey", "key", "udi", "settingsKey", "settingsUdi", "icon", "culture",
+    };
+
+    /// <summary>
+    /// Block lists and similar structured properties reach the index as JSON. When a stored value is
+    /// a JSON document, this walks it and returns just the readable strings inside - markup stripped,
+    /// technical keys skipped - so matching text can be shown as a normal sentence. Non-JSON input
+    /// passes through untouched.
+    /// </summary>
+    private static string? FlattenStructuredValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.TrimStart();
+
+        if (trimmed[0] != '{' && trimmed[0] != '[')
+        {
+            return value;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(value);
+            var builder = new StringBuilder();
+            AppendReadableStrings(document.RootElement, builder);
+
+            var flattened = builder.ToString().Trim();
+
+            return flattened.Length > 0 ? flattened : value;
+        }
+        catch (JsonException)
+        {
+            return value;
+        }
+    }
+
+    private static void AppendReadableStrings(JsonElement element, StringBuilder builder)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.String:
+                var text = element.GetString();
+
+                if (string.IsNullOrWhiteSpace(text) || JsonNoiseKeys.Contains(text.Trim()))
+                {
+                    break;
+                }
+
+                // Rich text values arrive with their markup; strip tags so snippets read cleanly.
+                builder.Append(TagStripper.Replace(text, " ")).Append(' ');
+                break;
+
+            case JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (JsonNoiseKeys.Contains(property.Name))
+                    {
+                        continue;
+                    }
+
+                    AppendReadableStrings(property.Value, builder);
+                }
+
+                break;
+
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    AppendReadableStrings(item, builder);
+                }
+
+                break;
+        }
+    }
+
+    private static readonly Regex TagStripper = new("<[^>]+>", RegexOptions.Compiled);
 
     private static string BuildSnippet(string source, Regex matcher, HighlightRules highlight)
     {

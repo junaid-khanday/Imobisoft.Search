@@ -63,6 +63,14 @@ public sealed class ResultRules
     public bool EnableLoadMore { get; set; } = false;
 
     /// <summary>
+    /// How many results a search page shows before the visitor has typed anything (browse mode).
+    /// Defaults to the normal page size behaviour with 10. Set to 0 to open the page with no
+    /// results at all - filters still show their counts, but nothing is listed until a search
+    /// term is submitted.
+    /// </summary>
+    public int BrowsePageSize { get; set; } = 10;
+
+    /// <summary>
     /// Hard ceiling on how many documents are pulled from the index before post-processing. Keeps
     /// boosting and de-duplication bounded on large sites.
     /// </summary>
@@ -78,8 +86,22 @@ public sealed class ResultRules
     public bool GroupByContentType { get; set; }
 
     /// <summary>
+    /// Master switch for de-duplication. When off, the same page may appear once per index it is
+    /// found in. When on, identical pages collapse to one result even without a field rule, and
+    /// <see cref="DeduplicateByField"/> removes deeper copies as well.
+    /// </summary>
+    public bool EnableDeduplication { get; set; } = true;
+
+    /// <summary>
+    /// How many facet groups must be active before ANY of them narrows results. 0 (the default)
+    /// lets a single filter act alone; 2 would make every selection inert until a second filter
+    /// joins it.
+    /// </summary>
+    public int MinimumActiveFilters { get; set; }
+
+    /// <summary>
     /// Collapses results sharing the same value for this field, keeping the highest scoring one.
-    /// Empty disables de-duplication.
+    /// Empty keeps only the identity-level de-duplication.
     /// </summary>
     public string DeduplicateByField { get; set; } = string.Empty;
 

@@ -880,11 +880,6 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 includeContentTypes: [...(this._currentProfile.rules?.sources?.includeContentTypes || [])],
                 _searchFilter: ''
             };
-        } else if (type === 'editSourceExcludeContentTypes') {
-            this._sidePanelData = {
-                excludeContentTypes: [...(this._currentProfile.rules?.sources?.excludeContentTypes || [])],
-                _searchFilter: ''
-            };
         } else if (type === 'editSourceRoots') {
             const rootKeys = this._currentProfile.rules?.sources?.rootNodeKeys || this._currentProfile.rules?.sources?.startNodeKeys || [];
             this._resolveNodeNames(rootKeys);
@@ -947,6 +942,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         } else if (type === 'editPaging') {
             this._sidePanelData = {
                 pageSize: this._currentProfile.rules?.results?.pageSize ?? 10,
+                browsePageSize: this._currentProfile.rules?.results?.browsePageSize ?? 10,
                 maxResults: this._currentProfile.rules?.results?.maxResults ?? 500,
                 enableLoadMore: !!this._currentProfile.rules?.results?.enableLoadMore
             };
@@ -959,8 +955,17 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             };
         } else if (type === 'editResultShaping') {
             this._sidePanelData = {
+                enableDeduplication: this._currentProfile.rules?.results?.enableDeduplication !== false,
                 deduplicateByField: this._currentProfile.rules?.results?.deduplicateByField || '',
                 groupByContentType: this._currentProfile.rules?.results?.groupByContentType || false
+            };
+        } else if (type === 'editFilterCombination') {
+            this._sidePanelData = {
+                minimumActiveFilters: this._currentProfile.rules?.results?.minimumActiveFilters || 0,
+                facets: JSON.parse(JSON.stringify(
+                    (this._currentProfile.rules?.results?.facets || [])
+                        .filter(f => f.enabled !== false && f.alias)
+                        .map(f => ({ alias: f.alias, label: f.label, requires: [...(f.requires || [])] }))))
             };
         } else if (type === 'manageFacets') {
             this._sidePanelData = {
@@ -1283,7 +1288,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     .map(s => ({
                         alias: (s.alias && String(s.alias).trim()) || this._sortSlug(s.label),
                         label: s.label.trim(),
-                        field: ((s.field || '').trim() || 'score').toLowerCase(),
+                        field: (s.field || '').trim(),
                         direction: s.direction === 'descending' ? 'descending' : 'ascending',
                         enabled: s.enabled !== false
                     }));
@@ -1469,8 +1474,6 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             this._currentProfile.rules.sources.indexTypes = [...(d.indexTypes || [])];
         } else if (this._sidePanelType === 'editSourceContentTypes') {
             this._currentProfile.rules.sources.includeContentTypes = [...(d.includeContentTypes || [])];
-        } else if (this._sidePanelType === 'editSourceExcludeContentTypes') {
-            this._currentProfile.rules.sources.excludeContentTypes = [...(d.excludeContentTypes || [])];
         } else if (this._sidePanelType === 'editSourceRoots') {
             let keys = d.rootNodeKeys ? [...d.rootNodeKeys] : [];
             if ((!keys || keys.length === 0) && d._rootsInput) {
@@ -1511,7 +1514,11 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             this._currentProfile.rules.ranking.blockedTerms = Array.from(new Set(terms));
         } else if (this._sidePanelType === 'editPaging') {
             if (!this._currentProfile.rules.results) this._currentProfile.rules.results = {};
-            this._currentProfile.rules.results.pageSize = parseInt(d.pageSize) || 10;
+            this._currentProfile.rules.results.pageSize = Math.min(100, Math.max(1, parseInt(d.pageSize) || 10));
+            const browseParsed = parseInt(d.browsePageSize);
+            this._currentProfile.rules.results.browsePageSize = Number.isFinite(browseParsed)
+                ? Math.min(100, Math.max(0, browseParsed))
+                : 10;
             this._currentProfile.rules.results.maxResults = parseInt(d.maxResults) || 500;
             this._currentProfile.rules.results.enableLoadMore = !!d.enableLoadMore;
         } else if (this._sidePanelType === 'editHighlighting') {
@@ -1523,8 +1530,19 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             this._currentProfile.rules.results.highlight.sentenceContext = parseInt(d.sentenceContext) || 0;
         } else if (this._sidePanelType === 'editResultShaping') {
             if (!this._currentProfile.rules.results) this._currentProfile.rules.results = {};
+            this._currentProfile.rules.results.enableDeduplication = d.enableDeduplication !== false;
             this._currentProfile.rules.results.deduplicateByField = (d.deduplicateByField || '').trim();
             this._currentProfile.rules.results.groupByContentType = !!d.groupByContentType;
+        } else if (this._sidePanelType === 'editFilterCombination') {
+            if (!this._currentProfile.rules.results) this._currentProfile.rules.results = {};
+            const minParsed = parseInt(d.minimumActiveFilters);
+            this._currentProfile.rules.results.minimumActiveFilters =
+                Number.isFinite(minParsed) ? Math.min(10, Math.max(0, minParsed)) : 0;
+            const savedFacets = this._currentProfile.rules.results.facets || [];
+            for (const clone of (d.facets || [])) {
+                const target = savedFacets.find(f => f.alias === clone.alias);
+                if (target) target.requires = (clone.requires || []).filter(r => r && r !== clone.alias);
+            }
         } else if (this._sidePanelType === 'manageFacets') {
             if (!this._currentProfile.rules.results) this._currentProfile.rules.results = {};
             this._currentProfile.rules.results.facets = d.facets || [];
@@ -2267,12 +2285,12 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 <div class="mf-field">
                     <div class="field-left-info">
                         <div class="setting-title">Include Document Types</div>
-                        <div class="setting-desc">Choose specific document types to include in search results. Leave empty for all.</div>
+                        <div class="setting-desc">Only these document types appear in search results. Everything stays hidden until you include it here.</div>
                     </div>
                     <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editSourceContentTypes')}>
                         <div class="field-box-header">
                             <span class="field-type-tag">Included Content Types</span>
-                            <span class="field-count-pill">${includeContentTypes.length ? `${includeContentTypes.length} selected` : 'All Document Types'}</span>
+                            <span class="field-count-pill">${includeContentTypes.length ? `${includeContentTypes.length} included` : 'Nothing Included Yet'}</span>
                         </div>
                         <div class="field-box-content">
                             ${includeContentTypes.length ? html`
@@ -2285,38 +2303,8 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                 </div>
                             ` : html`
                                 <div class="selected-placeholder">
-                                    <span class="placeholder-tag">All Document Types</span>
-                                    <span class="placeholder-meta">No document type restrictions applied.</span>
-                                </div>
-                            `}
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 4. Exclude Document Types -->
-                <div class="mf-field">
-                    <div class="field-left-info">
-                        <div class="setting-title">Exclude Document Types</div>
-                        <div class="setting-desc">Document types that must be excluded from search results.</div>
-                    </div>
-                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editSourceExcludeContentTypes')}>
-                        <div class="field-box-header">
-                            <span class="field-type-tag">Excluded Content Types</span>
-                            <span class="field-count-pill">${excludeContentTypes.length ? `${excludeContentTypes.length} excluded` : 'None Excluded'}</span>
-                        </div>
-                        <div class="field-box-content">
-                            ${excludeContentTypes.length ? html`
-                                <div class="selected-chips-wrap">
-                                    ${excludeContentTypes.map(ct => html`
-                                        <span class="selected-chip chip-danger">
-                                            <code>${ct}</code>
-                                        </span>
-                                    `)}
-                                </div>
-                            ` : html`
-                                <div class="selected-placeholder">
-                                    <span class="placeholder-tag">None Excluded</span>
-                                    <span class="placeholder-meta">No content types blocked from results.</span>
+                                    <span class="placeholder-tag">All Document Types Hidden</span>
+                                    <span class="placeholder-meta">Include at least one document type to show results on the frontend.</span>
                                 </div>
                             `}
                         </div>
@@ -2419,6 +2407,40 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                     ${matching.allTermsMustMatch ? '✓ All Terms Required' : '✕ Any Term Matches'}
                                 </span>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. Searchable Fields & Weightings -->
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Searchable Fields &amp; Weightings</div>
+                        <div class="setting-desc">Choose which index fields are searched and how strongly each one influences ranking. Leave empty to search every text field automatically.</div>
+                    </div>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('manageFields')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Field Weightings</span>
+                            <span class="field-count-pill">${fields.length ? `${fields.length} configured` : 'All Fields (Automatic)'}</span>
+                        </div>
+                        <div class="field-box-content">
+                            ${fields.length ? html`
+                                <div class="selected-chips-wrap">
+                                    ${fields.filter(f => f.enabled !== false).slice(0, 8).map(f => html`
+                                        <span class="selected-chip">
+                                            <strong>${f.name}</strong>
+                                            <span class="chip-meta">×${f.boost ?? 1}</span>
+                                        </span>
+                                    `)}
+                                    ${fields.length > 8 ? html`
+                                        <span class="selected-chip chip-muted">+${fields.length - 8} more</span>
+                                    ` : nothing}
+                                </div>
+                            ` : html`
+                                <div class="selected-placeholder">
+                                    <span class="placeholder-tag">Every searchable field, titles boosted</span>
+                                    <span class="placeholder-meta">Configure specific fields to focus matching and tune relevance.</span>
+                                </div>
+                            `}
                         </div>
                     </div>
                 </div>
@@ -2727,12 +2749,47 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         </div>
                         <div class="field-box-content">
                             <div class="selected-chips-wrap">
+                                <span class="selected-chip ${res.enableDeduplication !== false ? 'chip-success' : 'chip-muted'}">
+                                    ${res.enableDeduplication !== false ? '✓ Same-Page De-Duplication' : '✕ De-Duplication Off'}
+                                </span>
                                 <span class="selected-chip ${res.deduplicateByField ? 'chip-success' : 'chip-muted'}">
-                                    ${res.deduplicateByField ? `✓ De-duplicate by: ${res.deduplicateByField}` : '✕ No De-duplication'}
+                                    ${res.deduplicateByField ? `✓ De-duplicate by: ${res.deduplicateByField}` : '✕ No Field Rule'}
                                 </span>
                                 <span class="selected-chip ${res.groupByContentType ? 'chip-success' : 'chip-muted'}">
                                     ${res.groupByContentType ? '✓ Group by DocType' : '✕ No DocType Grouping'}
                                 </span>
+                            </div>
+                        </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filter Combination Logic -->
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Filter Combination Logic</div>
+                        <div class="setting-desc">Control how filters work together: require a minimum number of active filters, or make a filter wait until another one is also selected.</div>
+                    </div>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editFilterCombination')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Combinations</span>
+                            <span class="field-count-pill">${(res.minimumActiveFilters || 0) > 0 ? `Min ${(res.minimumActiveFilters)}` : 'Any Single Filter'}</span>
+                        </div>
+                        <div class="field-box-content">
+                            <div class="selected-chips-wrap">
+                                <span class="selected-chip ${(res.minimumActiveFilters || 0) > 0 ? 'chip-success' : 'chip-muted'}">
+                                    ${(res.minimumActiveFilters || 0) > 0
+                                        ? `✓ At least ${res.minimumActiveFilters} filter(s) required`
+                                        : '✕ Single Filters Apply Immediately'}
+                                </span>
+                                ${(res.facets || []).filter(f => (f.requires || []).length > 0).map(f => html`
+                                    <span class="selected-chip chip-success">
+                                        ✓ ${f.label || f.alias} needs: ${(f.requires || []).join(', ')}
+                                    </span>
+                                `)}
+                                ${(res.facets || []).every(f => !(f.requires || []).length) ? html`
+                                    <span class="selected-chip chip-muted">✕ No Dependencies Between Filters</span>
+                                ` : nothing}
                             </div>
                         </div>
                     </div>
@@ -3489,12 +3546,12 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         else if (t === 'editPaging') { title = "Paging & Result Capacity"; labelTag = "PAGING"; }
         else if (t === 'editHighlighting') { title = "Highlighting & Snippets"; labelTag = "HIGHLIGHT"; }
         else if (t === 'editResultShaping') { title = "Result Shaping & De-Duplication"; labelTag = "SHAPING"; }
+        else if (t === 'editFilterCombination') { title = "Filter Combination Logic"; labelTag = "COMBOS"; }
         else if (t === 'manageFacets') { title = "Facet Dimensions & Filters"; labelTag = "FILTERS"; }
         else if (t === 'editFacet') { title = d._isNew ? "Add Facet Dimension" : `Edit Facet: ${d.label || d.alias}`; labelTag = d.kind === 'sort' ? "SORT BY" : "FILTER"; }
         else if (t === 'editSourceIndexes') { title = "Target Examine Indexes"; labelTag = "INDEXES"; }
         else if (t === 'editSourceEntityTypes') { title = "Index Entity Types"; labelTag = "ENTITIES"; }
         else if (t === 'editSourceContentTypes') { title = "Include Document Types"; labelTag = "DOC TYPES"; }
-        else if (t === 'editSourceExcludeContentTypes') { title = "Exclude Document Types"; labelTag = "DOC TYPES"; }
         else if (t === 'editSourceRoots') { title = "Search Subtree Roots"; labelTag = "ROOTS"; }
         else if (t === 'editSourceProtection') { title = "Visibility & Protection Rules"; labelTag = "VISIBILITY"; }
         else if (t === 'profileMetadata') { title = "Profile Metadata & Settings"; labelTag = "PROFILE"; }
@@ -3522,12 +3579,12 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         ${t === 'editPaging' ? this._renderPagingSidePanelBody(d) : nothing}
                         ${t === 'editHighlighting' ? this._renderHighlightingSidePanelBody(d) : nothing}
                         ${t === 'editResultShaping' ? this._renderResultShapingSidePanelBody(d) : nothing}
+                        ${t === 'editFilterCombination' ? this._renderFilterCombinationSidePanelBody(d) : nothing}
                         ${t === 'manageFacets' ? this._renderManageFacetsSidePanelBody(d) : nothing}
                         ${t === 'editFacet' ? this._renderFacetSidePanelBody(d) : nothing}
                         ${t === 'editSourceIndexes' ? this._renderSourceIndexesSidePanelBody(d) : nothing}
                         ${t === 'editSourceEntityTypes' ? this._renderSourceEntityTypesSidePanelBody(d) : nothing}
                         ${t === 'editSourceContentTypes' ? this._renderSourceContentTypesSidePanelBody(d, false) : nothing}
-                        ${t === 'editSourceExcludeContentTypes' ? this._renderSourceContentTypesSidePanelBody(d, true) : nothing}
                         ${t === 'editSourceRoots' ? this._renderSourceRootsSidePanelBody(d) : nothing}
                         ${t === 'editSourceProtection' ? this._renderSourceProtectionSidePanelBody(d) : nothing}
                         ${t === 'profileMetadata' ? this._renderProfileMetadataSidePanelBody(d) : nothing}
@@ -3917,12 +3974,15 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 </div>
 
                 <div class="sp-group" style="display: flex; gap: 8px; flex-wrap: wrap; width: 100%;">
+                    <button class="btn btn-secondary btn-sm" @click=${() => this._addSortOption(d, 'Relevance', '', 'ascending')}>+ Relevance</button>
                     <button class="btn btn-secondary btn-sm" @click=${() => this._addSortOption(d, 'A - Z', '__nodeName', 'ascending')}>+ A-Z</button>
                     <button class="btn btn-secondary btn-sm" @click=${() => this._addSortOption(d, 'Z - A', '__nodeName', 'descending')}>+ Z-A</button>
-                    <button class="btn btn-secondary btn-sm" @click=${() => this._addSortOption(d, 'Lowest first', '', 'ascending')}>+ Lowest first</button>
-                    <button class="btn btn-secondary btn-sm" @click=${() => this._addSortOption(d, 'Highest first', '', 'descending')}>+ Highest first</button>
                     <button class="btn btn-secondary btn-sm" @click=${() => this._addSortOption(d, 'Newest first', 'updateDate', 'descending')}>+ Newest first</button>
                 </div>
+                <p class="sp-hint" style="width: 100%;">
+                    "Relevance" keeps the ranking from the Matching tab (best match first). For price or
+                    number sorts, add a custom row and type the numeric field, e.g. <code>price</code>.
+                </p>
 
                 <datalist id="sort-field-options">
                     ${fields.map(f => html`<option value=${f}></option>`)}
@@ -4372,8 +4432,19 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                            min="1"
                            max="100"
                            .value=${String(d.pageSize)}
-                           @input=${e => { d.pageSize = parseInt(e.target.value) || 10; this.requestUpdate(); }}>
-                    <span class="sp-hint">Number of results loaded per page or per "Load More" click.</span>
+                           @change=${e => { d.pageSize = Math.min(100, Math.max(1, parseInt(e.target.value) || 10)); this.requestUpdate(); }}>
+                    <span class="sp-hint">Number of results per page or per "Load More" click - any value from 1 to 100.</span>
+                </div>
+
+                <div class="sp-group" style="margin-bottom: 20px;">
+                    <label class="sp-label">Results Before Searching</label>
+                    <input type="number"
+                           class="sp-input"
+                           min="0"
+                           max="100"
+                           .value=${String(d.browsePageSize ?? 10)}
+                           @change=${e => { d.browsePageSize = Math.min(100, Math.max(0, parseInt(e.target.value) || 0)); this.requestUpdate(); }}>
+                    <span class="sp-hint">How many results show when the page opens without a search term. Set 0 to list nothing until the visitor searches; filters still show their counts.</span>
                 </div>
 
                 <div class="sp-group">
@@ -4443,10 +4514,24 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         return html`
             <div class="sp-multi-choice-layout">
                 <div class="sp-group" style="margin-bottom: 20px;">
+                    <label class="toggle-item" style="margin-bottom: 14px;">
+                        <div class="toggle-info">
+                            <strong>De-Duplicate Results</strong>
+                            <span>The same page found in several indexes appears once. Recommended on.</span>
+                        </div>
+                        <input type="checkbox"
+                               class="switch-input"
+                               .checked=${d.enableDeduplication !== false}
+                               @change=${e => { d.enableDeduplication = e.target.checked; this.requestUpdate(); }}>
+                    </label>
+                </div>
+
+                <div class="sp-group" style="margin-bottom: 20px;">
                     <label class="sp-label">De-Duplicate Results by Field</label>
                     <input type="text"
                            class="sp-input"
-                           placeholder="e.g. urlName, parentId (leave empty to disable)"
+                           placeholder="e.g. urlName, parentId (leave empty for same-page only)"
+                           ?disabled=${d.enableDeduplication === false}
                            .value=${d.deduplicateByField || ''}
                            @input=${e => { d.deduplicateByField = e.target.value; this.requestUpdate(); }}>
                     <span class="sp-hint">If multiple matches have the same value for this field, only the highest ranking one is returned.</span>
@@ -4464,6 +4549,63 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                @change=${e => { d.groupByContentType = e.target.checked; this.requestUpdate(); }}>
                     </label>
                 </div>
+            </div>
+        `;
+    }
+
+    _renderFilterCombinationSidePanelBody(d) {
+        const facets = d.facets || [];
+
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-choice-header-info">
+                    <p class="sp-choice-desc">
+                        Decide when filters take effect. A minimum of 2 makes every selection inert
+                        until a second filter joins it. Dependencies make one filter wait for another,
+                        e.g. "Year" applies only once "Date" is also selected.
+                    </p>
+                </div>
+
+                <div class="sp-group" style="margin-bottom: 20px;">
+                    <label class="sp-label">Minimum Active Filters</label>
+                    <input type="number"
+                           class="sp-input"
+                           min="0"
+                           max="10"
+                           style="max-width: 120px;"
+                           .value=${String(d.minimumActiveFilters || 0)}
+                           @change=${e => { d.minimumActiveFilters = Math.min(10, Math.max(0, parseInt(e.target.value) || 0)); this.requestUpdate(); }}>
+                    <span class="sp-hint">0 = any single filter works immediately. 2 = filters only apply in pairs or more.</span>
+                </div>
+
+                ${facets.length ? html`
+                    ${facets.map(f => html`
+                        <div class="sp-group" style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin-bottom: 12px;">
+                            <strong style="font-size: 13px;">${f.label || f.alias}</strong>
+                            <span class="sp-hint" style="display:block; margin: 4px 0 10px;">This filter takes effect only when the selected ones below are also active:</span>
+                            ${facets.filter(o => o.alias !== f.alias).map(o => html`
+                                <label class="toggle-item">
+                                    <div class="toggle-info"><strong>${o.label || o.alias}</strong></div>
+                                    <input type="checkbox"
+                                           class="switch-input"
+                                           .checked=${(f.requires || []).includes(o.alias)}
+                                           @change=${e => {
+                                               f.requires = f.requires || [];
+                                               if (e.target.checked) { f.requires.push(o.alias); }
+                                               else { f.requires = f.requires.filter(a => a !== o.alias); }
+                                               this.requestUpdate();
+                                           }}>
+                                </label>
+                            `)}
+                            ${facets.length === 1 ? html`<span class="sp-hint">Add a second filter to create dependencies.</span>` : nothing}
+                        </div>
+                    `)}
+                ` : html`
+                    <div class="selected-placeholder">
+                        <span class="placeholder-tag">No Filters Configured</span>
+                        <span class="placeholder-meta">Add facet dimensions first - combination rules apply to them.</span>
+                    </div>
+                `}
             </div>
         `;
     }

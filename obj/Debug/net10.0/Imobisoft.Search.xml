@@ -587,6 +587,13 @@
         <member name="P:Imobisoft.Search.Models.FacetDefinition.Enabled">
             <summary>Whether this filter is enabled and active in search results.</summary>
         </member>
+        <member name="P:Imobisoft.Search.Models.FacetDefinition.Requires">
+            <summary>
+            Aliases of other facets that must have an active selection before this facet's own
+            selection narrows results. Until every listed facet is also in use, selections made here
+            are recorded but inert - which is what powers rules like "Year only works together with Date".
+            </summary>
+        </member>
         <member name="T:Imobisoft.Search.Models.FacetValue">
             <summary>One bucket in a computed facet.</summary>
         </member>
@@ -770,6 +777,14 @@
         <member name="T:Imobisoft.Search.Models.ResultRules">
             <summary>Defines the <em>shape</em> of what comes back: paging, fields and post-processing.</summary>
         </member>
+        <member name="P:Imobisoft.Search.Models.ResultRules.BrowsePageSize">
+            <summary>
+            How many results a search page shows before the visitor has typed anything (browse mode).
+            Defaults to the normal page size behaviour with 10. Set to 0 to open the page with no
+            results at all - filters still show their counts, but nothing is listed until a search
+            term is submitted.
+            </summary>
+        </member>
         <member name="P:Imobisoft.Search.Models.ResultRules.MaxResults">
             <summary>
             Hard ceiling on how many documents are pulled from the index before post-processing. Keeps
@@ -785,10 +800,24 @@
         <member name="P:Imobisoft.Search.Models.ResultRules.GroupByContentType">
             <summary>Adds a content type grouping breakdown to the response.</summary>
         </member>
+        <member name="P:Imobisoft.Search.Models.ResultRules.EnableDeduplication">
+            <summary>
+            Master switch for de-duplication. When off, the same page may appear once per index it is
+            found in. When on, identical pages collapse to one result even without a field rule, and
+            <see cref="P:Imobisoft.Search.Models.ResultRules.DeduplicateByField"/> removes deeper copies as well.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.ResultRules.MinimumActiveFilters">
+            <summary>
+            How many facet groups must be active before ANY of them narrows results. 0 (the default)
+            lets a single filter act alone; 2 would make every selection inert until a second filter
+            joins it.
+            </summary>
+        </member>
         <member name="P:Imobisoft.Search.Models.ResultRules.DeduplicateByField">
             <summary>
             Collapses results sharing the same value for this field, keeping the highest scoring one.
-            Empty disables de-duplication.
+            Empty keeps only the identity-level de-duplication.
             </summary>
         </member>
         <member name="P:Imobisoft.Search.Models.ResultRules.Facets">
@@ -1688,6 +1717,13 @@
             searchable, with the node name weighted up - a title match should always beat a body match.
             </summary>
         </member>
+        <member name="M:Imobisoft.Search.Services.Querying.SearchQueryPlanner.IsTitleLikeField(System.String)">
+            <summary>
+            Title-shaped property aliases ("pageTitle", "articleTitle", "heading", ...) carry the page's
+            self-declared subject, so a match there deserves to outrank the same word buried in body
+            copy - even before a site tunes weightings by hand.
+            </summary>
+        </member>
         <member name="M:Imobisoft.Search.Services.Querying.SearchQueryPlanner.ExpandForCultures(System.String,System.Collections.Generic.IReadOnlyList{System.String},System.Collections.Generic.IReadOnlySet{System.String})">
             <summary>
             Umbraco stores variant content as one document with culture-suffixed field names, so
@@ -1802,6 +1838,19 @@
             to come first - often a short one like a title or a URL segment - which shows the word with
             no sentence around it. The word has to be read in context to be worth showing at all.
             </para>
+            <para>
+            Block-list properties (Umbraco's "modules", "banner" and friends) are indexed as raw JSON, so
+            the value that matched may be a serialized blob rather than prose. Flattening it first lets
+            the snippet show the sentence a visitor actually wrote instead of JSON soup.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Querying.SearchResultProcessor.FlattenStructuredValue(System.String)">
+            <summary>
+            Block lists and similar structured properties reach the index as JSON. When a stored value is
+            a JSON document, this walks it and returns just the readable strings inside - markup stripped,
+            technical keys skipped - so matching text can be shown as a normal sentence. Non-JSON input
+            passes through untouched.
             </summary>
         </member>
         <member name="M:Imobisoft.Search.Services.Querying.SearchResultProcessor.FindSentence(System.String,System.Text.RegularExpressions.Match,Imobisoft.Search.Models.HighlightRules)">

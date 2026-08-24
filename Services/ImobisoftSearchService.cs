@@ -177,6 +177,13 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
             return (rules, null);
         }
 
+        // An option with no field is the explicit "Relevance" choice: keep the profile's own
+        // ranking untouched and just echo the alias so the dropdown can mark it as selected.
+        if (string.IsNullOrWhiteSpace(option.Field))
+        {
+            return (rules, option.Alias);
+        }
+
         RankingRules ranking = new()
         {
             SortBy = new List<SortRule>

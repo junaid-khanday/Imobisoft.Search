@@ -95,9 +95,20 @@ internal sealed class SearchQueryPlanner
 
         var indexPlans = new List<IndexQueryPlan>();
 
+        // The include gate: until a profile names at least one document type (or entity type),
+        // nothing is searchable - that is what keeps a fresh install from exposing the whole site.
+        var typeClause = BuildTypeClause(rules.Sources);
+
+        if (string.IsNullOrEmpty(typeClause))
+        {
+            return SearchPlan.Blocked(
+                rules,
+                "Nothing is included yet. Add document types under Sources & Scope to turn search on.");
+        }
+
         foreach (var indexName in indexNames)
         {
-            IndexQueryPlan? plan = BuildIndexPlan(indexName, rules, matching, termGroups, cultures, rootIds, browse);
+            IndexQueryPlan? plan = BuildIndexPlan(indexName, rules, matching, termGroups, cultures, rootIds, browse, typeClause);
 
             if (plan is not null)
             {
@@ -134,7 +145,8 @@ internal sealed class SearchQueryPlanner
         IReadOnlyList<IReadOnlyList<string>> termGroups,
         IReadOnlyList<string> cultures,
         IReadOnlySet<int> rootIds,
-        bool browse)
+        bool browse,
+        string typeClause)
     {
         var available = new HashSet<string>(
             _catalog.GetIndex(indexName)?.Fields.Select(f => f.Name) ?? Enumerable.Empty<string>(),
@@ -182,21 +194,14 @@ internal sealed class SearchQueryPlanner
 
         if (browse)
         {
-            // Everything the type rules allow. With no type restrictions at all this is a bare
-            // match-all, which Lucene reads as "every document in the index".
-            var browseTypeClause = BuildTypeClause(rules.Sources);
-            parts.Add(string.IsNullOrEmpty(browseTypeClause) ? "*:*" : LuceneSyntax.Require(browseTypeClause));
+            // Everything the include rules allow. The gate in Plan() guarantees this is non-empty,
+            // so browse listings respect exactly the same document-type scoping as search.
+            parts.Add(LuceneSyntax.Require(typeClause));
         }
         else
         {
             parts.Add(LuceneSyntax.Require(LuceneSyntax.Join(fieldClauses, matchOperator)));
-
-            var typeClause = BuildTypeClause(rules.Sources);
-
-            if (!string.IsNullOrEmpty(typeClause))
-            {
-                parts.Add(LuceneSyntax.Require(typeClause));
-            }
+            parts.Add(LuceneSyntax.Require(typeClause));
         }
 
         var excludedTypes = rules.Sources.ExcludeContentTypes
@@ -230,42 +235,36 @@ internal sealed class SearchQueryPlanner
     /// </summary>
     private static string BuildTypeClause(SourceRules sources)
     {
-        var hasIndexTypeRule = sources.IndexTypes.Count > 0;
         var hasContentRule = sources.IncludeContentTypes.Count > 0;
         var hasMediaRule = sources.IncludeMediaTypes.Count > 0;
 
-        if (!hasIndexTypeRule && !hasContentRule && !hasMediaRule)
+        // Everything is excluded by default: content appears only through the include list, media
+        // only through its own, and members only when the profile names the member entity outright.
+        // An explicit entity-type selection also keeps its branch open. A profile that names nothing
+        // therefore matches no document type at all - the Sources tab is what turns search on.
+        bool IndexTypesContains(string indexType)
+            => sources.IndexTypes.Any(x => x.Equals(indexType, StringComparison.OrdinalIgnoreCase));
+
+        var allowed = new List<string>();
+
+        if (hasContentRule || IndexTypesContains(ImobisoftSearchConstants.IndexTypes.Content))
         {
-            return string.Empty;
+            allowed.Add(ImobisoftSearchConstants.IndexTypes.Content);
         }
 
-        var allowed = hasIndexTypeRule
-            ? sources.IndexTypes
-            : new List<string>
-            {
-                ImobisoftSearchConstants.IndexTypes.Content,
-                ImobisoftSearchConstants.IndexTypes.Media,
-                ImobisoftSearchConstants.IndexTypes.Member,
-            };
-
-        // Naming document types to include has to close the branches that carry no rule of their
-        // own - otherwise including one page type still serves every media item and member,
-        // which reads as "the rule did nothing".
-        if (!hasIndexTypeRule && (hasContentRule || hasMediaRule))
+        if (hasMediaRule || IndexTypesContains(ImobisoftSearchConstants.IndexTypes.Media))
         {
-            var scoped = new List<string>();
+            allowed.Add(ImobisoftSearchConstants.IndexTypes.Media);
+        }
 
-            if (hasContentRule)
-            {
-                scoped.Add(ImobisoftSearchConstants.IndexTypes.Content);
-            }
+        if (IndexTypesContains(ImobisoftSearchConstants.IndexTypes.Member))
+        {
+            allowed.Add(ImobisoftSearchConstants.IndexTypes.Member);
+        }
 
-            if (hasMediaRule)
-            {
-                scoped.Add(ImobisoftSearchConstants.IndexTypes.Media);
-            }
-
-            allowed = scoped;
+        if (allowed.Count == 0)
+        {
+            return string.Empty;
         }
 
         var clauses = new List<string>();
@@ -346,7 +345,9 @@ internal sealed class SearchQueryPlanner
             .Select(field => new SearchFieldRule
             {
                 Name = field.Name,
-                Boost = IsNameField(field.Name) ? 10f : 1f,
+                Boost = IsNameField(field.Name)
+                    ? 10f
+                    : IsTitleLikeField(field.Name) ? 5f : 1f,
                 MatchMode = FieldMatchMode.Prefix,
             })
             .ToList();
@@ -356,6 +357,23 @@ internal sealed class SearchQueryPlanner
         => name.Equals(ImobisoftSearchConstants.IndexFields.NodeName, StringComparison.OrdinalIgnoreCase)
            || name.Equals(ImobisoftSearchConstants.IndexFields.SystemNodeName, StringComparison.OrdinalIgnoreCase)
            || name.StartsWith(ImobisoftSearchConstants.IndexFields.NodeName + "_", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Title-shaped property aliases ("pageTitle", "articleTitle", "heading", ...) carry the page's
+    /// self-declared subject, so a match there deserves to outrank the same word buried in body
+    /// copy - even before a site tunes weightings by hand.
+    /// </summary>
+    private static bool IsTitleLikeField(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return false;
+        }
+
+        return name.EndsWith("title", StringComparison.OrdinalIgnoreCase)
+               || name.EndsWith("heading", StringComparison.OrdinalIgnoreCase)
+               || name.EndsWith("headline", StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     /// Umbraco stores variant content as one document with culture-suffixed field names, so

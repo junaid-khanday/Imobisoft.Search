@@ -469,6 +469,12 @@
                             <option value="" selected="@string.IsNullOrEmpty(Model.SelectedSort)">Relevance</option>
                             @foreach (SortOption option in Model.ConfiguredSortOptions)
                             {
+                                @* Options without a field ARE the relevance choice, already
+                                   covered by the blank entry above - skip them to avoid duplicates. *@
+                                if (string.IsNullOrWhiteSpace(option.Field))
+                                {
+                                    continue;
+                                }
                                 <option value="@option.Alias"
                                         selected="@option.Alias.Equals(Model.SelectedSort, StringComparison.OrdinalIgnoreCase)">
                                     @option.Label
@@ -513,7 +519,7 @@
                 </div>
             </header>
 
-            @if (response is null || !Model.HasSearched)
+            @if (response is null)
             {
                 <div class="imobisoft-empty-box">
                     <h3>Welcome to Search</h3>
@@ -522,6 +528,8 @@
             }
             else
             {
+                @* A response exists even before the first term: the browse pass serves the
+                   profile's "results before searching" so the page opens with content. *@
                 @* Did You Mean Suggestion *@
                 @if (!string.IsNullOrWhiteSpace(response.Suggestion))
                 {

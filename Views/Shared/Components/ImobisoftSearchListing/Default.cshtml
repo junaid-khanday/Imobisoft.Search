@@ -303,6 +303,12 @@
                             <option value="" selected="@string.IsNullOrEmpty(Model.SelectedSort)">Relevance</option>
                             @foreach (SortOption option in Model.ConfiguredSortOptions)
                             {
+                                @* Field-less rows are the relevance choice - the blank entry
+                                   above already stands for them. *@
+                                if (string.IsNullOrWhiteSpace(option.Field))
+                                {
+                                    continue;
+                                }
                                 <option value="@option.Alias"
                                         selected="@option.Alias.Equals(Model.SelectedSort, StringComparison.OrdinalIgnoreCase)">
                                     @option.Label
@@ -341,7 +347,7 @@
             <button type="submit" class="isl-btn">Search</button>
         </div>
 
-        @if (response is null || !Model.HasSearched)
+        @if (response is null)
         {
             <div class="isl-empty">
                 <h3>Welcome to Search</h3>
@@ -350,6 +356,8 @@
         }
         else
         {
+            @* The browse pass fills the list before any term is typed, honouring the profile's
+               "results before searching" setting. *@
             @if (!string.IsNullOrWhiteSpace(response.Suggestion))
             {
                 <div class="isl-suggestion">
