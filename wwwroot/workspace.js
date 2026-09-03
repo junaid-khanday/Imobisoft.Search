@@ -241,7 +241,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             // backoffice away from the panel. The flag is a property, so it dies with the element.
             if (!host._islPreviewBound) {
                 host._islPreviewBound = true;
-                this._bindPreviewHost(host);
+                this._bindPreviewHost(host, name);
 
                 // A new element is empty whatever we applied to the old one.
                 this._appliedPreview[name] = null;
@@ -280,7 +280,11 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     }
 
     // Delegated once per host, so replacing its innerHTML never needs them re-attaching.
-    _bindPreviewHost(host) {
+    //
+    // `area` is "filters" or "results" and decides what a link is allowed to do: nothing in a
+    // filter strip is a destination, so an anchor there can never open a URL however it is
+    // classed. Only a result is a place to go.
+    _bindPreviewHost(host, area) {
         host.addEventListener('change', (e) => {
             const el = e.target;
             if (!el || el.tagName !== 'SELECT' || !el.name) return;
@@ -324,7 +328,10 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 return;
             }
 
-            if (link.classList.contains('isl-reset-filters')) {
+            // Matched on the class OR on the attribute the partials stamp alongside it, so a theme
+            // that restyles the control under its own class name still cannot fall through to
+            // "open this URL" - which is what sent the backoffice to the Content section.
+            if (link.classList.contains('isl-reset-filters') || link.hasAttribute('data-reset-facets')) {
                 // data-reset-facets names what the profile scoped this control to; empty means
                 // everything, which is the same thing the href does on the real page.
                 const targets = (link.getAttribute('data-reset-facets') || '')
@@ -347,14 +354,28 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 return;
             }
 
-            // Anything else is a result link. Opening it in this tab would replace the backoffice,
-            // so it opens in a new one - the editor gets to see the page without losing the panel,
-            // the filters they set, or an unsaved profile they were editing.
+            // Only a result is somewhere to go. An unrecognised anchor in the filter strip does
+            // nothing at all rather than opening its URL - a filter control's href is a search
+            // page address, and following it from here lands on the backoffice root.
+            if (area !== 'results') {
+                return;
+            }
+
             const target = link.getAttribute('data-href');
 
-            if (target) {
-                window.open(target, '_blank', 'noopener,noreferrer');
+            // A bare query string or fragment is a search-page control - "clear filters", a
+            // suggestion, a page link - never a destination. Resolved against the backoffice it
+            // points at the backoffice root, which is how clicking one landed on Content. Results
+            // carry a real path, so requiring one is what tells the two apart even when a partial
+            // forgets to class its control.
+            if (!target || target.startsWith('?') || target.startsWith('#')) {
+                return;
             }
+
+            // Opening a result in this tab would replace the backoffice, so it opens in a new one -
+            // the editor sees the page without losing the panel, the filters they set, or an
+            // unsaved profile they were editing.
+            window.open(target, '_blank', 'noopener,noreferrer');
         });
 
         host.addEventListener('submit', (e) => e.preventDefault());
@@ -1292,6 +1313,23 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         if (!this._sidePanelData) return;
         const ft = ImobisoftSearchWorkspace._filterTypes.find(t => t.alias === typeAlias);
         if (ft) {
+            const previousType = this._sidePanelData.filterType;
+
+            // Options belong to the type they were built for - a list of document types means
+            // nothing to a date range. Each branch below only seeds its defaults when there are no
+            // options yet, so without this a picker switch left the previous type's list in place
+            // and the new filter came out carrying, say, content types on a date facet.
+            //
+            // Scoped to lists a preset put there: options built from scratch on a type that seeds
+            // nothing carry no marker, so they survive a change of mind about the type.
+            if (previousType && previousType !== ft.alias && this._sidePanelData._seededFor === previousType) {
+                this._sidePanelData.ranges = [];
+
+                if (this._sidePanelData._autoLabel) {
+                    this._sidePanelData.label = '';
+                }
+            }
+
             this._sidePanelData.filterType = ft.alias;
             this._sidePanelData.kind = ft.defaultKind;
             if (ft.defaultField) {
@@ -1300,7 +1338,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             if (ft.alias === 'contentType') {
                 this._sidePanelData.field = '__NodeTypeAlias';
                 this._sidePanelData.kind = 'field';
-                if (!this._sidePanelData.label) this._sidePanelData.label = 'Document Type';
+                if (!this._sidePanelData.label) { this._sidePanelData.label = 'Document Type'; this._sidePanelData._autoLabel = true; }
                 if (!this._sidePanelData.ranges || this._sidePanelData.ranges.length === 0) {
                     const allCts = this._catalog?.contentTypes || [];
                     if (allCts.length > 0) {
@@ -1313,11 +1351,13 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     } else {
                         this._sidePanelData.ranges = [{ alias: '', label: '', from: '', to: '' }];
                     }
+
+                    this._sidePanelData._seededFor = ft.alias;
                 }
             } else if (ft.alias === 'contentNode') {
                 this._sidePanelData.field = '__Path';
                 this._sidePanelData.kind = 'field';
-                if (!this._sidePanelData.label) this._sidePanelData.label = 'Policies / Sections';
+                if (!this._sidePanelData.label) { this._sidePanelData.label = 'Policies / Sections'; this._sidePanelData._autoLabel = true; }
             } else if (ft.alias === 'dateRange') {
                 this._sidePanelData.kind = 'dateRange';
                 if (!this._sidePanelData.field || this._sidePanelData.field.startsWith('__')) {
@@ -1325,7 +1365,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     // which would drag old articles into the current year.
                     this._sidePanelData.field = 'createDate';
                 }
-                if (!this._sidePanelData.label) this._sidePanelData.label = 'Date / Year';
+                if (!this._sidePanelData.label) { this._sidePanelData.label = 'Date / Year'; this._sidePanelData._autoLabel = true; }
                 if (!this._sidePanelData.ranges || this._sidePanelData.ranges.length === 0) {
                     this._sidePanelData.ranges = [
                         { alias: '2026', label: '2026', from: '2026-01-01', to: '2027-01-01' },
@@ -1334,10 +1374,11 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         { alias: 'past-week', label: 'Past 7 Days', from: 'now-7d', to: 'now' },
                         { alias: 'past-month', label: 'Past 30 Days', from: 'now-30d', to: 'now' }
                     ];
+                    this._sidePanelData._seededFor = ft.alias;
                 }
             } else if (ft.alias === 'numeric') {
                 this._sidePanelData.kind = 'numeric';
-                if (!this._sidePanelData.label) this._sidePanelData.label = 'Price';
+                if (!this._sidePanelData.label) { this._sidePanelData.label = 'Price'; this._sidePanelData._autoLabel = true; }
                 if (!this._sidePanelData._aliasUnlocked) {
                     this._generateAliasFromLabel(this._sidePanelData);
                 }
@@ -1349,6 +1390,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         { alias: '50-to-100', label: '$50 to $100', from: '50', to: '100' },
                         { alias: 'over-100', label: '$100 & Above', from: '100', to: '' }
                     ];
+                    this._sidePanelData._seededFor = ft.alias;
                 }
             } else if (ft.alias === 'field') {
                 this._sidePanelData.kind = 'field';
@@ -1356,12 +1398,12 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 if (!this._sidePanelData.field || this._sidePanelData.field.startsWith('__')) {
                     this._sidePanelData.field = 'category';
                 }
-                if (!this._sidePanelData.label) this._sidePanelData.label = 'Tag / Category';
+                if (!this._sidePanelData.label) { this._sidePanelData.label = 'Tag / Category'; this._sidePanelData._autoLabel = true; }
             } else if (ft.alias === 'sort') {
                 this._sidePanelData.kind = 'sort';
                 this._sidePanelData.field = '';
                 this._sidePanelData.ranges = [];
-                if (!this._sidePanelData.label) this._sidePanelData.label = 'Sort by';
+                if (!this._sidePanelData.label) { this._sidePanelData.label = 'Sort by'; this._sidePanelData._autoLabel = true; }
                 if (!Array.isArray(this._sidePanelData.options) || this._sidePanelData.options.length === 0) {
                     const existing = this._currentProfile?.rules?.results?.sortOptions || [];
                     this._sidePanelData.options = existing.length

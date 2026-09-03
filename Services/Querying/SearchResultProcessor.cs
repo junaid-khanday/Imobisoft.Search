@@ -53,7 +53,11 @@ internal sealed partial class SearchResultProcessor
 
         // Facet counts are computed against the results that survive every filter except the facet's
         // own, which is what lets a visitor widen a selection without the other counts collapsing.
-        IList<FacetResult> facets = BuildFacets(items, rules.Results.Facets, request.Filters);
+        IList<FacetResult> facets = BuildFacets(
+            items,
+            rules.Results.Facets,
+            request.Filters,
+            rules.Results.MinimumActiveFilters);
 
         items = ApplyFacetFilters(
             items,
@@ -575,19 +579,28 @@ internal sealed partial class SearchResultProcessor
     private IList<FacetResult> BuildFacets(
         IReadOnlyList<SearchResultItem> items,
         IList<FacetDefinition> definitions,
-        IDictionary<string, IList<string>> selected)
+        IDictionary<string, IList<string>> selected,
+        int minimumActiveFilters)
     {
         var results = new List<FacetResult>();
+
+        // Which facets carry a selection right now, so a count can answer the only question a
+        // visitor is really asking: how many results will I get if I pick this?
+        var activeAliases = new HashSet<string>(
+            selected.Where(kvp => kvp.Value is { Count: > 0 }).Select(kvp => kvp.Key),
+            StringComparer.OrdinalIgnoreCase);
 
         foreach (FacetDefinition definition in definitions.Where(d => d.Enabled && !string.IsNullOrWhiteSpace(d.Alias)))
         {
             // Every other facet's selection narrows the counts, but this facet's own does not -
-            // otherwise selecting one bucket would zero out its siblings.
+            // otherwise selecting one bucket would zero out its siblings. The combination rule is
+            // passed through so this scope is narrowed by exactly what narrows the result list.
             IReadOnlyList<SearchResultItem> scope = ApplyFacetFilters(
                 items,
                 definitions.Where(d => d.Enabled && !d.Alias.Equals(definition.Alias, StringComparison.OrdinalIgnoreCase)).ToList(),
                 selected,
-                new List<string>());
+                new List<string>(),
+                minimumActiveFilters);
 
             selected.TryGetValue(definition.Alias, out IList<string>? chosen);
             var chosenSet = new HashSet<string>(chosen ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
@@ -596,6 +609,23 @@ internal sealed partial class SearchResultProcessor
             IList<FacetValue> values = (!hasCustomRanges)
                 ? BuildFieldFacet(scope, definition, chosenSet)
                 : BuildRangeFacet(scope, definition, chosenSet);
+
+            // Picking a value here may still leave the combination rule unsatisfied, in which case
+            // nothing narrows and the visitor gets the whole list. Counting the matches anyway
+            // would advertise a number the engine has no intention of honouring - which is exactly
+            // how a facet could read "11" and then return everything when it was clicked.
+            var activeAfterPick = new HashSet<string>(activeAliases, StringComparer.OrdinalIgnoreCase)
+            {
+                definition.Alias,
+            }.Count;
+
+            if (minimumActiveFilters > 0 && activeAfterPick < minimumActiveFilters)
+            {
+                foreach (FacetValue value in values)
+                {
+                    value.Count = scope.Count;
+                }
+            }
 
             if (definition.HideEmpty)
             {

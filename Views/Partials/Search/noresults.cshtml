@@ -18,7 +18,10 @@
         @if (hasActiveFilters)
         {
             <p style="margin-top: 14px;">
-                <a href="@Context.ClearFiltersUrl()" rel="nofollow">Clear active filters</a>
+                @* isl-clear-filters is the marker every surface keys off: the backoffice test panel
+                   recognises it and clears its own state instead of following the URL. Without the
+                   class it reads as an ordinary link and gets treated as somewhere to navigate. *@
+                <a href="@Context.ClearFiltersUrl()" class="isl-clear-filters" rel="nofollow">Clear active filters</a>
             </p>
         }
     </div>
