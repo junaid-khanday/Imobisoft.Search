@@ -1,8 +1,0 @@
-wwwroot\workspace.js
-wwwroot\auth-fetch.js
-wwwroot\data-cache.js
-wwwroot\umbraco-package.json
-D:\imobisoft\Imobisoft.Search\Imobisoft.Search\wwwroot\umbraco-package.json
-D:\imobisoft\Imobisoft.Search\Imobisoft.Search\wwwroot\data-cache.js
-D:\imobisoft\Imobisoft.Search\Imobisoft.Search\wwwroot\workspace.js
-D:\imobisoft\Imobisoft.Search\Imobisoft.Search\wwwroot\auth-fetch.js
