@@ -55,6 +55,19 @@ public sealed class ImobisoftSearchOptions
     public bool EnableSearchPage { get; set; } = true;
 
     /// <summary>
+    /// Creates an "Imobi Search" document type and template on first boot, so a site can add a
+    /// search page from the Content tree without writing anything. The template is one line that
+    /// renders the package's view component, which means the markup and the profile's selected
+    /// theme both stay in the package.
+    /// <para>
+    /// On by default. Set to <c>false</c> to keep the package out of the document type list - the
+    /// built-in page at <c>/imobisoft-search</c> is unaffected either way. Nothing is ever
+    /// modified: an existing document type with that alias is left alone.
+    /// </para>
+    /// </summary>
+    public bool CreateSearchPageDocumentType { get; set; } = true;
+
+    /// <summary>
     /// Reads filter selections straight off the query string, so a search page needs no code to
     /// support filtering - the links the package generates are enough.
     /// </summary>

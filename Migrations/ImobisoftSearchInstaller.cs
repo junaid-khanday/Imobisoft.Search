@@ -29,6 +29,7 @@ public sealed class ImobisoftSearchInstaller : INotificationAsyncHandler<Umbraco
     private readonly IRuntimeState _runtimeState;
     private readonly ISearchProfileRepository _profileRepository;
     private readonly IUserGroupService _userGroupService;
+    private readonly SearchPageScaffolder _pageScaffolder;
     private readonly ILogger<ImobisoftSearchInstaller> _logger;
 
     public ImobisoftSearchInstaller(
@@ -38,8 +39,10 @@ public sealed class ImobisoftSearchInstaller : INotificationAsyncHandler<Umbraco
         IRuntimeState runtimeState,
         ISearchProfileRepository profileRepository,
         IUserGroupService userGroupService,
+        SearchPageScaffolder pageScaffolder,
         ILogger<ImobisoftSearchInstaller> logger)
     {
+        _pageScaffolder = pageScaffolder;
         _coreScopeProvider = coreScopeProvider;
         _migrationPlanExecutor = migrationPlanExecutor;
         _keyValueService = keyValueService;
@@ -65,6 +68,7 @@ public sealed class ImobisoftSearchInstaller : INotificationAsyncHandler<Umbraco
 
         SeedDefaultProfile();
         await GrantSectionToAdministratorsAsync();
+        await _pageScaffolder.ScaffoldAsync();
     }
 
     private async Task<bool> RunMigrationsAsync()

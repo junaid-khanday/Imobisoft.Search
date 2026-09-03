@@ -1,5 +1,6 @@
 @model Imobisoft.Search.Web.ImobisoftSearchListingViewModel
 @inject Imobisoft.Search.Services.ISearchThemeService Themes
+@inject Imobisoft.Search.Services.ISearchProfileService Profiles
 @*
     The whole search experience as one block: the stylesheet, filters above the search box, the
     box itself, results, spelling suggestions and Load More.
@@ -16,12 +17,20 @@
 @{
     Imobisoft.Search.Models.SearchResponse? response = Model.Response;
 
-    var stylesView = Themes.ResolvePartial(Model.Theme, "styles");
-    var filtersView = Themes.ResolvePartial(Model.Theme, "filters");
-    var searchBarView = Themes.ResolvePartial(Model.Theme, "searchbar");
-    var resultsView = Themes.ResolvePartial(Model.Theme, "results");
-    var noResultsView = Themes.ResolvePartial(Model.Theme, "noresults");
-    var loadMoreView = Themes.ResolvePartial(Model.Theme, "loadmore");
+    @* Null means nobody set a theme on the model - a site rendering this block from its own code,
+       or through a model it built itself. Rather than silently drop to the built-in look, ask the
+       profile that answered the search (falling back to the default profile). An empty string is a
+       different thing: that IS the built-in look, chosen deliberately, so it is left alone. *@
+    var theme = Model.Theme
+                ?? Profiles.ResolveForSearch(response?.ProfileAlias)?.Rules.Results.Theme
+                ?? string.Empty;
+
+    var stylesView = Themes.ResolvePartial(theme, "styles");
+    var filtersView = Themes.ResolvePartial(theme, "filters");
+    var searchBarView = Themes.ResolvePartial(theme, "searchbar");
+    var resultsView = Themes.ResolvePartial(theme, "results");
+    var noResultsView = Themes.ResolvePartial(theme, "noresults");
+    var loadMoreView = Themes.ResolvePartial(theme, "loadmore");
 }
 <div class="isl" data-imobisoft-listing>
     <partial name="@stylesView" model="Model" />
@@ -81,9 +90,14 @@
                 {
                     <div>Page <strong>@response.Page</strong> of <strong>@Math.Max(1, response.TotalPages)</strong></div>
                 }
-                @* Which profile answered - so a site can see at a glance that the rules it
-                   configured in the backoffice are the ones in effect here. *@
-                <span class="isl-profile">Profile: @response.ProfileAlias</span>
+                @* Which profile answered and which theme it selected, so a site can see at a glance
+                   that the rules it configured in the backoffice are the ones in effect here. A
+                   page rendering with the wrong theme is nearly always a different profile
+                   answering than the one that was edited. *@
+                <span class="isl-profile">
+                    Profile: @response.ProfileAlias &middot;
+                    Theme: @(string.IsNullOrWhiteSpace(theme) ? "default" : theme)
+                </span>
             </div>
 
             @if (response.Groups.Count > 0)

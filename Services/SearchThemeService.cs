@@ -36,6 +36,9 @@ public sealed class SearchThemeService : ISearchThemeService
     /// <summary>Resolved "theme|part" to view path. Themes do not change between deployments.</summary>
     private readonly ConcurrentDictionary<string, string> _resolved = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Theme names already reported as missing, so the warning is said once, not per part.</summary>
+    private readonly ConcurrentDictionary<string, byte> _warnedUnknownThemes = new(StringComparer.OrdinalIgnoreCase);
+
     private IReadOnlyList<SearchThemeInfo>? _themes;
 
     public SearchThemeService(
@@ -61,6 +64,21 @@ public sealed class SearchThemeService : ISearchThemeService
         if (string.IsNullOrWhiteSpace(theme) || !Parts.Contains(part, StringComparer.OrdinalIgnoreCase))
         {
             return fallback;
+        }
+
+        // A theme that defines no parts at all is not a theme this site has - a renamed folder, a
+        // profile pointing at something deleted, or an assembly that was never rebuilt. It would
+        // otherwise fall back silently and look exactly like "the theme did not apply", so it says
+        // so once per name rather than leaving it to be guessed at.
+        if (_warnedUnknownThemes.TryAdd(theme.Trim(), 0) &&
+            !GetThemes().Any(t => t.Name.Equals(theme.Trim(), StringComparison.OrdinalIgnoreCase)))
+        {
+            _logger.LogWarning(
+                "Search theme '{Theme}' was not found under {Root}, so the built-in look is being "
+                + "used instead. Themes available: {Available}.",
+                theme.Trim(),
+                ThemeRoot,
+                string.Join(", ", GetThemes().Select(t => string.IsNullOrEmpty(t.Name) ? "(default)" : t.Name)));
         }
 
         return _resolved.GetOrAdd($"{theme}|{part}", _ =>

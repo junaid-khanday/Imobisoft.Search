@@ -72,6 +72,15 @@ public sealed class ImobisoftSearchComposer : IComposer
         // between deployments - the service caches what it finds and is safely shared.
         builder.Services.AddSingleton<ISearchThemeService, SearchThemeService>();
 
+        // Creates the "Imobi Search" document type and template on first boot, so a site can add a
+        // search page from the Content tree without writing anything.
+        builder.Services.AddSingleton(sp => new Migrations.SearchPageScaffolder(
+            sp.GetRequiredService<Umbraco.Cms.Core.Services.IContentTypeService>(),
+            sp.GetRequiredService<Umbraco.Cms.Core.Services.ITemplateService>(),
+            sp.GetRequiredService<Umbraco.Cms.Core.Strings.IShortStringHelper>(),
+            sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ImobisoftSearchOptions>>().Value,
+            sp.GetRequiredService<ILogger<Migrations.SearchPageScaffolder>>()));
+
         // Renders a themed partial to a string so the backoffice test panel previews the markup the
         // front end actually serves, rather than its own approximation of it.
         builder.Services.AddSingleton<ISearchRenderService, SearchRenderService>();
