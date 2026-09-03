@@ -3,7 +3,8 @@
 @* The search bar the package ships with. A consuming site can take over this exact spot by
    creating its own file at Views/Partials/Search/searchbar.cshtml - the site's file wins over
    this one automatically, with no configuration, and every built-in search page picks it up.
-   The only contract: a GET form containing a text input named "q". *@
+   The only contract: a text input named "q" that ends up inside a GET form - either this
+   partial's own, or the caller's when Model.RenderForm is false. *@
 <style>
     .imsb-form {
         display: flex;
@@ -47,14 +48,32 @@
     }
 </style>
 
-<form role="search" method="get" action="@Model.Action" class="imsb-form @Model.FormClass">
-    <input type="search"
-           id="q"
-           name="q"
-           class="imsb-input @Model.InputClass"
-           value="@Model.Term"
-           placeholder="@Model.Placeholder"
-           autocomplete="off"
-           aria-label="Search" />
-    <button type="submit" class="imsb-btn @Model.ButtonClass">@Model.ButtonText</button>
-</form>
+@{
+    void RenderBar()
+    {
+        <input type="search"
+               id="q"
+               name="q"
+               class="imsb-input @Model.InputClass"
+               value="@Model.Term"
+               placeholder="@Model.Placeholder"
+               autocomplete="off"
+               aria-label="Search" />
+        <button type="submit" class="imsb-btn @Model.ButtonClass">@Model.ButtonText</button>
+    }
+}
+
+@if (Model.RenderForm)
+{
+    <form role="search" method="get" action="@Model.Action" class="imsb-form @Model.FormClass">
+        @{ RenderBar(); }
+    </form>
+}
+else
+{
+    @* The caller's form already surrounds this, so only the controls are emitted - the same
+       classes are kept on a plain div so the layout is identical either way. *@
+    <div role="search" class="imsb-form @Model.FormClass">
+        @{ RenderBar(); }
+    </div>
+}

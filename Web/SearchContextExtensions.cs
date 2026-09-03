@@ -175,6 +175,56 @@ public static class SearchContextExtensions
     }
 
     /// <summary>
+    /// The current search with only the named filters cleared, keeping the term, the sort choice
+    /// and every selection not named. This is the href for a "reset filters" control that the
+    /// profile has scoped to particular facets.
+    /// </summary>
+    /// <param name="context">The current request, read for the term, sort and active filters.</param>
+    /// <param name="aliases">
+    /// Facet aliases to drop. Null or empty clears every filter, which makes this identical to
+    /// <see cref="ClearFiltersUrl"/>.
+    /// </param>
+    /// <param name="prefix">Query-string prefix marking a filter, matching the configured one.</param>
+    public static string ResetFiltersUrl(
+        this HttpContext? context,
+        IEnumerable<string>? aliases,
+        string prefix = "f_")
+    {
+        var targets = new HashSet<string>(
+            (aliases ?? Array.Empty<string>()).Where(a => !string.IsNullOrWhiteSpace(a)),
+            StringComparer.OrdinalIgnoreCase);
+
+        if (context is null || targets.Count == 0)
+        {
+            return context.ClearFiltersUrl();
+        }
+
+        var parts = new List<string>
+        {
+            "q=" + Uri.EscapeDataString(context.Request.Query["q"].ToString() ?? string.Empty),
+        };
+
+        foreach (KeyValuePair<string, IReadOnlyList<string>> filter in context.GetActiveFilters(prefix))
+        {
+            // Dropping the parameter is what clears the facet; everything else is repeated back so
+            // the visitor keeps the narrowing they did not ask to lose.
+            if (targets.Contains(filter.Key))
+            {
+                continue;
+            }
+
+            foreach (var value in filter.Value)
+            {
+                parts.Add($"{prefix}{Uri.EscapeDataString(filter.Key)}={Uri.EscapeDataString(value)}");
+            }
+        }
+
+        AppendSort(parts, context);
+
+        return "?" + string.Join("&", parts);
+    }
+
+    /// <summary>
     /// The current search at a different page, keeping the term and every filter. This is the href
     /// for a paging or "load more" link.
     /// </summary>

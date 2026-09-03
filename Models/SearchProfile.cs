@@ -73,7 +73,103 @@ public sealed class SearchProfile
                     ImobisoftSearchConstants.IndexTypes.Media,
                 },
             },
-            Results = new ResultRules { Highlight = new HighlightRules { Enabled = true } },
+            Results = new ResultRules
+            {
+                Highlight = new HighlightRules { Enabled = true },
+
+                // A search page with nothing above the box looks unfinished, so the seeded profile
+                // ships the three filter dimensions every Umbraco site can answer without any
+                // property being configured first. Because the filter bar is driven by these
+                // DEFINITIONS rather than by counts, they put dropdowns above the search box from
+                // the moment the page opens - before a word is typed. They are ordinary facets:
+                // editors retune or delete them under Search > Filters like any other.
+                Facets = DefaultFacets(),
+                SortOptions = DefaultSortOptions(),
+            },
+        },
+    };
+
+    /// <summary>
+    /// The filter dimensions the seeded profile starts with. Every field named here is written by
+    /// Umbraco itself into both the content and media indexes, so the dropdowns have real values on
+    /// a site that has configured nothing.
+    /// <para>
+    /// Shared with the migration that backfills them, so a site that installed the package before
+    /// these existed ends up with exactly what a fresh install gets.
+    /// </para>
+    /// </summary>
+    internal static IList<FacetDefinition> DefaultFacets() => new List<FacetDefinition>
+    {
+        new()
+        {
+            Alias = "contentType",
+            Field = ImobisoftSearchConstants.IndexFields.NodeTypeAlias,
+            Label = "Content type",
+            Kind = FacetKind.Field,
+            MaxValues = 20,
+        },
+        new()
+        {
+            Alias = "section",
+            Field = ImobisoftSearchConstants.IndexFields.IndexType,
+            Label = "Section",
+            Kind = FacetKind.Field,
+            MaxValues = 10,
+        },
+        new()
+        {
+            Alias = "updated",
+            Field = ImobisoftSearchConstants.IndexFields.UpdateDate,
+            Label = "Last updated",
+            Kind = FacetKind.DateRange,
+
+            // Relative bounds rather than fixed dates, so "last 7 days" still means the last seven
+            // days a year after the site went live.
+            Ranges =
+            {
+                new FacetRange { Alias = "last7", Label = "Last 7 days", From = "now-7d" },
+                new FacetRange { Alias = "last30", Label = "Last 30 days", From = "now-30d" },
+                new FacetRange { Alias = "last12m", Label = "Last 12 months", From = "now-12m" },
+                new FacetRange { Alias = "older", Label = "Over a year ago", To = "now-12m" },
+            },
+        },
+    };
+
+    /// <summary>
+    /// The choices the seeded profile offers in "Sort by". The relevance entry carries no field on
+    /// purpose: an empty field is what tells the engine to leave the profile's own ranking alone,
+    /// and it is the option the built-in views render as the dropdown's blank default.
+    /// </summary>
+    internal static IList<SortOption> DefaultSortOptions() => new List<SortOption>
+    {
+        new() { Alias = "relevance", Label = "Relevance", Field = string.Empty },
+        new()
+        {
+            Alias = "nameAsc",
+            Label = "Title A - Z",
+            Field = ImobisoftSearchConstants.IndexFields.NodeName,
+            Direction = SortDirection.Ascending,
+        },
+        new()
+        {
+            Alias = "nameDesc",
+            Label = "Title Z - A",
+            Field = ImobisoftSearchConstants.IndexFields.NodeName,
+            Direction = SortDirection.Descending,
+        },
+        new()
+        {
+            Alias = "newest",
+            Label = "Newest first",
+            Field = ImobisoftSearchConstants.IndexFields.UpdateDate,
+            Direction = SortDirection.Descending,
+        },
+        new()
+        {
+            Alias = "oldest",
+            Label = "Oldest first",
+            Field = ImobisoftSearchConstants.IndexFields.UpdateDate,
+            Direction = SortDirection.Ascending,
         },
     };
 }

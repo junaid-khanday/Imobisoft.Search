@@ -24,15 +24,18 @@ public sealed class ImobisoftSearchController : Controller
 {
     private readonly IImobisoftSearchService _search;
     private readonly ISearchProfileService _profiles;
+    private readonly ISearchThemeService _themes;
     private readonly ImobisoftSearchOptions _options;
 
     public ImobisoftSearchController(
         IImobisoftSearchService search,
         ISearchProfileService profiles,
+        ISearchThemeService themes,
         IOptions<ImobisoftSearchOptions> options)
     {
         _search = search;
         _profiles = profiles;
+        _themes = themes;
         _options = options.Value;
     }
 
@@ -54,8 +57,9 @@ public sealed class ImobisoftSearchController : Controller
     }
 
     /// <summary>
-    /// Just the results, for the "load more" button to append. Rendering the same partial the page
-    /// uses means the appended results can never drift from the first page's.
+    /// Just the result list, for a caller that wants to append a page without re-rendering the
+    /// whole thing. It renders the profile's themed results partial - the same one the page itself
+    /// uses - so what comes back can never drift from what is already on screen.
     /// </summary>
     [HttpGet("results")]
     public async Task<IActionResult> Results(
@@ -70,7 +74,7 @@ public sealed class ImobisoftSearchController : Controller
 
         ImobisoftSearchPageViewModel model = await BuildModel(q, page, cancellationToken);
 
-        return PartialView("_Results", model);
+        return PartialView(_themes.ResolvePartial(model.Theme, "results"), model);
     }
 
     private async Task<ImobisoftSearchPageViewModel> BuildModel(string? q, int page, CancellationToken cancellationToken)
@@ -103,6 +107,8 @@ public sealed class ImobisoftSearchController : Controller
                 .ToList() ?? new List<FacetDefinition>(),
             ConfiguredSortOptions = configuredSorts,
             SelectedSort = selectedSort,
+            Theme = profile?.Rules.Results.Theme,
+            ResetFilter = profile?.Rules.Results.ResetFilter,
         };
 
         // With Load More disabled the profile serves exactly one page of PageSize items: later

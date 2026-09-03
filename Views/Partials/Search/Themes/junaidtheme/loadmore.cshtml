@@ -1,0 +1,17 @@
+@model Imobisoft.Search.Web.ImobisoftSearchListingViewModel
+@{
+    Imobisoft.Search.Models.SearchResponse? response = Model.Response;
+}
+@if (response!.EnableLoadMore && response.Page < response.TotalPages)
+{
+    <div class="isl-loadmore">
+        <button type="button"
+                class="isl-btn-more"
+                data-imobisoft-more
+                data-next-page="@(response.Page + 1)"
+                data-total-pages="@response.TotalPages">
+            <span class="isl-btn-more-label">Load more results</span>
+            <span class="isl-btn-more-count">@response.Page of @response.TotalPages</span>
+        </button>
+    </div>
+}

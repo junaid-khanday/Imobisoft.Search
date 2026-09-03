@@ -64,10 +64,15 @@ public sealed class ResultRules
     public bool EnableLoadMore { get; set; } = false;
 
     /// <summary>
-    /// How many results a search page shows before the visitor has typed anything (browse mode).
-    /// Defaults to the normal page size behaviour with 10. Set to 0 to open the page with no
-    /// results at all - filters still show their counts, but nothing is listed until a search
-    /// term is submitted.
+    /// How many results a search page shows before the visitor has asked for anything (browse
+    /// mode). Defaults to the normal page size behaviour with 10. Set to 0 to open the page with
+    /// no results at all - filters still show their counts, but nothing is listed until the
+    /// visitor searches.
+    /// <para>
+    /// This caps the untouched page only. Picking a filter counts as asking, so a filtered request
+    /// is served a full <see cref="PageSize"/> page even with no term typed - otherwise a cap of 0
+    /// would leave a visitor who filtered with no way to see what they had matched.
+    /// </para>
     /// </summary>
     public int BrowsePageSize { get; set; } = 10;
 
@@ -106,6 +111,20 @@ public sealed class ResultRules
     /// </summary>
     public string DeduplicateByField { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Name of the theme the search page renders with - a folder under
+    /// <c>Views/Partials/Search/Themes/</c> holding any subset of the overridable partials
+    /// (<c>results</c>, <c>filters</c>, <c>noresults</c>, <c>loadmore</c>, <c>searchbar</c>).
+    /// Anything the theme does not define falls back to the package's own partial, so a theme can
+    /// restyle just the result cards and inherit the rest.
+    /// <para>
+    /// Empty means the built-in look. The package ships no themes - a site authors its own under
+    /// <c>Views/Partials/Search/Themes/</c> and they appear in the backoffice picker, applying to
+    /// the front-end search page and the Test Search panel alike.
+    /// </para>
+    /// </summary>
+    public string Theme { get; set; } = string.Empty;
+
     public HighlightRules Highlight { get; set; } = new();
 
     /// <summary>
@@ -120,4 +139,10 @@ public sealed class ResultRules
     /// profile's ranking order for that request; otherwise <see cref="RankingRules.SortBy"/> rules.
     /// </summary>
     public IList<SortOption> SortOptions { get; set; } = new List<SortOption>();
+
+    /// <summary>
+    /// The "reset filters" control offered beside the filter dropdowns - whether it appears, what
+    /// it is called, and whether it clears every facet or only named ones. Off by default.
+    /// </summary>
+    public ResetFilterRules ResetFilter { get; set; } = new();
 }

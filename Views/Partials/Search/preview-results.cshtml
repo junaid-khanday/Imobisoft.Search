@@ -1,0 +1,41 @@
+@model Imobisoft.Search.Web.ImobisoftSearchListingViewModel
+@inject Imobisoft.Search.Services.ISearchThemeService Themes
+@*
+    The theme's result markup on its own, for the backoffice Test Search panel.
+
+    Kept apart from the filters so the panel's search box can sit above it and below them. The Load
+    More button is left out on purpose: the panel supplies a working one of its own.
+
+    The panel injects this into its shadow root, which scopes the theme's stylesheet to this markup
+    and keeps it out of the backoffice around it.
+*@
+@{
+    Imobisoft.Search.Models.SearchResponse? response = Model.Response;
+
+    var stylesView = Themes.ResolvePartial(Model.Theme, "styles");
+    var resultsView = Themes.ResolvePartial(Model.Theme, "results");
+    var noResultsView = Themes.ResolvePartial(Model.Theme, "noresults");
+}
+<div class="isl" data-imobisoft-preview="results">
+    <partial name="@stylesView" model="Model" />
+
+    @if (response is null)
+    {
+        <div class="isl-empty">
+            <h3>Nothing to show yet</h3>
+            <p>Run a search to see results rendered with this theme.</p>
+        </div>
+    }
+    else if (response.Results.Count == 0)
+    {
+        <partial name="@noResultsView" model="Model" />
+    }
+    else
+    {
+        <partial name="@resultsView" model="Model" />
+    }
+</div>
+
+<style>
+    [data-imobisoft-preview] > :last-child { margin-bottom: 0; }
+</style>

@@ -1,0 +1,242 @@
+@* The search UI stylesheet. This is a theme part: a theme replaces it by adding
+   Views/Partials/Search/Themes/<name>/styles.cshtml, and a site replaces it everywhere by
+   adding Views/Partials/Search/styles.cshtml. Everything is scoped under .isl and driven by
+   CSS variables, so re-skinning usually means overriding the variables rather than the rules. *@
+    <style>
+        .isl {
+            --isl-accent: #1b264f;
+            --isl-accent-hover: #121a38;
+            --isl-link: #2563eb;
+            --isl-surface: #ffffff;
+            --isl-border: #e2e8f0;
+            --isl-border-focus: #3b82f6;
+            --isl-text: #1e293b;
+            --isl-muted: #64748b;
+            --isl-subtle: #94a3b8;
+            --isl-highlight: #fef08a;
+            --isl-radius: 8px;
+            --isl-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
+            font-size: 15px;
+            line-height: 1.5;
+            color: var(--isl-text);
+        }
+
+        .isl *,
+        .isl *::before,
+        .isl *::after { box-sizing: border-box; }
+
+        /* Filter bar: sits above the search box and is there the moment the page opens */
+        .isl-filter-bar {
+            display: flex;
+            gap: 14px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+            background: var(--isl-surface);
+            border: 1px solid var(--isl-border);
+            border-radius: var(--isl-radius);
+            padding: 14px 16px;
+            margin-bottom: 18px;
+            box-shadow: var(--isl-shadow);
+        }
+
+        .isl-filter-item { display: flex; flex-direction: column; gap: 5px; }
+
+        .isl-filter-label {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--isl-accent);
+        }
+
+        .isl-select,
+        .isl-input {
+            font-size: 14px;
+            color: var(--isl-text);
+            background: var(--isl-surface);
+            border: 1px solid var(--isl-border);
+            border-radius: var(--isl-radius);
+            outline: none;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .isl-select:focus,
+        .isl-input:focus {
+            border-color: var(--isl-border-focus);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+
+        .isl-select {
+            min-width: 180px;
+            height: 36px;
+            padding: 0 10px;
+            cursor: pointer;
+        }
+
+        .isl-form { display: flex; gap: 10px; margin-bottom: 20px; }
+
+        .isl-field { position: relative; flex: 1; }
+
+        .isl-input { width: 100%; height: 46px; padding: 0 16px; }
+
+        .isl-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            height: 46px;
+            padding: 0 24px;
+            font-size: 14px;
+            font-weight: 600;
+            border: none;
+            border-radius: var(--isl-radius);
+            cursor: pointer;
+            text-decoration: none;
+            background: var(--isl-accent);
+            color: #fff;
+            transition: background 0.15s ease;
+        }
+
+        .isl-btn:hover { background: var(--isl-accent-hover); }
+
+        .isl-clear-filters {
+            display: inline-flex;
+            align-items: center;
+            font-size: 12.5px;
+            font-weight: 600;
+            color: #dc2626;
+            text-decoration: none;
+            padding: 8px 10px;
+            border-radius: 6px;
+        }
+
+        .isl-clear-filters:hover { background: #fef2f2; }
+
+        .isl-suggestion {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: var(--isl-radius);
+            padding: 10px 16px;
+            margin-bottom: 16px;
+            font-size: 14px;
+            color: #1e40af;
+        }
+
+        .isl-suggestion a { color: #1d4ed8; font-weight: 700; }
+
+        .isl-stats {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            padding-bottom: 12px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid var(--isl-border);
+            font-size: 13.5px;
+            color: var(--isl-muted);
+        }
+
+        .isl-stats strong { color: var(--isl-text); }
+
+        .isl-groups { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+
+        .isl-group-pill {
+            background: var(--isl-surface);
+            border: 1px solid var(--isl-border);
+            padding: 4px 10px;
+            border-radius: 16px;
+            font-size: 12px;
+            color: var(--isl-muted);
+        }
+
+        .isl-group-pill strong { color: var(--isl-accent); }
+
+        .isl-results {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .isl-card {
+            background: var(--isl-surface);
+            border: 1px solid var(--isl-border);
+            border-radius: var(--isl-radius);
+            padding: 18px 20px;
+            box-shadow: var(--isl-shadow);
+        }
+
+        .isl-card.is-bestbet { border-left: 4px solid #f59e0b; }
+
+        .isl-card-header { display: flex; gap: 8px; margin-bottom: 6px; }
+
+        .isl-badge {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 7px;
+            border-radius: 4px;
+            display: inline-block;
+            background: #f1f5f9;
+            color: var(--isl-muted);
+        }
+
+        .isl-badge-bestbet { background: #fef3c7; color: #92400e; }
+
+        .isl-title { font-size: 17px; font-weight: 600; margin: 0 0 6px; }
+
+        .isl-title a { color: var(--isl-accent); text-decoration: none; }
+
+        .isl-title a:hover { color: var(--isl-link); text-decoration: underline; }
+
+        .isl-snippet { font-size: 13.5px; color: #475569; margin: 0 0 8px; }
+
+        .isl-snippet mark { background: var(--isl-highlight); padding: 0 2px; border-radius: 2px; }
+
+        .isl-meta {
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap;
+            font-size: 12px;
+            color: var(--isl-subtle);
+        }
+
+        .isl-meta-url { color: #059669; }
+
+        .isl-empty {
+            background: var(--isl-surface);
+            border: 1px dashed var(--isl-border);
+            border-radius: var(--isl-radius);
+            padding: 48px 24px;
+            text-align: center;
+            color: var(--isl-muted);
+        }
+
+        .isl-empty h3 { margin: 0 0 8px; color: var(--isl-accent); }
+
+        .isl-loadmore { display: flex; justify-content: center; margin-top: 22px; }
+
+        .isl-btn-more {
+            width: 100%;
+            max-width: 320px;
+            height: 44px;
+            background: var(--isl-surface);
+            border: 1px solid var(--isl-accent);
+            color: var(--isl-accent);
+            font-weight: 600;
+            font-size: 14px;
+            border-radius: var(--isl-radius);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .isl-btn-more:hover:not(:disabled) { background: var(--isl-accent); color: #fff; }
+
+        .isl-btn-more:disabled { opacity: 0.6; cursor: wait; }
+
+        .isl-profile { font-size: 11px; color: var(--isl-subtle); }
+
+        @@media (max-width: 44rem) {
+            .isl-select { min-width: 100%; }
+            .isl-form { flex-direction: column; }
+        }
+    </style>

@@ -51,6 +51,7 @@ public static class ImobisoftSearchConstants
         public const string MigrationPlanName = "Imobisoft.Search";
         public const string MigrationInitState = "imobisoft-search-init";
         public const string MigrationAnalyticsState = "imobisoft-search-analytics";
+        public const string MigrationDefaultFiltersState = "imobisoft-search-default-filters";
     }
 
     public static class Settings

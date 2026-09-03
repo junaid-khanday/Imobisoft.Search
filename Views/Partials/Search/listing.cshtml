@@ -1,0 +1,168 @@
+@model Imobisoft.Search.Web.ImobisoftSearchListingViewModel
+@inject Imobisoft.Search.Services.ISearchThemeService Themes
+@*
+    The whole search experience as one block: the stylesheet, filters above the search box, the
+    box itself, results, spelling suggestions and Load More.
+
+    This is the single copy. The embeddable view component renders it, and so does the package's
+    built-in search page - which is what stops the two from drifting apart, and what makes one
+    theme selection apply to both at once.
+
+    Every piece below resolves through the profile's chosen theme
+    (Views/Partials/Search/Themes/<name>/<part>.cshtml) and falls back to the package's own
+    partial for anything the theme does not define, so a theme is free to restyle just the result
+    cards and inherit everything else.
+*@
+@{
+    Imobisoft.Search.Models.SearchResponse? response = Model.Response;
+
+    var stylesView = Themes.ResolvePartial(Model.Theme, "styles");
+    var filtersView = Themes.ResolvePartial(Model.Theme, "filters");
+    var searchBarView = Themes.ResolvePartial(Model.Theme, "searchbar");
+    var resultsView = Themes.ResolvePartial(Model.Theme, "results");
+    var noResultsView = Themes.ResolvePartial(Model.Theme, "noresults");
+    var loadMoreView = Themes.ResolvePartial(Model.Theme, "loadmore");
+}
+<div class="isl" data-imobisoft-listing>
+    <partial name="@stylesView" model="Model" />
+
+    @* One GET form holds every filter dropdown and the search box, so picking an option re-runs
+       the search with the term and every other selection intact. *@
+    <form method="get" action="">
+        @* The bar is driven by the profile's facet DEFINITIONS, so the dropdowns are here the
+           moment the page opens - before any word is typed - exactly as configured in the CMS.
+           Counts merge in from the response once a search (including the automatic browse pass)
+           has produced them. *@
+        <partial name="@filtersView" model="Model" />
+
+        @{
+            var searchBar = new Imobisoft.Search.Models.SearchBarModel
+            {
+                Term = Model.Term,
+                FormClass = "isl-form",
+                WrapClass = "isl-field",
+                InputClass = "isl-input",
+                ButtonClass = "isl-btn",
+
+                // The filters and this box share the one GET form opened above, so the partial
+                // must not open a second one inside it.
+                RenderForm = false,
+            };
+        }
+        <partial name="@searchBarView" model="searchBar" />
+
+        @if (response is null)
+        {
+            <div class="isl-empty">
+                <h3>Welcome to Search</h3>
+                <p>Type keywords into the search box above, or pick a filter, to find pages, articles, media, and documents.</p>
+            </div>
+        }
+        else
+        {
+            @* The browse pass fills the list before any term is typed, honouring the profile's
+               "results before searching" setting. *@
+            @if (!string.IsNullOrWhiteSpace(response.Suggestion))
+            {
+                <div class="isl-suggestion">
+                    Did you mean <a href="?q=@Uri.EscapeDataString(response.Suggestion)">@response.Suggestion</a>?
+                </div>
+            }
+
+            <div class="isl-stats">
+                <div>
+                    Found <strong>@response.TotalResults</strong> result@(response.TotalResults == 1 ? "" : "s")
+                    @if (!string.IsNullOrWhiteSpace(response.Term))
+                    {
+                        <span>for &ldquo;<strong>@response.Term</strong>&rdquo;</span>
+                    }
+                </div>
+                @if (response.TotalResults > 0 && response.EnableLoadMore)
+                {
+                    <div>Page <strong>@response.Page</strong> of <strong>@Math.Max(1, response.TotalPages)</strong></div>
+                }
+                @* Which profile answered - so a site can see at a glance that the rules it
+                   configured in the backoffice are the ones in effect here. *@
+                <span class="isl-profile">Profile: @response.ProfileAlias</span>
+            </div>
+
+            @if (response.Groups.Count > 0)
+            {
+                <div class="isl-groups">
+                    @foreach (var group in response.Groups)
+                    {
+                        <span class="isl-group-pill">@group.Key: <strong>@group.Value</strong></span>
+                    }
+                </div>
+            }
+
+            @if (response.Results.Count == 0)
+            {
+                <partial name="@noResultsView" model="Model" />
+            }
+            else
+            {
+                <partial name="@resultsView" model="Model" />
+                <partial name="@loadMoreView" model="Model" />
+            }
+        }
+    </form>
+</div>
+
+<script>
+    (function () {
+        document.querySelectorAll('[data-imobisoft-listing]').forEach(function (root) {
+            var button = root.querySelector('[data-imobisoft-more]');
+            var list = root.querySelector('[data-imobisoft-results]');
+            if (!button || !list || button.dataset.imobisoftBound) return;
+            button.dataset.imobisoftBound = 'true';
+
+            button.addEventListener('click', function () {
+                var next = parseInt(button.getAttribute('data-next-page'), 10);
+                var total = parseInt(button.getAttribute('data-total-pages'), 10);
+                var label = button.textContent;
+
+                button.disabled = true;
+                button.textContent = 'Loading...';
+
+                // The next page is this same URL at the next page number, so whatever the host
+                // page is - an Umbraco template, the built-in page, anything - it just re-renders.
+                var params = new URLSearchParams(window.location.search);
+                params.set('page', next);
+
+                fetch(window.location.pathname + '?' + params.toString())
+                    .then(function (res) {
+                        if (!res.ok) throw new Error('HTTP ' + res.status);
+                        return res.text();
+                    })
+                    .then(function (html) {
+                        var doc = new DOMParser().parseFromString(html, 'text/html');
+
+                        doc.querySelectorAll('[data-imobisoft-results] > li').forEach(function (li) {
+                            list.appendChild(li);
+                        });
+
+                        var fresh = doc.querySelector('[data-imobisoft-more]');
+                        if (!fresh || next >= total) {
+                            var wrap = button.closest('.isl-loadmore');
+                            if (wrap) {
+                                wrap.parentNode.removeChild(wrap);
+                            } else {
+                                button.parentNode.removeChild(button);
+                            }
+                        } else {
+                            button.setAttribute('data-next-page', fresh.getAttribute('data-next-page'));
+                            button.setAttribute('data-total-pages', fresh.getAttribute('data-total-pages'));
+                            button.disabled = false;
+                            button.textContent = label;
+                        }
+                    })
+                    .catch(function (err) {
+                        console.error('Imobisoft Search: failed to load more results.', err);
+                        button.disabled = false;
+                        button.textContent = label;
+                    });
+            });
+        });
+    })();
+</script>

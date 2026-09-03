@@ -9,7 +9,7 @@ namespace Imobisoft.Search.Web;
 /// results, spelling suggestions and Load More - driven entirely by the profile configured in
 /// the backoffice.
 /// </summary>
-public sealed class ImobisoftSearchListingViewModel
+public class ImobisoftSearchListingViewModel
 {
     /// <summary>What the visitor typed.</summary>
     public string Term { get; set; } = string.Empty;
@@ -40,4 +40,16 @@ public sealed class ImobisoftSearchListingViewModel
 
     /// <summary>The currently selected sort alias, echoed so the right option renders selected.</summary>
     public string? SelectedSort { get; set; }
+
+    /// <summary>
+    /// Theme the profile selected, used to resolve which copy of each partial renders. Empty is the
+    /// built-in look. See <see cref="Models.ResultRules.Theme"/>.
+    /// </summary>
+    public string? Theme { get; set; }
+
+    /// <summary>
+    /// How the profile configured the "reset filters" control. Null, or disabled, means the filter
+    /// partials render no reset control at all.
+    /// </summary>
+    public ResetFilterRules? ResetFilter { get; set; }
 }

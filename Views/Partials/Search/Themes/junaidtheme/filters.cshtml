@@ -1,0 +1,116 @@
+@model Imobisoft.Search.Web.ImobisoftSearchListingViewModel
+@*
+    junaidtheme filter strip: one dropdown per configured facet, the sort dropdown, and a clear-all
+    link. It renders above the search box because that is the order the listing places it in.
+
+    The contract the engine reads is kept exactly: every control stays inside the page's single GET
+    form, facet selects are named f_<alias> and the sort select is named sort. Selections for facets
+    that no longer have a dropdown are carried through as hidden inputs so they survive the round
+    trip rather than being silently dropped.
+*@
+@{
+    var activeFilters = Context.GetActiveFilters();
+    var hasActiveFilters = Context.HasActiveFilters();
+    var facetCounts = Context.GetSearchFilters();
+}
+@if (Model.ConfiguredFacets.Count > 0 || Model.ConfiguredSortOptions.Count > 0)
+{
+    <div class="isl-filter-bar">
+        <div class="jt-filter-controls">
+            @foreach (FacetDefinition definition in Model.ConfiguredFacets)
+            {
+                FacetResult? counts = facetCounts.FirstOrDefault(f =>
+                    f.Alias.Equals(definition.Alias, StringComparison.OrdinalIgnoreCase));
+                var label = string.IsNullOrWhiteSpace(definition.Label) ? definition.Alias : definition.Label;
+                var hasSelection = activeFilters.TryGetValue(definition.Alias, out var picked);
+
+                <label class="isl-filter-item">
+                    <span class="isl-filter-label">@label</span>
+                    <select class="isl-select"
+                            name="f_@definition.Alias"
+                            aria-label="@label"
+                            onchange="this.form.submit()">
+                        <option value="">All @label</option>
+                        @if (counts is not null)
+                        {
+                            @foreach (FacetValue choice in counts.Values)
+                            {
+                                <option value="@choice.Value" selected="@choice.IsSelected">@choice.Label (@choice.Count)</option>
+                            }
+                        }
+                        else if (hasSelection && picked!.Count == 1)
+                        {
+                            @* Counts arrive with the first search; until then keep the visitor's
+                               selection visible rather than silently resetting it. *@
+                            <option value="@picked[0]" selected>@picked[0]</option>
+                        }
+                    </select>
+                </label>
+            }
+
+            @if (Model.ConfiguredSortOptions.Count > 0)
+            {
+                <label class="isl-filter-item">
+                    <span class="isl-filter-label">Sort by</span>
+                    <select class="isl-select"
+                            name="sort"
+                            aria-label="Sort by"
+                            onchange="this.form.submit()">
+                        <option value="" selected="@string.IsNullOrEmpty(Model.SelectedSort)">Relevance</option>
+                        @foreach (SortOption option in Model.ConfiguredSortOptions)
+                        {
+                            @* An option with no field IS the relevance choice, already covered by
+                               the blank entry above - skip it rather than list it twice. *@
+                            if (string.IsNullOrWhiteSpace(option.Field))
+                            {
+                                continue;
+                            }
+                            <option value="@option.Alias"
+                                    selected="@option.Alias.Equals(Model.SelectedSort, StringComparison.OrdinalIgnoreCase)">
+                                @option.Label
+                            </option>
+                        }
+                    </select>
+                </label>
+            }
+
+            @if (hasActiveFilters)
+            {
+                <a href="@Context.ClearFiltersUrl()" class="isl-clear-filters" rel="nofollow">Clear all</a>
+            }
+
+            @* The profile's reset control, after the dropdowns. data-reset-facets names what it
+               clears (empty = everything), which is what lets the backoffice test panel act on it
+               without re-reading the href. *@
+            @if (Model.ResetFilter is { Enabled: true })
+            {
+                var targets = Model.ResetFilter.ResolveTargets();
+                var resetLabel = string.IsNullOrWhiteSpace(Model.ResetFilter.Label)
+                    ? "Reset filters"
+                    : Model.ResetFilter.Label;
+
+                <a href="@Context.ResetFiltersUrl(targets)"
+                   class="jt-reset-btn isl-reset-filters"
+                   data-reset-facets="@string.Join(",", targets)"
+                   rel="nofollow">
+                    <svg class="jt-reset-icon" viewBox="0 0 24 24" width="15" height="15" fill="none"
+                         stroke="currentColor" stroke-width="2.2"
+                         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                        <path d="M3 12a9 9 0 1 0 3-6.7"></path>
+                        <polyline points="3 4 3 9 8 9"></polyline>
+                    </svg>
+                    <span>@resetLabel</span>
+                </a>
+            }
+        </div>
+    </div>
+}
+
+@* Selections whose dropdown is no longer rendered still have to survive the round trip. *@
+@foreach (var filter in activeFilters.Where(f => !Model.ConfiguredFacets.Any(x => x.Alias.Equals(f.Key, StringComparison.OrdinalIgnoreCase))))
+{
+    foreach (var value in filter.Value)
+    {
+        <input type="hidden" name="f_@filter.Key" value="@value" />
+    }
+}

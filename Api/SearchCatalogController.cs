@@ -14,18 +14,30 @@ namespace Imobisoft.Search.Api;
 public sealed class SearchCatalogController : ImobisoftSearchControllerBase
 {
     private readonly IIndexCatalogService _catalog;
+    private readonly ISearchThemeService _themes;
     private readonly IContentService _content;
     private readonly IMediaService _media;
 
     public SearchCatalogController(
         IIndexCatalogService catalog,
+        ISearchThemeService themes,
         IContentService content,
         IMediaService media)
     {
         _catalog = catalog;
+        _themes = themes;
         _content = content;
         _media = media;
     }
+
+    /// <summary>
+    /// Themes the search page can render with: those shipped in the package plus any the site added
+    /// under its own <c>Views/Partials/Search/Themes/</c>. Drives the theme picker in the profile's
+    /// result rules.
+    /// </summary>
+    [HttpGet("catalog/theme")]
+    [ProducesResponseType(typeof(IEnumerable<SearchThemeInfo>), StatusCodes.Status200OK)]
+    public IActionResult GetThemes() => Ok(_themes.GetThemes());
 
     /// <summary>Indexes, document types, media types and languages in one call.</summary>
     [HttpGet("catalog")]

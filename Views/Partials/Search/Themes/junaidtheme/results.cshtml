@@ -1,0 +1,60 @@
+@model Imobisoft.Search.Web.ImobisoftSearchListingViewModel
+@{
+    Imobisoft.Search.Models.SearchResponse? response = Model.Response;
+    var index = (response!.Page - 1) * Math.Max(1, response.PageSize);
+}
+<ol class="isl-results" data-imobisoft-results>
+    @foreach (var item in response.Results)
+    {
+        index++;
+        <li class="isl-card @(item.IsBestBet ? "is-bestbet" : "")">
+            <div class="jt-card-rail">
+                <span class="jt-card-index">@index</span>
+            </div>
+
+            <div class="jt-card-body">
+                <h3 class="isl-title">
+                    @if (!string.IsNullOrWhiteSpace(item.Url))
+                    {
+                        <a href="@item.Url">@item.Name</a>
+                    }
+                    else
+                    {
+                        <span>@item.Name</span>
+                    }
+                </h3>
+
+                @if (!string.IsNullOrWhiteSpace(item.Url))
+                {
+                    <span class="jt-card-url">@item.Url</span>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(item.Highlight))
+                {
+                    @* The engine HTML-encodes the snippet and leaves only the configured highlight
+                       tag intact, so this is safe to render as markup. *@
+                    <p class="isl-snippet">@Html.Raw(item.Highlight)</p>
+                }
+
+                <div class="isl-meta">
+                    @if (item.IsBestBet)
+                    {
+                        <span class="isl-badge isl-badge-bestbet">Pinned</span>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(item.ContentTypeAlias) || !string.IsNullOrWhiteSpace(item.IndexType))
+                    {
+                        <span class="isl-badge">@(item.ContentTypeAlias ?? item.IndexType)</span>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(item.Culture))
+                    {
+                        <span class="jt-meta-text">@item.Culture</span>
+                    }
+                    @if (item.Fields.TryGetValue("updateDate", out var updateDate) && !string.IsNullOrWhiteSpace(updateDate))
+                    {
+                        <span class="jt-meta-text">Updated @updateDate</span>
+                    }
+                </div>
+            </div>
+        </li>
+    }
+</ol>

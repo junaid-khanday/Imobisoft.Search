@@ -121,6 +121,8 @@ public sealed class ImobisoftSearchListingViewComponent : ViewComponent
             ConfiguredFacets = configuredFacets,
             ConfiguredSortOptions = configuredSorts,
             SelectedSort = selectedSort,
+            Theme = profile?.Rules.Results.Theme,
+            ResetFilter = profile?.Rules.Results.ResetFilter,
         });
     }
 }

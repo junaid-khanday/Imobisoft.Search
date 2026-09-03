@@ -1,9 +1,11 @@
 @model Imobisoft.Search.Web.ImobisoftSearchListingViewModel
-@* Shown instead of the result list when the current page holds no items. Override at
-   Views/Partials/Search/noresults.cshtml to restyle both states:
-   - TotalResults == 0: genuinely nothing matched.
-   - TotalResults > 0 with an empty page: matches exist elsewhere (paging or the profile's
-     "results before searching" limit). *@
+@* Shown instead of the result list when nothing matched. Override at
+   Views/Partials/Search/noresults.cshtml, or per theme at
+   Views/Partials/Search/Themes/<name>/noresults.cshtml, to restyle it.
+
+   A page that holds no items while matches exist elsewhere (paging, or the profile's "results
+   before searching" limit) renders nothing at all rather than explaining itself - the visitor is
+   not the one who can act on it. *@
 @{
     Imobisoft.Search.Models.SearchResponse? response = Model.Response;
     var hasActiveFilters = Context.HasActiveFilters();
@@ -19,13 +21,5 @@
                 <a href="@Context.ClearFiltersUrl()" rel="nofollow">Clear active filters</a>
             </p>
         }
-    </div>
-}
-else if (response.Results.Count == 0)
-{
-    <div class="isl-empty">
-        <h3>Nothing to show on this page</h3>
-        <p>@response.TotalResults result@(response.TotalResults == 1 ? " matches" : " matches") were found.
-           Use the page controls above, or ask your editor to raise the profile's page limits in the Search section.</p>
     </div>
 }

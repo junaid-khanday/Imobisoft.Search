@@ -72,6 +72,21 @@
         {
             <a href="@Context.ClearFiltersUrl()" class="isl-clear-filters" rel="nofollow">✕ Clear all filters</a>
         }
+
+        @* The profile's reset control. data-reset-facets names what it clears (empty = everything),
+           which is what lets the backoffice test panel act on it without re-reading the href. *@
+        @if (Model.ResetFilter is { Enabled: true })
+        {
+            var targets = Model.ResetFilter.ResolveTargets();
+            var resetLabel = string.IsNullOrWhiteSpace(Model.ResetFilter.Label)
+                ? "Reset filters"
+                : Model.ResetFilter.Label;
+
+            <a href="@Context.ResetFiltersUrl(targets)"
+               class="isl-reset-filters"
+               data-reset-facets="@string.Join(",", targets)"
+               rel="nofollow">@resetLabel</a>
+        }
     </div>
 }
 

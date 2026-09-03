@@ -1,0 +1,40 @@
+@using Imobisoft.Search.Models
+@model SearchBarModel
+@{
+    void RenderBar()
+    {
+        <div class="ibb-field">
+            @* Submit, so it posts the form it sits inside whether that form is this partial's or
+               the listing's. *@
+            <button type="submit" class="ibb-btn" aria-label="@Model.ButtonText">
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="none"
+                     stroke="currentColor" stroke-width="2.2"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                    <circle cx="11" cy="11" r="7"></circle>
+                    <line x1="16.5" y1="16.5" x2="21" y2="21"></line>
+                </svg>
+            </button>
+            <input type="search"
+                   id="q"
+                   name="q"
+                   class="ibb-input"
+                   value="@Model.Term"
+                   placeholder="@Model.Placeholder"
+                   autocomplete="off"
+                   aria-label="Search" />
+        </div>
+    }
+}
+
+@if (Model.RenderForm)
+{
+    <form role="search" method="get" action="@Model.Action" class="ibb-form">
+        @{ RenderBar(); }
+    </form>
+}
+else
+{
+    <div role="search" class="ibb-form">
+        @{ RenderBar(); }
+    </div>
+}

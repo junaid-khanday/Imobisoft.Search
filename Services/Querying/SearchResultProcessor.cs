@@ -83,7 +83,13 @@ internal sealed partial class SearchResultProcessor
         // page with a handful of results, or with none at all, while filters keep their counts.
         // An explicit caller-supplied page size still wins over the profile.
         var browseCap = Math.Max(0, rules.Results.BrowsePageSize);
-        var isBrowse = plan.TermGroups.Count == 0;
+
+        // Picking a filter is the visitor asking for something, so it earns a full page of results
+        // the same way typing a term does. Without this a profile whose browse cap is 0 - the
+        // documented way to open a page with no listing - would answer every filter selection with
+        // nothing at all, while the count above the list still reported the matches it was hiding.
+        var hasSelection = request.Filters.Any(f => f.Value is { Count: > 0 });
+        var isBrowse = plan.TermGroups.Count == 0 && !hasSelection;
 
         if (isBrowse && request.PageSize is not > 0)
         {

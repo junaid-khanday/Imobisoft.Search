@@ -11,6 +11,15 @@ public sealed class SearchBarModel
     /// <summary>Form action URL. Empty submits to the current page, which is what both built-in views want.</summary>
     public string Action { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Whether the partial emits its own <c>&lt;form&gt;</c>. Both built-in search pages already wrap
+    /// the whole page - filter dropdowns included - in one GET form so that picking a filter re-runs
+    /// the search with the term intact, and a form inside a form is invalid HTML the browser silently
+    /// throws away. They set this to false and the partial renders just the input and button, which
+    /// submit the form they are already inside. Left true, the bar stands alone anywhere on a site.
+    /// </summary>
+    public bool RenderForm { get; set; } = true;
+
     /// <summary>The current query text, echoed back into the box.</summary>
     public string Term { get; set; } = string.Empty;
 

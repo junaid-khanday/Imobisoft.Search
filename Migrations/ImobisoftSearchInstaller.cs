@@ -75,7 +75,8 @@ public sealed class ImobisoftSearchInstaller : INotificationAsyncHandler<Umbraco
 
             plan.From(string.Empty)
                 .To<AddSearchProfileTable>(ImobisoftSearchConstants.Database.MigrationInitState)
-                .To<AddSearchAnalyticsTables>(ImobisoftSearchConstants.Database.MigrationAnalyticsState);
+                .To<AddSearchAnalyticsTables>(ImobisoftSearchConstants.Database.MigrationAnalyticsState)
+                .To<AddDefaultSearchFilters>(ImobisoftSearchConstants.Database.MigrationDefaultFiltersState);
 
             await new Upgrader(plan).ExecuteAsync(_migrationPlanExecutor, _coreScopeProvider, _keyValueService);
             return true;

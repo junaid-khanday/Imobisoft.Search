@@ -19,6 +19,8 @@ import {
     getSettings,
     updateSettings,
     previewSearch,
+    renderPreview,
+    getThemes,
     getAutocomplete,
     getNodeName
 } from "./data-cache.js";
@@ -52,10 +54,14 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         _testActiveFilters: { state: true },
         _testResults: { state: true },
         _testSearching: { state: true },
-        _testLoadingMore: { state: true },
+        _testLoadedPages: { state: true },
+        _testBasePageSize: { state: true },
+        _testSort: { state: true },
         _testAutocompleteSuggestions: { state: true },
         _testShowAutocomplete: { state: true },
         _testDiagnosticsOpen: { state: true },
+        _themes: { state: true },
+        _testRendered: { state: true },
         _showMessageBox: { state: true },
         _messageBoxType: { state: true },
         _messageBoxTitle: { state: true },
@@ -159,10 +165,16 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         this._testActiveFilters = {};
         this._testResults = null;
         this._testSearching = false;
-        this._testLoadingMore = false;
+        this._testLoadedPages = 1;
+        this._testBasePageSize = 0;
+        this._testSort = '';
         this._testAutocompleteSuggestions = [];
         this._testShowAutocomplete = false;
-        this._testDiagnosticsOpen = true;
+        // Closed until asked for: the panel is for looking at results, and the query plan is the
+        // thing you go and open when a result surprises you.
+        this._testDiagnosticsOpen = false;
+        this._themes = null;
+        this._testRendered = null;
         this._showMessageBox = false;
         this._messageBoxType = 'confirm';
         this._messageBoxTitle = '';
@@ -185,6 +197,10 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             }
         };
         window.addEventListener('beforeunload', this._onBeforeUnload);
+
+        // Markup currently injected into each preview host, so a re-render only touches the DOM
+        // when the HTML has actually changed.
+        this._appliedPreview = { filters: '', results: '' };
     }
 
     disconnectedCallback() {
@@ -192,6 +208,156 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         if (this._onBeforeUnload) {
             window.removeEventListener('beforeunload', this._onBeforeUnload);
         }
+    }
+
+    updated(changed) {
+        super.updated?.(changed);
+        this._syncPreviewMarkup();
+    }
+
+    // Puts the server-rendered theme markup into the preview hosts.
+    //
+    // These live in this component's shadow root, which is what makes injecting a theme's own
+    // <style> safe: the shadow boundary scopes it to this markup, so a theme cannot restyle the
+    // backoffice, and the backoffice cannot bleed into the theme. The panel's own CSS is entirely
+    // class-scoped, so it does not reach the isl- markup either.
+    _syncPreviewMarkup() {
+        const markup = {
+            filters: this._testRendered?.filtersHtml || '',
+            results: this._testRendered?.resultsHtml || '',
+        };
+
+        for (const name of ['filters', 'results']) {
+            const host = this.renderRoot?.querySelector(`[data-preview="${name}"]`);
+
+            if (!host) {
+                continue;
+            }
+
+            // Bind before anything else. Lit destroys and recreates these hosts - switching tabs,
+            // or swapping between the empty state and the results host - and a recreated element
+            // arrives empty with no listeners. Skipping it because the markup "has not changed"
+            // would leave its links falling through to the browser, which is what navigated the
+            // backoffice away from the panel. The flag is a property, so it dies with the element.
+            if (!host._islPreviewBound) {
+                host._islPreviewBound = true;
+                this._bindPreviewHost(host);
+
+                // A new element is empty whatever we applied to the old one.
+                this._appliedPreview[name] = null;
+            }
+
+            if (this._appliedPreview[name] !== markup[name]) {
+                this._appliedPreview[name] = markup[name];
+                host.innerHTML = markup[name];
+            }
+
+            // Every update, not only after an injection. Once disarmed there is nothing left to
+            // match, so this costs a failed selector - and it means no path through this method
+            // can leave a live href sitting in the panel waiting to navigate the backoffice away.
+            this._disarmPreviewMarkup(host);
+        }
+    }
+
+    // Makes injected markup inert as navigation.
+    //
+    // The partials are written for a real page: the filter selects carry
+    // onchange="this.form.submit()", and every link has a working href. Injected here those would
+    // take the backoffice with them, so the inline handlers come off and hrefs move to data-href.
+    // The delegated listeners drive the search instead, and they match on class, never on the URL -
+    // so nothing here needs the href back.
+    _disarmPreviewMarkup(host) {
+        host.querySelectorAll('[onchange], [onclick], [onsubmit]').forEach((el) => {
+            el.removeAttribute('onchange');
+            el.removeAttribute('onclick');
+            el.removeAttribute('onsubmit');
+        });
+
+        host.querySelectorAll('a[href]').forEach((el) => {
+            el.setAttribute('data-href', el.getAttribute('href'));
+            el.removeAttribute('href');
+        });
+    }
+
+    // Delegated once per host, so replacing its innerHTML never needs them re-attaching.
+    _bindPreviewHost(host) {
+        host.addEventListener('change', (e) => {
+            const el = e.target;
+            if (!el || el.tagName !== 'SELECT' || !el.name) return;
+
+            if (el.name === 'sort') {
+                this._testSort = el.value || '';
+                this._runTestSearch();
+                return;
+            }
+
+            if (el.name.indexOf('f_') === 0) {
+                // One dropdown carries one selection, so picking a value replaces whatever that
+                // facet held and the blank "All" option clears it.
+                const alias = el.name.slice(2);
+                const value = el.value || '';
+
+                if (value) {
+                    this._testActiveFilters = { ...this._testActiveFilters, [alias]: [value] };
+                } else {
+                    const next = { ...this._testActiveFilters };
+                    delete next[alias];
+                    this._testActiveFilters = next;
+                }
+
+                this._runTestSearch();
+            }
+        });
+
+        host.addEventListener('click', (e) => {
+            const link = e.target?.closest?.('a');
+            if (!link) return;
+
+            // A result URL, the clear-all link or the reset control would navigate the backoffice
+            // away, so the panel acts on them itself.
+            e.preventDefault();
+
+            if (link.classList.contains('isl-clear-filters')) {
+                this._testActiveFilters = {};
+                this._testSort = '';
+                this._runTestSearch();
+                return;
+            }
+
+            if (link.classList.contains('isl-reset-filters')) {
+                // data-reset-facets names what the profile scoped this control to; empty means
+                // everything, which is the same thing the href does on the real page.
+                const targets = (link.getAttribute('data-reset-facets') || '')
+                    .split(',')
+                    .map(a => a.trim())
+                    .filter(Boolean);
+
+                if (targets.length === 0) {
+                    this._testActiveFilters = {};
+                } else {
+                    const next = { ...this._testActiveFilters };
+                    const lower = targets.map(a => a.toLowerCase());
+                    Object.keys(next).forEach((k) => {
+                        if (lower.includes(k.toLowerCase())) delete next[k];
+                    });
+                    this._testActiveFilters = next;
+                }
+
+                this._runTestSearch();
+                return;
+            }
+
+            // Anything else is a result link. Opening it in this tab would replace the backoffice,
+            // so it opens in a new one - the editor gets to see the page without losing the panel,
+            // the filters they set, or an unsaved profile they were editing.
+            const target = link.getAttribute('data-href');
+
+            if (target) {
+                window.open(target, '_blank', 'noopener,noreferrer');
+            }
+        });
+
+        host.addEventListener('submit', (e) => e.preventDefault());
     }
 
     _fetch(url, options = {}) {
@@ -247,6 +413,23 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         } catch (e) {
             console.error("Failed to load catalog:", e);
         }
+    }
+
+    // Themes shipped in the package plus any the site added under its own
+    // Views/Partials/Search/Themes. Loaded on demand for the theme picker; a failure leaves the
+    // list null so the picker degrades to "Default (built-in)" rather than blocking the editor.
+    async _loadThemes(force = false) {
+        if (this._themes && !force) return;
+
+        try {
+            const res = await getThemes(this._fetch.bind(this), { force });
+            this._themes = res.ok && Array.isArray(res.data) ? res.data : [];
+        } catch (e) {
+            console.error("Failed to load search themes:", e);
+            this._themes = [];
+        }
+
+        this.requestUpdate();
     }
 
     // Node keys are stored raw in profile rules; fetch their display names once so chips and
@@ -443,6 +626,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     this._activeTab = tab;
                     if (tab.alias === 'manageProfiles') this._currentView = 'list';
                     if (tab.alias === 'insights' && !this._insights) this._loadInsights();
+                    if (tab.alias === 'testSearch' && !this._testResults) this._runTestSearch();
                     this.requestUpdate();
                 }
             });
@@ -457,6 +641,10 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             this._loadCatalog(true);
         } else if (tab.alias === 'settings') {
             this._loadSettings(true);
+        } else if (tab.alias === 'testSearch' && !this._testResults) {
+            // Open on the browse pass, so the filter bar and its counts are on screen before a
+            // term is typed rather than appearing only once a search has been run.
+            this._runTestSearch();
         }
         this.requestUpdate();
     }
@@ -582,6 +770,13 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         if (!p.rules.results.highlight) p.rules.results.highlight = { enabled: false, highlightMatches: true, mode: 'sentence', field: '', snippetLength: 200, sentenceContext: 0, startTag: '<mark>', endTag: '</mark>' };
         if (!p.rules.results.facets) p.rules.results.facets = [];
         if (!Array.isArray(p.rules.results.sortOptions)) p.rules.results.sortOptions = [];
+        if (p.rules.results.theme === undefined) p.rules.results.theme = '';
+        // Always present, so the summary card and the side panel read the same shape whether the
+        // profile predates this setting or not.
+        if (!p.rules.results.resetFilter) {
+            p.rules.results.resetFilter = { enabled: false, label: '', scope: 'all', facets: [] };
+        }
+        if (!Array.isArray(p.rules.results.resetFilter.facets)) p.rules.results.resetFilter.facets = [];
     }
 
     // ----------------- PROFILE CRUD OPERATIONS -----------------
@@ -958,6 +1153,23 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 enableDeduplication: this._currentProfile.rules?.results?.enableDeduplication !== false,
                 deduplicateByField: this._currentProfile.rules?.results?.deduplicateByField || '',
                 groupByContentType: this._currentProfile.rules?.results?.groupByContentType || false
+            };
+        } else if (type === 'editTheme') {
+            this._sidePanelData = {
+                theme: this._currentProfile.rules?.results?.theme || ''
+            };
+        } else if (type === 'editResetFilter') {
+            const reset = this._currentProfile.rules?.results?.resetFilter || {};
+            this._sidePanelData = {
+                enabled: reset.enabled === true,
+                label: reset.label || '',
+                scope: reset.scope === 'selected' ? 'selected' : 'all',
+                facets: [...(reset.facets || [])],
+                // The facets available to name, so the editor picks from what the profile defines
+                // rather than typing an alias that may not exist.
+                available: (this._currentProfile.rules?.results?.facets || [])
+                    .filter(f => f.enabled !== false && f.alias)
+                    .map(f => ({ alias: f.alias, label: f.label || f.alias }))
             };
         } else if (type === 'editFilterCombination') {
             this._sidePanelData = {
@@ -1372,7 +1584,12 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 maxValues: parseInt(d.maxValues) || 20,
                 hideEmpty: d.hideEmpty !== false,
                 enabled: d.enabled !== false,
-                ranges: cleanRanges
+                ranges: cleanRanges,
+                // Carried through explicitly: this panel does not edit dependencies (the Filter
+                // Combination panel does), so rebuilding the facet without them would silently
+                // drop the rule every time the facet was saved - and a facet whose dependency
+                // vanished starts narrowing results where it previously stayed inert.
+                requires: [...(d.requires || [])].filter(r => r && r !== d.alias.trim())
             };
 
             if (!this._currentProfile.rules) this._currentProfile.rules = {};
@@ -1533,6 +1750,29 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             this._currentProfile.rules.results.enableDeduplication = d.enableDeduplication !== false;
             this._currentProfile.rules.results.deduplicateByField = (d.deduplicateByField || '').trim();
             this._currentProfile.rules.results.groupByContentType = !!d.groupByContentType;
+        } else if (this._sidePanelType === 'editTheme') {
+            if (!this._currentProfile.rules.results) this._currentProfile.rules.results = {};
+            // Empty is a real value here - it is what selects the built-in look.
+            this._currentProfile.rules.results.theme = (d.theme || '').trim();
+        } else if (this._sidePanelType === 'editResetFilter') {
+            if (!this._currentProfile.rules.results) this._currentProfile.rules.results = {};
+
+            const scope = d.scope === 'selected' ? 'selected' : 'all';
+
+            // Only aliases that still exist are saved, so deleting a facet cannot leave the reset
+            // control pointing at something that is no longer there.
+            const known = new Set((this._currentProfile.rules.results.facets || [])
+                .filter(f => f.alias)
+                .map(f => f.alias.toLowerCase()));
+
+            this._currentProfile.rules.results.resetFilter = {
+                enabled: d.enabled === true,
+                label: (d.label || '').trim(),
+                scope,
+                facets: scope === 'selected'
+                    ? [...(d.facets || [])].filter(a => a && known.has(a.toLowerCase()))
+                    : []
+            };
         } else if (this._sidePanelType === 'editFilterCombination') {
             if (!this._currentProfile.rules.results) this._currentProfile.rules.results = {};
             const minParsed = parseInt(d.minimumActiveFilters);
@@ -1567,27 +1807,39 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
 
     // ----------------- TEST SEARCH & AUTOCOMPLETE -----------------
 
-    async _runTestSearch() {
-        if (!this._testQuery || !this._testQuery.trim()) {
-            this._showToast("Enter a search term to test.", "warning");
-            return;
-        }
-
+    async _runTestSearch({ append = false } = {}) {
+        // An empty box is a browse, not a mistake: the API answers it with the profile's filters
+        // and their live counts, which is how this panel shows the filter bar before anything has
+        // been typed - exactly what the front-end search page does when it opens.
         this._testSearching = true;
         this._testShowAutocomplete = false;
+
+        // Any fresh search collapses the list back to one page's worth.
+        if (!append) {
+            this._testLoadedPages = 1;
+        }
+
         this.requestUpdate();
 
         try {
-            // No pageSize override: the profile's "Default Page Size" (and any ad-hoc rules being
-            // edited) must decide how many results a page holds, otherwise the paging settings
-            // would never be visible in the tester.
+            // A first run sends no pageSize, so the profile's "Default Page Size" (and any ad-hoc
+            // rules being edited) decides how many results a page holds - otherwise the paging
+            // settings would never be visible in the tester. Load More overrides it below.
             const req = {
-                term: this._testQuery.trim(),
+                term: (this._testQuery || '').trim(),
                 profileAlias: this._testProfileAlias || 'default',
                 page: 1,
                 cultures: this._testCulture ? [this._testCulture] : [],
-                filters: this._testActiveFilters
+                filters: this._testActiveFilters,
+                sort: this._testSort || ''
             };
+
+            // Load More asks for N pages' worth in one go, so the themed render comes back as one
+            // grown list. Without an override the profile's own page size decides, which is what
+            // keeps the paging settings visible in the tester on a first run.
+            if (append && this._testBasePageSize > 0) {
+                req.pageSize = this._testBasePageSize * this._testLoadedPages;
+            }
 
             // If we are currently editing a profile and testing with it, pass the in-memory rules for ad-hoc preview
             if (this._currentView === 'editor' && this._currentProfile && this._currentProfile.alias === this._testProfileAlias) {
@@ -1597,10 +1849,27 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             const res = await previewSearch(this._fetch.bind(this), req);
             if (res.ok && res.data) {
                 this._testResults = res.data;
+
+                // Captured from an un-overridden run only, so Load More keeps multiplying the
+                // profile's real page size rather than compounding its own override.
+                if (!append) {
+                    this._testBasePageSize = res.data.pageSize || 0;
+                }
             } else {
                 this._testResults = null;
                 const err = res.data?.detail || res.data?.title || "Search preview failed.";
                 this._showToast(err, "error");
+            }
+
+            // Both calls run: the JSON response drives the facet chips, the counts and the query
+            // plan diagnostics, while the render supplies the themed markup shown in the frame.
+            // Failing to render a theme must not lose the results that already came back.
+            try {
+                const rendered = await renderPreview(this._fetch.bind(this), req);
+                this._testRendered = rendered.ok && rendered.data ? rendered.data : null;
+            } catch (renderError) {
+                console.error("Theme preview render failed:", renderError);
+                this._testRendered = null;
             }
         } catch (e) {
             console.error("Test search error:", e);
@@ -1611,45 +1880,17 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         }
     }
 
-    async _loadMoreTestResults() {
-        if (!this._testResults || this._testLoadingMore) return;
-
-        this._testLoadingMore = true;
-        this.requestUpdate();
-
-        try {
-            const next = (this._testResults.page || 1) + 1;
-            const req = {
-                term: this._testQuery.trim(),
-                profileAlias: this._testProfileAlias || 'default',
-                page: next,
-                cultures: this._testCulture ? [this._testCulture] : [],
-                filters: this._testActiveFilters
-            };
-
-            if (this._currentView === 'editor' && this._currentProfile && this._currentProfile.alias === this._testProfileAlias) {
-                req.rules = this._currentProfile.rules;
-            }
-
-            const res = await previewSearch(this._fetch.bind(this), req);
-            if (res.ok && res.data) {
-                const merged = this._testResults.results || [];
-                const seen = new Set(merged.map(r => `${r.id}|${r.indexName}`));
-                (res.data.results || []).forEach(r => {
-                    const k = `${r.id}|${r.indexName}`;
-                    if (!seen.has(k)) { seen.add(k); merged.push(r); }
-                });
-                this._testResults = { ...res.data, results: merged };
-            } else {
-                this._showToast("Could not load more results.", "error");
-            }
-        } catch (e) {
-            console.error("Load more error:", e);
-            this._showToast("Error loading more results.", "error");
-        } finally {
-            this._testLoadingMore = false;
-            this.requestUpdate();
+    // Load More for the tester. The rendered results are server markup with no script behind them,
+    // so the theme's own button does nothing here - this re-renders with a page size N times the
+    // profile's instead, which grows the single list exactly as appending would on the site,
+    // rather than jumping to page two.
+    _loadMoreTest() {
+        if (this._testSearching || !this._testBasePageSize) {
+            return;
         }
+
+        this._testLoadedPages += 1;
+        this._runTestSearch({ append: true });
     }
 
     async _handleTestInput(e) {
@@ -1679,24 +1920,86 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         this._runTestSearch();
     }
 
-    _toggleTestFacet(alias, value) {
-        if (!this._testActiveFilters[alias]) {
-            this._testActiveFilters[alias] = [];
+    // How many results this render is showing, and how long the search took. Rendered at the top
+    // of the box rather than above the list, so it reads as a heading for the whole search.
+    _renderTestMeta() {
+        if (!this._testRendered || this._testRendered.error) {
+            return nothing;
         }
-        const list = this._testActiveFilters[alias];
-        const idx = list.indexOf(value);
-        if (idx >= 0) {
-            list.splice(idx, 1);
-            if (list.length === 0) delete this._testActiveFilters[alias];
-        } else {
-            list.push(value);
-        }
-        this._runTestSearch();
+
+        const shown = this._testResults?.results?.length || 0;
+        const total = this._testResults?.totalResults || 0;
+        const elapsed = this._testResults?.diagnostics?.elapsedMilliseconds;
+
+        return html`
+            <span>
+                Showing <strong>${shown}</strong> of <strong>${total}</strong>
+                ${elapsed !== undefined ? html` &mdash; <strong>${elapsed}ms</strong>` : nothing}
+            </span>
+        `;
     }
 
-    _clearTestFilters() {
-        this._testActiveFilters = {};
-        this._runTestSearch();
+    // The results, rendered server-side through the profile's chosen theme - the same markup the
+    // front-end search page serves. There is no separate "preview" mode: testing a search and
+    // seeing how it will look are the same thing, so whatever theme the profile selects is what
+    // this panel shows.
+    //
+    // The markup is injected into this component's shadow root. A theme brings its own <style>
+    // block, and the shadow boundary is what keeps that scoped to the theme's own markup instead
+    // of letting it bleed into the dashboard - and equally keeps the backoffice out of the theme.
+    _renderThemedResults() {
+        const rendered = this._testRendered;
+
+        if (this._testSearching && !rendered) {
+            return html`
+                <div class="empty-state">
+                    <i class="icon-search empty-icon"></i>
+                    <h4>Searching…</h4>
+                </div>
+            `;
+        }
+
+        if (!rendered) {
+            return html`
+                <div class="empty-state">
+                    <i class="icon-search empty-icon"></i>
+                    <h4>Search Rule Tester</h4>
+                    <p>Enter a query above to see live results and inspect query planning diagnostics.</p>
+                </div>
+            `;
+        }
+
+        if (rendered.error) {
+            return html`
+                <div class="empty-state">
+                    <h4>The theme failed to render</h4>
+                    <p><code>${rendered.error}</code></p>
+                    <p>Fix the theme's view, then run the search again.</p>
+                </div>
+            `;
+        }
+
+        const shown = this._testResults?.results?.length || 0;
+        const total = this._testResults?.totalResults || 0;
+        const hasMore = shown > 0 && shown < total;
+
+        return html`
+            <!-- Same as the filters: injected into this shadow root, where the theme's stylesheet
+                 stays scoped to its own markup. -->
+            <div class="isl-preview-host" data-preview="results"></div>
+
+            ${hasMore ? html`
+                <div class="test-loadmore">
+                    <button class="test-loadmore-btn"
+                            ?disabled=${this._testSearching}
+                            @click=${() => this._loadMoreTest()}>
+                        ${this._testSearching
+                            ? 'Loading…'
+                            : `Load more results (${total - shown} more)`}
+                    </button>
+                </div>
+            ` : nothing}
+        `;
     }
 
     // ----------------- SETTINGS ACTIONS -----------------
@@ -2020,11 +2323,17 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         <h3 style="margin:0;">Test Search & Debugger</h3>
                     </div>
                     <div class="header-actions">
-                        <button class="btn btn-secondary" @click=${() => { this._testQuery = ''; this._testResults = null; this.requestUpdate(); }}>
+                        <!-- Clearing returns the panel to how it opens - filters and their counts
+                             still on screen - rather than to a blank slate with no filter bar. -->
+                        <button class="btn btn-secondary" @click=${() => { this._testQuery = ''; this._runTestSearch(); }}>
                             <i class="icon-delete"></i> Clear
                         </button>
-                        <button class="btn btn-secondary" @click=${() => { this._testDiagnosticsOpen = !this._testDiagnosticsOpen; this.requestUpdate(); }}>
-                            <i class="icon-info"></i> ${this._testDiagnosticsOpen ? 'Hide Diagnostics' : 'Show Diagnostics'}
+                        <!-- One fixed label: the button is the way in and out of the panel, and a
+                             label that changes on click reads as a different control each time. -->
+                        <button class="btn ${this._testDiagnosticsOpen ? 'btn-primary' : 'btn-secondary'}"
+                                aria-pressed=${this._testDiagnosticsOpen ? 'true' : 'false'}
+                                @click=${() => { this._testDiagnosticsOpen = !this._testDiagnosticsOpen; this.requestUpdate(); }}>
+                            <i class="icon-info"></i> Diagnostics
                         </button>
                     </div>
                 </div>
@@ -2736,7 +3045,62 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     </div>
                 </div>
 
-                <!-- 3. De-duplication & Grouping -->
+                <!-- 3. Search page theme -->
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Search Page Theme</div>
+                        <div class="setting-desc">How results look on the site. Themes come from Views/Partials/Search/Themes and apply to the front-end page and to Test Search alike.</div>
+                    </div>
+                    <div class="field-right-box clickable-box" @click=${() => { this._loadThemes(); this._openSidePanel('editTheme'); }}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Theme</span>
+                            <span class="field-count-pill">${res.theme ? res.theme : 'Default'}</span>
+                        </div>
+                        <div class="field-box-content">
+                            <div class="selected-chips-wrap">
+                                <span class="selected-chip ${res.theme ? 'chip-success' : 'chip-muted'}">
+                                    ${res.theme ? `✓ Theme: ${res.theme}` : '✕ Built-in look'}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4. Reset filters control -->
+                ${(() => {
+                    const reset = res.resetFilter || {};
+                    const scoped = reset.scope === 'selected' && (reset.facets || []).length > 0;
+                    return html`
+                        <div class="mf-field">
+                            <div class="field-left-info">
+                                <div class="setting-title">Reset Filters Button</div>
+                                <div class="setting-desc">Offers visitors a control beside the filter dropdowns that clears their selections - every filter, or only the ones you name.</div>
+                            </div>
+                            <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editResetFilter')}>
+                                <div class="field-box-header">
+                                    <span class="field-type-tag">Reset</span>
+                                    <span class="field-count-pill ${reset.enabled ? '' : 'pill-muted'}">
+                                        ${reset.enabled ? (scoped ? `${reset.facets.length} filter(s)` : 'All filters') : 'Off'}
+                                    </span>
+                                </div>
+                                <div class="field-box-content">
+                                    <div class="selected-chips-wrap">
+                                        <span class="selected-chip ${reset.enabled ? 'chip-success' : 'chip-muted'}">
+                                            ${reset.enabled ? `✓ "${reset.label || 'Reset filters'}"` : '✕ No Reset Control'}
+                                        </span>
+                                        ${reset.enabled ? html`
+                                            <span class="selected-chip ${scoped ? 'chip-success' : 'chip-muted'}">
+                                                ${scoped ? `✓ Clears: ${reset.facets.join(', ')}` : '✓ Clears every filter'}
+                                            </span>
+                                        ` : nothing}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                })()}
+
+                <!-- 5. De-duplication & Grouping -->
                 <div class="mf-field">
                     <div class="field-left-info">
                         <div class="setting-title">Result Shaping & De-Duplication</div>
@@ -2777,10 +3141,12 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         </div>
                         <div class="field-box-content">
                             <div class="selected-chips-wrap">
-                                <span class="selected-chip ${(res.minimumActiveFilters || 0) > 0 ? 'chip-success' : 'chip-muted'}">
-                                    ${(res.minimumActiveFilters || 0) > 0
-                                        ? `✓ At least ${res.minimumActiveFilters} filter(s) required`
-                                        : '✕ Single Filters Apply Immediately'}
+                                <span class="selected-chip ${(res.minimumActiveFilters || 0) > 1 ? 'chip-danger' : ((res.minimumActiveFilters || 0) > 0 ? 'chip-success' : 'chip-muted')}">
+                                    ${(res.minimumActiveFilters || 0) > 1
+                                        ? `⚠ Picking one filter does nothing — ${res.minimumActiveFilters} must be active`
+                                        : ((res.minimumActiveFilters || 0) > 0
+                                            ? '✓ At least 1 filter(s) required'
+                                            : '✕ Single Filters Apply Immediately')}
                                 </span>
                                 ${(res.facets || []).filter(f => (f.requires || []).length > 0).map(f => html`
                                     <span class="selected-chip chip-success">
@@ -2962,22 +3328,13 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     _renderTestSearchView() {
         return html`
             <div class="test-search-container">
-                <!-- Search Input Header -->
-                <div class="test-search-bar-wrap">
-                    <div class="test-search-input-box">
-                        <i class="icon-search search-icon"></i>
-                        <input type="text"
-                               class="test-search-input"
-                               placeholder="Type term to search and test rules (e.g. 'contact', 'news', 'services')..."
-                               .value=${this._testQuery}
-                               @input=${this._handleTestInput}
-                               @keydown=${e => { if (e.key === 'Enter') this._runTestSearch(); }}>
-                        <button class="btn btn-primary btn-search" @click=${this._runTestSearch} ?disabled=${this._testSearching}>
-                            ${this._testSearching ? 'Searching...' : 'Search'}
-                        </button>
-                    </div>
+                <!-- Theme on the left, profile and culture on the right, one row -->
+                <div class="test-top-options">
+                    <span class="test-theme-label">
+                        Theme: <strong>${this._testRendered?.theme || 'Default (built-in)'}</strong>
+                    </span>
 
-                    <div class="test-search-options">
+                    <div class="test-top-selects">
                         <div class="test-opt-group">
                             <label>Profile:</label>
                             <select class="sp-select-sm"
@@ -3001,136 +3358,63 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                             </select>
                         </div>
                     </div>
-
-                    <!-- Autocomplete dropdown suggestions -->
-                    ${this._testShowAutocomplete && this._testAutocompleteSuggestions.length > 0 ? html`
-                        <div class="autocomplete-dropdown">
-                            <div class="autocomplete-header">Type-Ahead Suggestions</div>
-                            ${this._testAutocompleteSuggestions.map(s => html`
-                                <div class="autocomplete-item" @click=${() => this._selectAutocompleteSuggestion(s)}>
-                                    <i class="icon-search"></i>
-                                    <span>${s.text}</span>
-                                    ${s.contentTypeAlias ? html`<span class="badge-mini">${s.contentTypeAlias}</span>` : nothing}
-                                </div>
-                            `)}
-                        </div>
-                    ` : nothing}
                 </div>
-
-                <!-- Did you mean / Spelling suggestion -->
-                ${this._testResults?.suggestion ? html`
-                    <div class="suggestion-banner">
-                        <i class="icon-info"></i>
-                        <span>Did you mean: <strong class="suggestion-link" @click=${() => { this._testQuery = this._testResults.suggestion; this._runTestSearch(); }}>${this._testResults.suggestion}</strong>?</span>
-                    </div>
-                ` : nothing}
-
-                <!-- Active Filters Bar -->
-                ${Object.keys(this._testActiveFilters).length > 0 ? html`
-                    <div class="active-filters-bar">
-                        <span>Active Filters:</span>
-                        ${Object.entries(this._testActiveFilters).map(([k, vals]) => (vals || []).map(v => html`
-                            <span class="tag-badge tag-include">
-                                <span>${k}: <strong>${v}</strong></span>
-                                <button @click=${() => this._toggleTestFacet(k, v)}>×</button>
-                            </span>
-                        `))}
-                        <button class="btn-clear-filters" @click=${this._clearTestFilters}>Clear All</button>
-                    </div>
-                ` : nothing}
-
-                <!-- Live Facet Filter Dimension Groups -->
-                ${this._testResults?.facets?.length > 0 ? html`
-                    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.03);">
-                        <div style="display: flex; flex-direction: column; gap: 10px;">
-                            ${this._testResults.facets.map(f => html`
-                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                                    <span style="font-size: 12px; font-weight: 700; color: #334155; min-width: 110px;">
-                                        ${f.label || f.alias}:
-                                    </span>
-                                    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                                        ${(f.values || []).map(v => {
-                                            const isSelected = (this._testActiveFilters[f.alias] || []).includes(v.value);
-                                            return html`
-                                                <button type="button"
-                                                        class="btn ${isSelected ? 'btn-primary' : 'btn-secondary'} btn-sm"
-                                                        style="font-size: 11px; padding: 3px 9px; border-radius: 14px; display: inline-flex; align-items: center; gap: 4px;"
-                                                        @click=${() => this._toggleTestFacet(f.alias, v.value)}>
-                                                    <span>${v.label || v.value}</span>
-                                                    <span class="badge ${isSelected ? 'badge-default' : 'badge-info'}" style="font-size: 10px; padding: 1px 5px;">
-                                                        ${v.count}
-                                                    </span>
-                                                </button>
-                                            `;
-                                        })}
-                                    </div>
-                                </div>
-                            `)}
-                        </div>
-                    </div>
-                ` : nothing}
 
                 <!-- Main 2-Column Results & Diagnostics Area -->
                 <div class="test-body-grid ${this._testDiagnosticsOpen ? 'with-diagnostics' : 'full-width'}">
-                    <!-- Results List Column -->
+                    <!-- One box: the counts, the theme's filters, the search bar, then the results.
+                         The whole search page in a single surface rather than stacked panels. -->
                     <div class="test-results-col">
-                        ${!this._testResults ? html`
-                            <div class="empty-state">
-                                <i class="icon-search empty-icon"></i>
-                                <h4>Search Rule Tester</h4>
-                                <p>Enter a query above to see live results and inspect query planning diagnostics.</p>
-                            </div>
-                        ` : html`
-                            <div class="results-stats-header">
-                                <div>Found <strong>${this._testResults.totalResults || 0}</strong> results in <strong>${this._testResults.diagnostics?.elapsedMilliseconds || 0}ms</strong></div>
-                                ${this._testResults.enableLoadMore
-                                    ? html`<div>Page ${this._testResults.page} of ${this._testResults.totalPages || 1}</div>`
-                                    : html`<div>Showing first ${this._testResults.pageSize || this._testResults.results.length} result(s)</div>`}
-                            </div>
+                        <div class="test-filter-box">
+                            <!-- Counts, top right, above the filters -->
+                            <div class="test-box-meta">${this._renderTestMeta()}</div>
 
-                            ${this._testResults.results.length === 0 ? html`
-                                <div class="empty-state">
-                                    <h4>No results found for "${this._testResults.term}"</h4>
-                                    <p>Try checking index health, broadening filters, or adding synonyms in the profile editor.</p>
-                                </div>
-                            ` : html`
-                                <div class="results-list">
-                                    ${this._testResults.results.map((r, idx) => html`
-                                        <div class="result-card ${r.isBestBet ? 'result-bestbet' : ''}">
-                                            <div class="result-top">
-                                                <span class="result-rank">#${idx + 1}</span>
-                                                <a href="${r.url || '#'}" target="_blank" class="result-title">${r.name || 'Untitled'}</a>
-                                                ${r.isBestBet ? html`<span class="badge badge-default">★ Pinned Best Bet</span>` : nothing}
-                                                <span class="badge badge-info">${r.contentTypeAlias || r.indexType}</span>
-                                                <span class="score-pill" title="Score: ${r.score} (Raw: ${r.rawScore})">${(r.score || 0).toFixed(2)} pts</span>
-                                            </div>
+                            <!-- The theme's filter markup, injected into this shadow root. Its
+                                 stylesheet is scoped here by the shadow boundary, so it styles
+                                 these dropdowns and cannot reach the backoffice around them. -->
+                            <div class="isl-preview-host" data-preview="filters"></div>
 
-                                            ${r.highlight ? html`
-                                                <div class="result-snippet" .innerHTML=${r.highlight}></div>
-                                            ` : nothing}
-
-                                            <div class="result-meta">
-                                                <span>Index: <code>${r.indexName}</code></span>
-                                                ${r.url ? html`<span>URL: <a href="${r.url}" target="_blank">${r.url}</a></span>` : nothing}
-                                                ${r.culture ? html`<span>Culture: ${r.culture}</span>` : nothing}
-                                            </div>
-                                        </div>
-                                    `)}
+                            <!-- Search bar: one field with the button inside it, on the right -->
+                            <div class="test-search-bar-wrap">
+                                <div class="test-search-field">
+                                    <input type="text"
+                                           class="test-search-input"
+                                           placeholder="Type term to search and test rules (e.g. 'contact', 'news', 'services')..."
+                                           .value=${this._testQuery}
+                                           @input=${this._handleTestInput}
+                                           @keydown=${e => { if (e.key === 'Enter') this._runTestSearch(); }}>
+                                    <button class="test-search-btn"
+                                            @click=${() => this._runTestSearch()}
+                                            ?disabled=${this._testSearching}>
+                                        ${this._testSearching ? 'Searching...' : 'Search'}
+                                    </button>
                                 </div>
 
-                                ${this._testResults.enableLoadMore && this._testResults.page < (this._testResults.totalPages || 1) ? html`
-                                    <div style="display: flex; justify-content: center; margin-top: 16px;">
-                                        <button type="button" class="btn btn-secondary"
-                                                ?disabled=${this._testLoadingMore}
-                                                @click=${() => this._loadMoreTestResults()}>
-                                            ${this._testLoadingMore
-                                                ? 'Loading more results...'
-                                                : `Load more results (${this._testResults.pageSize} per page)`}
-                                        </button>
+                                <!-- Autocomplete dropdown suggestions -->
+                                ${this._testShowAutocomplete && this._testAutocompleteSuggestions.length > 0 ? html`
+                                    <div class="autocomplete-dropdown">
+                                        <div class="autocomplete-header">Type-Ahead Suggestions</div>
+                                        ${this._testAutocompleteSuggestions.map(s => html`
+                                            <div class="autocomplete-item" @click=${() => this._selectAutocompleteSuggestion(s)}>
+                                                <i class="icon-search"></i>
+                                                <span>${s.text}</span>
+                                                ${s.contentTypeAlias ? html`<span class="badge-mini">${s.contentTypeAlias}</span>` : nothing}
+                                            </div>
+                                        `)}
                                     </div>
                                 ` : nothing}
-                            `}
-                        `}
+                            </div>
+
+                            <!-- Did you mean / Spelling suggestion -->
+                            ${this._testResults?.suggestion ? html`
+                                <div class="suggestion-banner">
+                                    <i class="icon-info"></i>
+                                    <span>Did you mean: <strong class="suggestion-link" @click=${() => { this._testQuery = this._testResults.suggestion; this._runTestSearch(); }}>${this._testResults.suggestion}</strong>?</span>
+                                </div>
+                            ` : nothing}
+
+                            ${this._renderThemedResults()}
+                        </div>
                     </div>
 
                     <!-- Diagnostics Inspector Column -->
@@ -3546,6 +3830,8 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         else if (t === 'editPaging') { title = "Paging & Result Capacity"; labelTag = "PAGING"; }
         else if (t === 'editHighlighting') { title = "Highlighting & Snippets"; labelTag = "HIGHLIGHT"; }
         else if (t === 'editResultShaping') { title = "Result Shaping & De-Duplication"; labelTag = "SHAPING"; }
+        else if (t === 'editTheme') { title = "Search Page Theme"; labelTag = "THEME"; }
+        else if (t === 'editResetFilter') { title = "Reset Filters Button"; labelTag = "RESET"; }
         else if (t === 'editFilterCombination') { title = "Filter Combination Logic"; labelTag = "COMBOS"; }
         else if (t === 'manageFacets') { title = "Facet Dimensions & Filters"; labelTag = "FILTERS"; }
         else if (t === 'editFacet') { title = d._isNew ? "Add Facet Dimension" : `Edit Facet: ${d.label || d.alias}`; labelTag = d.kind === 'sort' ? "SORT BY" : "FILTER"; }
@@ -3579,6 +3865,8 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         ${t === 'editPaging' ? this._renderPagingSidePanelBody(d) : nothing}
                         ${t === 'editHighlighting' ? this._renderHighlightingSidePanelBody(d) : nothing}
                         ${t === 'editResultShaping' ? this._renderResultShapingSidePanelBody(d) : nothing}
+                        ${t === 'editTheme' ? this._renderThemeSidePanelBody(d) : nothing}
+                        ${t === 'editResetFilter' ? this._renderResetFilterSidePanelBody(d) : nothing}
                         ${t === 'editFilterCombination' ? this._renderFilterCombinationSidePanelBody(d) : nothing}
                         ${t === 'manageFacets' ? this._renderManageFacetsSidePanelBody(d) : nothing}
                         ${t === 'editFacet' ? this._renderFacetSidePanelBody(d) : nothing}
@@ -4444,7 +4732,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                            max="100"
                            .value=${String(d.browsePageSize ?? 10)}
                            @change=${e => { d.browsePageSize = Math.min(100, Math.max(0, parseInt(e.target.value) || 0)); this.requestUpdate(); }}>
-                    <span class="sp-hint">How many results show when the page opens without a search term. Set 0 to list nothing until the visitor searches; filters still show their counts.</span>
+                    <span class="sp-hint">How many results show when the page opens without a search term. Set 0 to list nothing until the visitor searches; filters still show their counts. Applies to the untouched page only &mdash; picking a filter always returns a full page.</span>
                 </div>
 
                 <div class="sp-group">
@@ -4506,6 +4794,164 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                            .value=${String(d.sentenceContext)}
                            @input=${e => { d.sentenceContext = parseInt(e.target.value) || 0; this.requestUpdate(); }}>
                 </div>
+            </div>
+        `;
+    }
+
+    _renderResetFilterSidePanelBody(d) {
+        const available = d.available || [];
+        const chosen = d.facets || [];
+
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-choice-header-info">
+                    <p class="sp-choice-desc">
+                        Adds a control after the filter dropdowns that clears the visitor's
+                        selections. It can clear everything, or only the filters you name - which is
+                        what lets a page offer "start the dates again, keep the section".
+                    </p>
+                </div>
+
+                <div class="sp-group" style="margin-bottom: 20px;">
+                    <label class="toggle-item">
+                        <div class="toggle-info">
+                            <strong>Show Reset Filters Button</strong>
+                            <span>Off by default. The themes render it beside the filter dropdowns.</span>
+                        </div>
+                        <input type="checkbox"
+                               class="switch-input"
+                               .checked=${d.enabled === true}
+                               @change=${e => { d.enabled = e.target.checked; this.requestUpdate(); }}>
+                    </label>
+                </div>
+
+                ${d.enabled ? html`
+                    <div class="sp-group" style="margin-bottom: 20px;">
+                        <label class="sp-label">Button Text</label>
+                        <input type="text"
+                               class="sp-input"
+                               placeholder="Reset filters"
+                               .value=${d.label || ''}
+                               @input=${e => { d.label = e.target.value; this.requestUpdate(); }}>
+                        <span class="sp-hint">Left empty, the button reads "Reset filters".</span>
+                    </div>
+
+                    <div class="sp-group" style="margin-bottom: 14px;">
+                        <label class="sp-label">What It Clears</label>
+
+                        <label class="toggle-item" style="cursor: pointer;">
+                            <div class="toggle-info">
+                                <strong>Every filter</strong>
+                                <span>Clears all facet selections in one click.</span>
+                            </div>
+                            <input type="radio"
+                                   name="isl-reset-scope"
+                                   .checked=${d.scope !== 'selected'}
+                                   @change=${() => { d.scope = 'all'; this.requestUpdate(); }}>
+                        </label>
+
+                        <label class="toggle-item" style="cursor: pointer;">
+                            <div class="toggle-info">
+                                <strong>Only the filters I choose</strong>
+                                <span>Everything not ticked below keeps its selection.</span>
+                            </div>
+                            <input type="radio"
+                                   name="isl-reset-scope"
+                                   .checked=${d.scope === 'selected'}
+                                   @change=${() => { d.scope = 'selected'; this.requestUpdate(); }}>
+                        </label>
+                    </div>
+
+                    ${d.scope === 'selected' ? html`
+                        ${available.length ? html`
+                            ${available.map(f => html`
+                                <label class="toggle-item">
+                                    <div class="toggle-info">
+                                        <strong>${f.label}</strong>
+                                        <span><code>${f.alias}</code></span>
+                                    </div>
+                                    <input type="checkbox"
+                                           class="switch-input"
+                                           .checked=${chosen.includes(f.alias)}
+                                           @change=${e => {
+                                               if (e.target.checked) {
+                                                   if (!d.facets.includes(f.alias)) d.facets.push(f.alias);
+                                               } else {
+                                                   d.facets = d.facets.filter(a => a !== f.alias);
+                                               }
+                                               this.requestUpdate();
+                                           }}>
+                                </label>
+                            `)}
+
+                            ${chosen.length === 0 ? html`
+                                <div class="sp-inline-warning">
+                                    <strong>⚠ Nothing ticked.</strong>
+                                    A button scoped to no filters would do nothing when clicked, so
+                                    it falls back to clearing everything until you tick at least one.
+                                </div>
+                            ` : nothing}
+                        ` : html`
+                            <div class="sp-group">
+                                <span class="sp-hint">This profile defines no filters yet, so there is nothing to name. Add facets under the Filters tab first.</span>
+                            </div>
+                        `}
+                    ` : nothing}
+                ` : nothing}
+            </div>
+        `;
+    }
+
+    _renderThemeSidePanelBody(d) {
+        // Null means the list has not arrived yet; an empty array means there genuinely are no
+        // themes beyond the built-in look, which is a different thing to say.
+        const themes = this._themes;
+
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-choice-header-info">
+                    <p class="sp-choice-desc">
+                        Pick how search results look. A theme is a folder of Razor partials you
+                        create under <code>Views/Partials/Search/Themes/</code>; anything it does not
+                        define falls back to the built-in partial, so a theme can restyle just the
+                        result cards. The choice applies to the front-end search page and to Test
+                        Search alike.
+                    </p>
+                </div>
+
+                ${themes === null ? html`
+                    <div class="sp-group"><span class="sp-hint">Loading themes…</span></div>
+                ` : html`
+                    ${themes.map(t => html`
+                        <label class="toggle-item" style="cursor: pointer;">
+                            <div class="toggle-info">
+                                <strong>
+                                    ${t.label || 'Default (built-in)'}
+                                    ${t.isSiteProvided ? html`<span class="selected-chip chip-success" style="margin-left: 8px;">From your site</span>` : nothing}
+                                </strong>
+                                <span>
+                                    ${!t.name
+                                        ? 'The package look: cards with a filter bar above the search box.'
+                                        : ((t.parts || []).length
+                                            ? `Overrides: ${(t.parts || []).join(', ')}`
+                                            : 'Defined but overrides nothing yet — renders like the built-in look.')}
+                                </span>
+                            </div>
+                            <input type="radio"
+                                   name="isl-theme"
+                                   .checked=${(d.theme || '') === (t.name || '')}
+                                   @change=${() => { d.theme = t.name || ''; this.requestUpdate(); }}>
+                        </label>
+                    `)}
+
+                    <div class="sp-group" style="margin-top: 14px;">
+                        <span class="sp-hint">
+                            ${themes.length <= 1
+                                ? html`No themes yet. Create one at <code>Views/Partials/Search/Themes/&lt;name&gt;/results.cshtml</code> in your site and it appears here after a restart.`
+                                : html`Add more at <code>Views/Partials/Search/Themes/&lt;name&gt;/</code>. A theme may define any of: <code>styles</code>, <code>results</code>, <code>filters</code>, <code>noresults</code>, <code>loadmore</code>, <code>searchbar</code>.`}
+                        </span>
+                    </div>
+                `}
             </div>
         `;
     }
@@ -4576,6 +5022,15 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                            .value=${String(d.minimumActiveFilters || 0)}
                            @change=${e => { d.minimumActiveFilters = Math.min(10, Math.max(0, parseInt(e.target.value) || 0)); this.requestUpdate(); }}>
                     <span class="sp-hint">0 = any single filter works immediately. 2 = filters only apply in pairs or more.</span>
+                    ${(d.minimumActiveFilters || 0) > 1 ? html`
+                        <div class="sp-inline-warning">
+                            <strong>⚠ Single filters will return everything.</strong>
+                            With this set to ${d.minimumActiveFilters}, a visitor who picks one filter
+                            sees an unnarrowed result list &mdash; the counts still show, so it reads as
+                            a filter that is being ignored. Set this to 0 unless you specifically want
+                            filters to work only in combination.
+                        </div>
+                    ` : nothing}
                 </div>
 
                 ${facets.length ? html`
@@ -6540,6 +6995,23 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             margin-top: 4px;
         }
 
+        /* Shown when a setting is valid but will quietly stop filters narrowing anything. */
+        .sp-inline-warning {
+            margin-top: 8px;
+            padding: 10px 12px;
+            border: 1px solid #fca5a5;
+            border-radius: 6px;
+            background: #fef2f2;
+            color: #b91c1c;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .sp-inline-warning strong {
+            display: block;
+            margin-bottom: 2px;
+        }
+
         /* 80% Label + 20% System Alias Row */
         .sp-label-alias-row {
             display: flex;
@@ -7281,38 +7753,147 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             gap: 12px;
         }
 
-        .test-search-input-box {
-            position: relative;
+        /* One field that owns the border, with the button sitting inside it on the right. */
+        .test-search-field {
             display: flex;
-            gap: 10px;
+            align-items: stretch;
+            overflow: hidden;
+            background: #ffffff;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            transition: border-color .15s ease, box-shadow .15s ease;
         }
 
-        .test-search-input-box .search-icon {
-            position: absolute;
-            left: 14px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: var(--text-tertiary);
+        .test-search-field:focus-within {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, .15);
         }
 
         .test-search-input {
-            flex: 1;
-            padding: 10px 14px 10px 40px;
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
+            flex: 1 1 auto;
+            min-width: 0;
+            height: 42px;
+            padding: 0 14px;
+            border: 0;
+            background: transparent;
             font-size: 14px;
             outline: none;
         }
 
-        .test-search-input:focus {
-            border-color: var(--primary);
+        .test-search-btn {
+            flex: 0 0 auto;
+            padding: 0 22px;
+            border: 0;
+            background: var(--primary);
+            color: #ffffff;
+            font-size: 13.5px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: filter .15s ease;
         }
 
-        .test-search-options {
+        .test-search-btn:hover:not(:disabled) { filter: brightness(1.08); }
+
+        .test-search-btn:disabled { opacity: .65; cursor: wait; }
+
+        /* One row: the theme on the left, profile and culture on the right. */
+        .test-top-options {
             display: flex;
-            gap: 20px;
+            justify-content: space-between;
             align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
         }
+
+        .test-top-selects {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .test-theme-label {
+            font-size: 12.5px;
+            color: var(--text-secondary);
+        }
+
+        .test-theme-label strong { color: var(--text-primary); }
+
+        /* One surface holding the filters and the search bar. The children below drop their own
+           borders and padding so this reads as a single control, not two stacked panels. */
+        .test-filter-box {
+            background: #ffffff;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-sm);
+            padding: 14px 18px 16px;
+            margin-bottom: 16px;
+        }
+
+        /* Counts, top right of the box, above the filters. */
+        .test-box-meta {
+            display: flex;
+            justify-content: flex-end;
+            font-size: 12.5px;
+            color: var(--text-secondary);
+            min-height: 1rem;
+        }
+
+        .test-box-meta strong { color: var(--text-primary); }
+
+        .test-box-meta:empty { display: none; }
+
+        /* The theme's markup is injected straight in, so these hosts size to their content - no
+           fixed heights, no scrollbars of their own, nothing to keep in sync. */
+        .isl-preview-host { display: block; }
+
+        .test-filter-box .isl-preview-host[data-preview="filters"] { margin-bottom: 10px; }
+
+        .test-filter-box .isl-preview-host[data-preview="filters"]:empty { margin-bottom: 0; }
+
+        /* The results sit in the same box, under the search bar, with a rule between them so the
+           controls above still read as a group. */
+        .test-filter-box .isl-preview-host[data-preview="results"] {
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+        }
+
+        .test-filter-box .isl-preview-host[data-preview="results"]:empty {
+            margin-top: 0;
+            padding-top: 0;
+            border-top: 0;
+        }
+
+        /* Inside the box the search bar is just its field - the box supplies the surface. */
+        .test-filter-box .test-search-bar-wrap {
+            background: transparent;
+            border: 0;
+            border-radius: 0;
+            box-shadow: none;
+            padding: 0;
+        }
+
+        .test-loadmore { display: flex; justify-content: center; margin-top: 16px; }
+
+        .test-loadmore-btn {
+            width: 100%;
+            max-width: 340px;
+            height: 42px;
+            background: #ffffff;
+            border: 1px solid var(--primary);
+            border-radius: var(--radius-sm);
+            color: var(--primary);
+            font-size: 13.5px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background .15s ease, color .15s ease;
+        }
+
+        .test-loadmore-btn:hover:not(:disabled) { background: var(--primary); color: #ffffff; }
+
+        .test-loadmore-btn:disabled { opacity: .6; cursor: wait; }
 
         .test-opt-group {
             display: flex;
@@ -7406,91 +7987,6 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
 
         .test-body-grid.full-width {
             grid-template-columns: 1fr;
-        }
-
-        .results-stats-header {
-            display: flex;
-            justify-content: space-between;
-            font-size: 13px;
-            color: var(--text-secondary);
-            margin-bottom: 12px;
-        }
-
-        .results-list {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .result-card {
-            background: #ffffff;
-            border: 1px solid var(--border);
-            border-radius: var(--radius-md);
-            padding: 16px;
-            box-shadow: var(--shadow-sm);
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .result-bestbet {
-            border-color: #f59e0b;
-            background: #fffbeb;
-        }
-
-        .result-top {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-
-        .result-rank {
-            font-weight: 800;
-            color: var(--text-tertiary);
-            font-size: 13px;
-        }
-
-        .result-title {
-            font-size: 15px;
-            font-weight: 700;
-            color: #1d4ed8;
-            text-decoration: none;
-        }
-
-        .result-title:hover {
-            text-decoration: underline;
-        }
-
-        .score-pill {
-            margin-left: auto;
-            font-size: 11.5px;
-            font-weight: 600;
-            color: var(--text-secondary);
-            background: var(--surface-hover);
-            padding: 2px 7px;
-            border-radius: 4px;
-        }
-
-        .result-snippet {
-            font-size: 13px;
-            color: var(--text-secondary);
-            line-height: 1.5;
-        }
-
-        .result-snippet mark {
-            background: #fef08a;
-            font-weight: 600;
-            padding: 1px 3px;
-            border-radius: 2px;
-        }
-
-        .result-meta {
-            display: flex;
-            gap: 16px;
-            font-size: 11.5px;
-            color: var(--text-tertiary);
-            margin-top: 4px;
         }
 
         /* Diagnostics Sidebar */

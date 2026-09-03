@@ -165,6 +165,14 @@ export function getLanguages(fetchFn, { force = false } = {}) {
     return _read("catalog:language", CATALOG_TTL_MS, () => _json(fetchFn, url));
 }
 
+// Themes shipped in the package plus any the site added under its own Views/Partials/Search/Themes.
+// Cached like the rest of the catalog: the set only changes when the site is redeployed.
+export function getThemes(fetchFn, { force = false } = {}) {
+    const url = `${getBaseApiUrl()}catalog/theme`;
+    if (force) _entries.delete("catalog:theme");
+    return _read("catalog:theme", CATALOG_TTL_MS, () => _json(fetchFn, url));
+}
+
 // Resolves one node key to its display name for chips and summaries. Results are cached per key
 // for the session - names rarely change and the endpoint is cheap, but pickers can render many.
 const _nodeNameCache = new Map();
@@ -225,6 +233,17 @@ export async function updateSettings(fetchFn, settings) {
 
 export async function previewSearch(fetchFn, request) {
     const url = `${getBaseApiUrl()}preview`;
+    return _json(fetchFn, url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request)
+    });
+}
+
+// Runs the search and returns it rendered through the profile's theme, as the markup the site
+// would serve. Never cached - it is the live preview of whatever rules are being edited.
+export async function renderPreview(fetchFn, request) {
+    const url = `${getBaseApiUrl()}preview/render`;
     return _json(fetchFn, url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

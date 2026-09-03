@@ -1,0 +1,38 @@
+@model Imobisoft.Search.Web.ImobisoftSearchListingViewModel
+@inject Imobisoft.Search.Services.ISearchThemeService Themes
+@*
+    The theme's filter strip on its own, for the backoffice Test Search panel.
+
+    Rendered separately from the results so the panel can put its search box between the two - the
+    order a search page reads in - rather than stacking a whole page below the box.
+
+    The panel injects this into its own shadow root, which is what scopes the theme's stylesheet:
+    it styles this markup and cannot reach the backoffice around it. The panel strips the inline
+    handlers and drives the dropdowns itself, so nothing here needs a script.
+*@
+@{
+    var stylesView = Themes.ResolvePartial(Model.Theme, "styles");
+    var filtersView = Themes.ResolvePartial(Model.Theme, "filters");
+}
+<div class="isl" data-imobisoft-preview="filters">
+    <partial name="@stylesView" model="Model" />
+
+    @* A real form so the filter markup is valid and `this.form` resolves; it is never submitted -
+       the panel strips the inline handler and cancels submit. *@
+    <form onsubmit="return false;">
+        <partial name="@filtersView" model="Model" />
+    </form>
+</div>
+
+@* After the theme's stylesheet, so it wins on equal specificity. The panel butts its search bar
+   straight up against this, so the trailing margin a theme leaves for the page's own rhythm would
+   read as a gap. Scoped to the preview, so the front-end keeps its spacing. *@
+<style>
+    [data-imobisoft-preview] > :last-child,
+    [data-imobisoft-preview] .isl-filter-bar,
+    [data-imobisoft-preview] form { margin-bottom: 0; }
+
+    /* The panel strips href off every link so nothing here can navigate the backoffice away, which
+       also takes the pointer cursor with it. They are still clickable - the panel handles them. */
+    [data-imobisoft-preview] a { cursor: pointer; }
+</style>

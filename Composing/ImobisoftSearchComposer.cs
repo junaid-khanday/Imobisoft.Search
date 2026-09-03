@@ -1,3 +1,4 @@
+using Imobisoft.Search.Api;
 using Imobisoft.Search.Api.OpenApi;
 using Imobisoft.Search.Api.Security;
 using Imobisoft.Search.Configuration;
@@ -66,6 +67,14 @@ public sealed class ImobisoftSearchComposer : IComposer
         builder.Services.AddSingleton<ISearchProfileRepository, SearchProfileRepository>();
         builder.Services.AddSingleton<ISearchProfileService, SearchProfileService>();
         builder.Services.AddSingleton<IIndexCatalogService, IndexCatalogService>();
+
+        // Themes are files on disk or views compiled into an assembly, so the set cannot change
+        // between deployments - the service caches what it finds and is safely shared.
+        builder.Services.AddSingleton<ISearchThemeService, SearchThemeService>();
+
+        // Renders a themed partial to a string so the backoffice test panel previews the markup the
+        // front end actually serves, rather than its own approximation of it.
+        builder.Services.AddSingleton<ISearchRenderService, SearchRenderService>();
         builder.Services.AddSingleton<ISearchSettingsService, SearchSettingsService>();
         builder.Services.AddSingleton<ISearchAnalyticsRepository, SearchAnalyticsRepository>();
 
