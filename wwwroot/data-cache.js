@@ -165,6 +165,25 @@ export function getLanguages(fetchFn, { force = false } = {}) {
     return _read("catalog:language", CATALOG_TTL_MS, () => _json(fetchFn, url));
 }
 
+// Resolves one node key to its display name for chips and summaries. Results are cached per key
+// for the session - names rarely change and the endpoint is cheap, but pickers can render many.
+const _nodeNameCache = new Map();
+
+export async function getNodeName(fetchFn, key) {
+    if (_nodeNameCache.has(key)) {
+        return { ok: true, status: 200, data: _nodeNameCache.get(key) };
+    }
+
+    const url = `${getBaseApiUrl()}catalog/node?key=${encodeURIComponent(key)}`;
+    const res = await _json(fetchFn, url);
+
+    if (res.ok && res.data?.name) {
+        _nodeNameCache.set(key, res.data);
+    }
+
+    return res;
+}
+
 // ----------------- INSIGHTS API -----------------
 
 export function getInsights(fetchFn, days = 30, take = 25, { force = false } = {}) {

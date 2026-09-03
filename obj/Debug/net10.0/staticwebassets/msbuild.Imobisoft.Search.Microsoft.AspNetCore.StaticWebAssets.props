@@ -32,12 +32,12 @@
       <RelatedAsset></RelatedAsset>
       <AssetTraitName></AssetTraitName>
       <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>mk4joobkll</Fingerprint>
-      <Integrity>GjpwxMV3knipmhtI9LvQ4mEhXXWSV18ndmQmXa9PJ0I=</Integrity>
+      <Fingerprint>letvvmbh2w</Fingerprint>
+      <Integrity>nS1lkSyw9BcrIww21NPzzRiGX0A/bWfozuHCpfDvEdE=</Integrity>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-      <FileLength>7566</FileLength>
-      <LastWriteTime>Fri, 21 Aug 2026 03:25:25 GMT</LastWriteTime>
+      <FileLength>8190</FileLength>
+      <LastWriteTime>Mon, 24 Aug 2026 05:24:40 GMT</LastWriteTime>
       <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\data-cache.js'))</OriginalItemSpec>
     </StaticWebAsset>
     <StaticWebAsset Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\umbraco-package.json'))">
@@ -72,12 +72,12 @@
       <RelatedAsset></RelatedAsset>
       <AssetTraitName></AssetTraitName>
       <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>ewce94mosw</Fingerprint>
-      <Integrity>ztGYo/7rA6BdwH6f7izSJXDNCG6rni8XSHHr6c0wHYg=</Integrity>
+      <Fingerprint>k9v8gg8gvk</Fingerprint>
+      <Integrity>uN+pmRLyLTyicfcKoLZskw0kIw35/Rf/t3Bz+oocjdE=</Integrity>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-      <FileLength>219438</FileLength>
-      <LastWriteTime>Fri, 21 Aug 2026 04:06:37 GMT</LastWriteTime>
+      <FileLength>368991</FileLength>
+      <LastWriteTime>Mon, 24 Aug 2026 09:05:28 GMT</LastWriteTime>
       <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\workspace.js'))</OriginalItemSpec>
     </StaticWebAsset>
   </ItemGroup>

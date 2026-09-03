@@ -2,35 +2,55 @@
 @{
     SearchResponse? response = Model.Response;
 }
-@* One result per list item. Rendered both by the page and by "load more", so appended results can
-   never differ from the first page's. *@
-@if (response is not null)
+
+@if (response is not null && response.Results.Count > 0)
 {
     foreach (SearchResultItem item in response.Results)
     {
-        <li>
-            @if (!string.IsNullOrWhiteSpace(item.Url))
-            {
-                <a href="@item.Url">@item.Name</a>
-            }
-            else
-            {
-                <span>@item.Name</span>
-            }
+        <li class="imobisoft-result-card @(item.IsBestBet ? "is-bestbet" : "")">
+            <div class="imobisoft-result-header">
+                @if (item.IsBestBet)
+                {
+                    <span class="imobisoft-badge imobisoft-badge-bestbet">★ Pinned Best Bet</span>
+                }
+                @if (!string.IsNullOrWhiteSpace(item.ContentTypeAlias) || !string.IsNullOrWhiteSpace(item.IndexType))
+                {
+                    <span class="imobisoft-badge imobisoft-badge-type">@(item.ContentTypeAlias ?? item.IndexType)</span>
+                }
+            </div>
 
-            <span>(@item.ContentTypeAlias)</span>
-
-            @if (item.IsBestBet)
-            {
-                <span>[pinned]</span>
-            }
+            <h3 class="imobisoft-result-title">
+                @if (!string.IsNullOrWhiteSpace(item.Url))
+                {
+                    <a href="@item.Url">@item.Name</a>
+                }
+                else
+                {
+                    <span>@item.Name</span>
+                }
+            </h3>
 
             @if (!string.IsNullOrWhiteSpace(item.Highlight))
             {
-                @* The package HTML-encodes this and leaves only the configured highlight tag, so it
-                   is safe to render as markup. *@
-                <p>@Html.Raw(item.Highlight)</p>
+                <div class="imobisoft-result-snippet">
+                    @Html.Raw(item.Highlight)
+                </div>
             }
+
+            <div class="imobisoft-result-meta">
+                @if (!string.IsNullOrWhiteSpace(item.Url))
+                {
+                    <span class="imobisoft-result-url">@item.Url</span>
+                }
+                @if (!string.IsNullOrWhiteSpace(item.Culture))
+                {
+                    <span class="imobisoft-result-culture">Culture: @item.Culture</span>
+                }
+                @if (item.Fields.TryGetValue("updateDate", out var updateDate) && !string.IsNullOrWhiteSpace(updateDate))
+                {
+                    <span class="imobisoft-result-date">Updated: @updateDate</span>
+                }
+            </div>
         </li>
     }
 }

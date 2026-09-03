@@ -2,6 +2,7 @@ using Imobisoft.Search.Models;
 using Imobisoft.Search.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Umbraco.Cms.Core.Services;
 
 namespace Imobisoft.Search.Api;
 
@@ -13,8 +14,18 @@ namespace Imobisoft.Search.Api;
 public sealed class SearchCatalogController : ImobisoftSearchControllerBase
 {
     private readonly IIndexCatalogService _catalog;
+    private readonly IContentService _content;
+    private readonly IMediaService _media;
 
-    public SearchCatalogController(IIndexCatalogService catalog) => _catalog = catalog;
+    public SearchCatalogController(
+        IIndexCatalogService catalog,
+        IContentService content,
+        IMediaService media)
+    {
+        _catalog = catalog;
+        _content = content;
+        _media = media;
+    }
 
     /// <summary>Indexes, document types, media types and languages in one call.</summary>
     [HttpGet("catalog")]
@@ -56,4 +67,91 @@ public sealed class SearchCatalogController : ImobisoftSearchControllerBase
     [HttpGet("catalog/language")]
     [ProducesResponseType(typeof(IEnumerable<LanguageInfo>), StatusCodes.Status200OK)]
     public IActionResult GetLanguages() => Ok(_catalog.GetLanguages());
+
+    /// <summary>
+    /// Resolves one node key to a display name, so the dashboard can show the page a picker chose
+    /// rather than its raw key. Documents are tried first, then media. Accepts bare GUID keys,
+    /// integer ids, and Udi strings such as "umb://document/&lt;guid&gt;".
+    /// </summary>
+    [HttpGet("catalog/node")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public IActionResult GetNode([FromQuery] string? key)
+    {
+        if (!TryParseKey(key, out NodeKeyRef reference))
+        {
+            return NotFound();
+        }
+
+        var content =
+            (reference.Guid is { } g ? _content.GetById(g) : null)
+            ?? (reference.Id is { } ci ? _content.GetById(ci) : null);
+
+        if (content is not null)
+        {
+            return Ok(new
+            {
+                key = content.Key,
+                name = content.Name,
+                kind = "content",
+                icon = content.ContentType?.Icon ?? "icon-document",
+            });
+        }
+
+        var media =
+            (reference.Guid is { } mg ? _media.GetById(mg) : null)
+            ?? (reference.Id is { } mi ? _media.GetById(mi) : null);
+
+        if (media is not null)
+        {
+            return Ok(new
+            {
+                key = media.Key,
+                name = media.Name,
+                kind = "media",
+                icon = media.ContentType?.Icon ?? "icon-picture",
+            });
+        }
+
+        return NotFound();
+    }
+
+    private readonly record struct NodeKeyRef(Guid? Guid, int? Id);
+
+    private static bool TryParseKey(string? raw, out NodeKeyRef reference)
+    {
+        reference = default;
+
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return false;
+        }
+
+        var trimmed = raw.Trim();
+
+        if (Guid.TryParse(trimmed, out var guid))
+        {
+            reference = new NodeKeyRef(guid, null);
+            return true;
+        }
+
+        // Pull the first embedded GUID out of Udi-style values.
+        var match = System.Text.RegularExpressions.Regex.Match(
+            trimmed,
+            @"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
+
+        if (match.Success && Guid.TryParse(match.Value, out guid))
+        {
+            reference = new NodeKeyRef(guid, null);
+            return true;
+        }
+
+        if (int.TryParse(trimmed, out int id) && id > 0)
+        {
+            reference = new NodeKeyRef(null, id);
+            return true;
+        }
+
+        return false;
+    }
 }

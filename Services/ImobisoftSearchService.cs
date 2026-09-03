@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using Examine;
 using Examine.Search;
@@ -8,6 +9,8 @@ using Imobisoft.Search.Web;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Umbraco.Cms.Core;
+using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Routing;
 using Umbraco.Cms.Core.Services;
 using Umbraco.Cms.Core.Web;
@@ -42,6 +45,9 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ImobisoftSearchOptions _options;
     private readonly ILogger<ImobisoftSearchService> _logger;
+
+    /// <summary>Facet subtree keys resolved to numeric ids, cached for the service lifetime.</summary>
+    private readonly ConcurrentDictionary<Guid, int> _facetNodeIdCache = new();
 
     public ImobisoftSearchService(
         IExamineManager examineManager,
@@ -99,7 +105,11 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
         SearchRuleSet rules = request.Rules ?? profile!.Rules;
         var profileAlias = request.Rules is not null ? AdHocProfileAlias : profile!.Alias;
 
-        var pageSize = request.PageSize is > 0 ? request.PageSize.Value : Math.Max(1, rules.Results.PageSize);
+        // An unset or zeroed rule must fall back to the rule's own default rather than clamp to a
+        // nonsensical one-result-per-page - that is what a bad save would otherwise serve.
+        var pageSize = request.PageSize is > 0
+            ? request.PageSize.Value
+            : rules.Results.PageSize > 0 ? rules.Results.PageSize : new ResultRules().PageSize;
 
         if (!_options.Enabled)
         {
@@ -115,7 +125,11 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
 
         ApplyQueryStringFilters(request);
 
-        SearchResponse response = Execute(rules, request, profileAlias, pageSize, stopwatch, cancellationToken);
+        (SearchRuleSet effectiveRules, string? appliedSort) = ApplyRequestedSort(rules, request);
+
+        SearchResponse response = Execute(effectiveRules, request, profileAlias, pageSize, stopwatch, cancellationToken);
+
+        response.SelectedSort = appliedSort;
 
         AddSuggestion(response, rules, request, profileAlias, cancellationToken);
 
@@ -130,6 +144,100 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
         PublishToRequest(response);
 
         return Task.FromResult(response);
+    }
+
+    /// <summary>
+    /// Resolves the visitor's sort choice against the profile's enabled sort options. A match
+    /// overrides the ranking order for this request; both the rule set and its ranking are cloned
+    /// because the saved profile instance is cached and shared across requests - mutating its
+    /// SortBy list in place would leak one visitor's sort into everyone else's results.
+    /// </summary>
+    /// <returns>The effective rules plus the applied alias, or null when the profile default stands.</returns>
+    private (SearchRuleSet Rules, string? Alias) ApplyRequestedSort(SearchRuleSet rules, SearchRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Sort) && _options.ReadFiltersFromQueryString)
+        {
+            request.Sort = _httpContextAccessor.HttpContext?.Request.Query["sort"].ToString();
+        }
+
+        var alias = (request.Sort ?? string.Empty).Trim();
+
+        if (alias.Length == 0 || rules.Results.SortOptions.Count == 0)
+        {
+            return (rules, null);
+        }
+
+        SortOption? option = rules.Results.SortOptions.FirstOrDefault(o =>
+            o.Enabled &&
+            !string.IsNullOrWhiteSpace(o.Alias) &&
+            o.Alias.Equals(alias, StringComparison.OrdinalIgnoreCase));
+
+        if (option is null)
+        {
+            return (rules, null);
+        }
+
+        // An option with no field is the explicit "Relevance" choice: keep the profile's own
+        // ranking untouched and just echo the alias so the dropdown can mark it as selected.
+        if (string.IsNullOrWhiteSpace(option.Field))
+        {
+            return (rules, option.Alias);
+        }
+
+        RankingRules ranking = new()
+        {
+            SortBy = new List<SortRule>
+            {
+                new()
+                {
+                    Field = string.IsNullOrWhiteSpace(option.Field) ? SortRule.ScoreField : option.Field,
+                    Direction = option.Direction,
+                },
+            },
+            ContentTypeBoosts = rules.Ranking.ContentTypeBoosts,
+            BestBets = rules.Ranking.BestBets,
+            BlockedTerms = rules.Ranking.BlockedTerms,
+            Recency = rules.Ranking.Recency,
+        };
+
+        // Best bets still pin their nodes to the top; everything below them follows the visitor's
+        // chosen order, which is what a "Sort by" dropdown promises.
+        SearchRuleSet effective = new()
+        {
+            Sources = rules.Sources,
+            Matching = rules.Matching,
+            Ranking = ranking,
+            Results = rules.Results,
+        };
+
+        return (effective, option.Alias);
+    }
+
+    /// <summary>
+    /// Resolves a content or media key for facet subtree matching. Facet buckets store the picked
+    /// page as a GUID/UDI while the index path field carries numeric ids; the processor calls this
+    /// through a delegate so it never needs Umbraco services directly. Results are cached because
+    /// the same handful of roots is resolved on every search request.
+    /// </summary>
+    private int? ResolveNodeIdForFacets(Guid key)
+    {
+        if (_facetNodeIdCache.TryGetValue(key, out int cached))
+        {
+            return cached;
+        }
+
+        foreach (UmbracoObjectTypes objectType in new[] { UmbracoObjectTypes.Document, UmbracoObjectTypes.Media })
+        {
+            Attempt<int> attempt = _idKeyMap.GetIdForKey(key, objectType);
+
+            if (attempt.Success)
+            {
+                _facetNodeIdCache[key] = attempt.Result;
+                return attempt.Result;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -268,7 +376,7 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
         var executionNotes = new List<string>();
         IReadOnlyList<SearchResultItem> matches = ExecutePlan(plan, executionNotes, cancellationToken);
 
-        var processor = new SearchResultProcessor(IsProtectedPath);
+        var processor = new SearchResultProcessor(IsProtectedPath, ResolveNodeIdForFacets);
         SearchResponse response = processor.Process(matches, plan, request, profileAlias);
 
         TrimReturnedFields(response, plan);
@@ -373,6 +481,13 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
     {
         // A dashboard preview is not a visitor searching, and recording it would pollute the reports.
         if (response.ProfileAlias == AdHocProfileAlias)
+        {
+            return;
+        }
+
+        // Neither is an empty-term listing: that is a search page loading its filters, not someone
+        // looking for something.
+        if (string.IsNullOrWhiteSpace(request.Term))
         {
             return;
         }

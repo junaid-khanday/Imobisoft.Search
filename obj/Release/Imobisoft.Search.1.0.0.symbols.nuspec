@@ -11,7 +11,7 @@
       and exclude, field weighting, sorting and result shaping - and exposes IImobisoftSearchService
       for use in the site. Requires no files or code in the consuming project.</description>
     <tags>umbraco umbraco-marketplace search examine site-search</tags>
-    <repository type="git" />
+    <repository type="git" commit="0e1633305d158f7c049d21f8cac2a03cf0eae72a" />
     <dependencies>
       <group targetFramework="net10.0">
         <dependency id="Umbraco.Cms.Api.Management" version="[17.0.0, 18.0.0)" exclude="Build,Analyzers" />

@@ -1,0 +1,35 @@
+{
+  "$schema": "../../umbraco-package-schema.json",
+  "name": "Imobisoft.Search",
+  "version": "1.0.0",
+  "extensions": [
+    {
+      "type": "section",
+      "alias": "Imobisoft.Section.Search",
+      "name": "Search",
+      "meta": {
+        "label": "Search",
+        "pathname": "imobisoft-search",
+        "icon": "icon-search"
+      }
+    },
+    {
+      "type": "dashboard",
+      "alias": "Imobisoft.Search.Dashboard",
+      "name": "Imobisoft Search Dashboard",
+      "element": "/App_Plugins/Imobisoft.Search/workspace.js",
+      "elementName": "imobisoft-search-workspace",
+      "meta": {
+        "label": "Search",
+        "pathname": "workspace",
+        "icon": "icon-search"
+      },
+      "conditions": [
+        {
+          "alias": "Umb.Condition.SectionAlias",
+          "match": "Imobisoft.Section.Search"
+        }
+      ]
+    }
+  ]
+}

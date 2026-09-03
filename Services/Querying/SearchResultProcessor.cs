@@ -1,6 +1,7 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Imobisoft.Search.Models;
 
@@ -17,12 +18,25 @@ namespace Imobisoft.Search.Services.Querying;
 internal sealed partial class SearchResultProcessor
 {
     private readonly Func<string, bool> _isProtectedPath;
+    private readonly Func<Guid, int?>? _nodeIdResolver;
 
     /// <param name="isProtectedPath">
     /// Answers whether a node path sits behind public access. Injected as a delegate so the
     /// processor stays free of Umbraco services and can be exercised on its own.
     /// </param>
-    public SearchResultProcessor(Func<string, bool> isProtectedPath) => _isProtectedPath = isProtectedPath;
+    /// <param name="nodeIdResolver">
+    /// Turns a content/media key into its numeric Umbraco id. Facet buckets that pick a subtree
+    /// store the picked page as a GUID or UDI, while the index's path field holds comma-separated
+    /// numeric ids - without this bridge only the picked page itself would ever match, never its
+    /// descendants. Optional so tests can run without Umbraco.
+    /// </param>
+    public SearchResultProcessor(
+        Func<string, bool> isProtectedPath,
+        Func<Guid, int?>? nodeIdResolver = null)
+    {
+        _isProtectedPath = isProtectedPath;
+        _nodeIdResolver = nodeIdResolver;
+    }
 
     public SearchResponse Process(
         IReadOnlyList<SearchResultItem> matches,
@@ -41,16 +55,44 @@ internal sealed partial class SearchResultProcessor
         // own, which is what lets a visitor widen a selection without the other counts collapsing.
         IList<FacetResult> facets = BuildFacets(items, rules.Results.Facets, request.Filters);
 
-        items = ApplyFacetFilters(items, rules.Results.Facets, request.Filters, notes);
-        items = ApplyMinimumScore(items, rules.Matching.MinimumScore, notes);
-        items = Deduplicate(items, rules.Results.DeduplicateByField, notes);
+        items = ApplyFacetFilters(
+            items,
+            rules.Results.Facets,
+            request.Filters,
+            notes,
+            rules.Results.MinimumActiveFilters);
+
+        // A minimum score is a threshold on relevance, and nothing has a relevance score without a
+        // term to be relevant to - applying one to a browse listing would empty it entirely.
+        items = ApplyMinimumScore(items, plan.TermGroups.Count == 0 ? 0 : rules.Matching.MinimumScore, notes);
+        // De-duplication is CMS-controlled: off means the same page may appear once per index it
+        // was found in; on collapses identical pages and applies the optional field rule as well.
+        items = rules.Results.EnableDeduplication
+            ? Deduplicate(items, rules.Results.DeduplicateByField, notes)
+            : items;
         items = Sort(items, rules.Ranking.SortBy);
 
-        var pageSize = request.PageSize is > 0 ? request.PageSize.Value : Math.Max(1, rules.Results.PageSize);
+        // Same fallback as the service: a zeroed rule serves the default page size, never one.
+        var pageSize = request.PageSize is > 0
+            ? request.PageSize.Value
+            : rules.Results.PageSize > 0 ? rules.Results.PageSize : new ResultRules().PageSize;
         var page = Math.Max(1, request.Page);
         var total = items.Count;
 
-        List<SearchResultItem> pageItems = items.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        // Browse mode (no search term yet) answers to its own cap: an editor can open the search
+        // page with a handful of results, or with none at all, while filters keep their counts.
+        // An explicit caller-supplied page size still wins over the profile.
+        var browseCap = Math.Max(0, rules.Results.BrowsePageSize);
+        var isBrowse = plan.TermGroups.Count == 0;
+
+        if (isBrowse && request.PageSize is not > 0)
+        {
+            pageSize = Math.Min(pageSize, browseCap);
+        }
+
+        List<SearchResultItem> pageItems = pageSize <= 0
+            ? new List<SearchResultItem>()
+            : items.Skip((page - 1) * pageSize).Take(pageSize).ToList();
 
         if (rules.Results.Highlight.Enabled)
         {
@@ -65,6 +107,7 @@ internal sealed partial class SearchResultProcessor
             TotalResults = total,
             Page = page,
             PageSize = pageSize,
+            EnableLoadMore = rules.Results.EnableLoadMore,
             Facets = facets,
         };
 
@@ -344,10 +387,27 @@ internal sealed partial class SearchResultProcessor
         string field,
         List<string> notes)
     {
-        if (string.IsNullOrWhiteSpace(field))
+        var beforeCount = items.Count;
+
+        // The same node can surface from more than one index - Umbraco's internal and external
+        // indexes both carry published content - so identity de-duplication always runs. Items
+        // arrive score-ordered, which makes keep-first equivalent to keep-best.
+        var seenIdentities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var identityKept = new List<SearchResultItem>(items.Count);
+
+        foreach (SearchResultItem item in items)
         {
-            return items;
+            var identity = item.Key.HasValue
+                ? "k:" + item.Key.Value.ToString("N")
+                : "i:" + item.Id;
+
+            if (seenIdentities.Add(identity))
+            {
+                identityKept.Add(item);
+            }
         }
+
+        items = identityKept;
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var kept = new List<SearchResultItem>();
@@ -363,9 +423,9 @@ internal sealed partial class SearchResultProcessor
             }
         }
 
-        if (kept.Count != items.Count)
+        if (kept.Count != beforeCount)
         {
-            notes.Add($"De-duplication on '{field}' removed {items.Count - kept.Count} result(s).");
+            notes.Add($"De-duplication removed {beforeCount - kept.Count} result(s).");
         }
 
         return kept;
@@ -426,16 +486,36 @@ internal sealed partial class SearchResultProcessor
         return raw;
     }
 
-    private static string? ReadSortableValue(SearchResultItem item, string field)
+    private static string? ReadSortableValue(SearchResultItem item, string? field)
     {
-        if (field.Equals(ImobisoftSearchConstants.IndexFields.NodeName, StringComparison.OrdinalIgnoreCase))
+        if (item is null || string.IsNullOrWhiteSpace(field))
+        {
+            return null;
+        }
+
+        if (field.Equals(ImobisoftSearchConstants.IndexFields.NodeName, StringComparison.OrdinalIgnoreCase) || field.Equals("name", StringComparison.OrdinalIgnoreCase))
         {
             return item.Name;
         }
 
-        if (field.Equals(ImobisoftSearchConstants.IndexFields.NodeTypeAlias, StringComparison.OrdinalIgnoreCase))
+        if (field.Equals(ImobisoftSearchConstants.IndexFields.NodeTypeAlias, StringComparison.OrdinalIgnoreCase) || field.Equals("contentTypeAlias", StringComparison.OrdinalIgnoreCase) || field.Equals("contentType", StringComparison.OrdinalIgnoreCase))
         {
             return item.ContentTypeAlias;
+        }
+
+        if (field.Equals(ImobisoftSearchConstants.IndexFields.Key, StringComparison.OrdinalIgnoreCase) || field.Equals("key", StringComparison.OrdinalIgnoreCase))
+        {
+            return item.Key?.ToString();
+        }
+
+        if (field.Equals(ImobisoftSearchConstants.IndexFields.NodeId, StringComparison.OrdinalIgnoreCase) || field.Equals("id", StringComparison.OrdinalIgnoreCase))
+        {
+            return item.Id;
+        }
+
+        if (field.Equals(ImobisoftSearchConstants.IndexFields.Path, StringComparison.OrdinalIgnoreCase) || field.Equals("path", StringComparison.OrdinalIgnoreCase))
+        {
+            return item.Path;
         }
 
         // Umbraco writes a sort-optimised twin for sortable fields; prefer it when it is present.
@@ -444,30 +524,70 @@ internal sealed partial class SearchResultProcessor
             : FieldValue(item, field);
     }
 
-    private static string? FieldValue(SearchResultItem item, string field)
-        => item.Fields.TryGetValue(field, out var value) ? value : null;
+    private static string? FieldValue(SearchResultItem item, string? field)
+    {
+        if (item is null || string.IsNullOrWhiteSpace(field))
+        {
+            return null;
+        }
 
-    private static IList<FacetResult> BuildFacets(
+        if (item.Fields.TryGetValue(field, out var value))
+        {
+            return value;
+        }
+
+        if (field.Equals(ImobisoftSearchConstants.IndexFields.NodeTypeAlias, StringComparison.OrdinalIgnoreCase) || field.Equals("contentTypeAlias", StringComparison.OrdinalIgnoreCase) || field.Equals("contentType", StringComparison.OrdinalIgnoreCase))
+        {
+            return item.ContentTypeAlias;
+        }
+
+        if (field.Equals(ImobisoftSearchConstants.IndexFields.NodeName, StringComparison.OrdinalIgnoreCase) || field.Equals("name", StringComparison.OrdinalIgnoreCase))
+        {
+            return item.Name;
+        }
+
+        if (field.Equals(ImobisoftSearchConstants.IndexFields.Key, StringComparison.OrdinalIgnoreCase) || field.Equals("key", StringComparison.OrdinalIgnoreCase))
+        {
+            return item.Key?.ToString();
+        }
+
+        if (field.Equals(ImobisoftSearchConstants.IndexFields.Path, StringComparison.OrdinalIgnoreCase) || field.Equals("path", StringComparison.OrdinalIgnoreCase))
+        {
+            return item.Path;
+        }
+
+        // Case-insensitive fallback across all field keys on item.Fields
+        var match = item.Fields.FirstOrDefault(kvp => kvp.Key.Equals(field, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrEmpty(match.Key))
+        {
+            return match.Value;
+        }
+
+        return null;
+    }
+
+    private IList<FacetResult> BuildFacets(
         IReadOnlyList<SearchResultItem> items,
         IList<FacetDefinition> definitions,
         IDictionary<string, IList<string>> selected)
     {
         var results = new List<FacetResult>();
 
-        foreach (FacetDefinition definition in definitions.Where(d => !string.IsNullOrWhiteSpace(d.Alias)))
+        foreach (FacetDefinition definition in definitions.Where(d => d.Enabled && !string.IsNullOrWhiteSpace(d.Alias)))
         {
             // Every other facet's selection narrows the counts, but this facet's own does not -
             // otherwise selecting one bucket would zero out its siblings.
             IReadOnlyList<SearchResultItem> scope = ApplyFacetFilters(
                 items,
-                definitions.Where(d => !d.Alias.Equals(definition.Alias, StringComparison.OrdinalIgnoreCase)).ToList(),
+                definitions.Where(d => d.Enabled && !d.Alias.Equals(definition.Alias, StringComparison.OrdinalIgnoreCase)).ToList(),
                 selected,
                 new List<string>());
 
             selected.TryGetValue(definition.Alias, out IList<string>? chosen);
             var chosenSet = new HashSet<string>(chosen ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
 
-            IList<FacetValue> values = definition.Kind == FacetKind.Field
+            var hasCustomRanges = definition.Ranges != null && definition.Ranges.Count > 0;
+            IList<FacetValue> values = (!hasCustomRanges)
                 ? BuildFieldFacet(scope, definition, chosenSet)
                 : BuildRangeFacet(scope, definition, chosenSet);
 
@@ -488,17 +608,20 @@ internal sealed partial class SearchResultProcessor
         return results;
     }
 
-    private static IList<FacetValue> BuildFieldFacet(
+    private IList<FacetValue> BuildFieldFacet(
         IReadOnlyList<SearchResultItem> items,
         FacetDefinition definition,
         IReadOnlySet<string> chosen)
-        => items
-            .Select(item => ReadSortableValue(item, definition.Field))
+    {
+        var targetField = !string.IsNullOrWhiteSpace(definition.Field) ? definition.Field : (definition.Alias ?? string.Empty);
+        return items
+            .Select(item => FieldValue(item, targetField) ?? ReadSortableValue(item, targetField))
             .Where(v => !string.IsNullOrEmpty(v))
-            .GroupBy(v => v!, StringComparer.OrdinalIgnoreCase)
+            .SelectMany(v => v!.Split(new[] { ',', ';', '|' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .GroupBy(v => v, StringComparer.OrdinalIgnoreCase)
             .OrderByDescending(g => g.Count())
             .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
-            .Take(Math.Max(1, definition.MaxValues))
+            .Take(Math.Max(1, definition.MaxValues > 0 ? definition.MaxValues : 50))
             .Select(g => new FacetValue
             {
                 Value = g.Key,
@@ -507,12 +630,13 @@ internal sealed partial class SearchResultProcessor
                 IsSelected = chosen.Contains(g.Key),
             })
             .ToList();
+    }
 
-    private static IList<FacetValue> BuildRangeFacet(
+    private IList<FacetValue> BuildRangeFacet(
         IReadOnlyList<SearchResultItem> items,
         FacetDefinition definition,
         IReadOnlySet<string> chosen)
-        => definition.Ranges
+        => (definition.Ranges ?? Array.Empty<FacetRange>())
             .Select(range => new FacetValue
             {
                 Value = range.Alias,
@@ -522,35 +646,82 @@ internal sealed partial class SearchResultProcessor
             })
             .ToList();
 
-    private static IReadOnlyList<SearchResultItem> ApplyFacetFilters(
+    private IReadOnlyList<SearchResultItem> ApplyFacetFilters(
         IReadOnlyList<SearchResultItem> items,
         IList<FacetDefinition> definitions,
         IDictionary<string, IList<string>> selected,
-        List<string> notes)
+        List<string> notes,
+        int minimumActiveFilters = 0)
     {
         if (selected.Count == 0 || definitions.Count == 0)
         {
             return items;
         }
 
+        // Which filter groups actually carry a selection right now - the basis for both the
+        // global minimum rule and per-facet dependency rules.
+        var activeAliases = new HashSet<string>(
+            selected.Where(kvp => kvp.Value is { Count: > 0 }).Select(kvp => kvp.Key),
+            StringComparer.OrdinalIgnoreCase);
+
+        // Combination rule: until enough filters are active, none of them narrow anything.
+        if (minimumActiveFilters > 0 && activeAliases.Count < minimumActiveFilters)
+        {
+            notes.Add(
+                $"Combination rule: {activeAliases.Count} filter(s) active, "
+                + $"{minimumActiveFilters} required before any take effect.");
+            return items;
+        }
+
         var before = items.Count;
         IEnumerable<SearchResultItem> filtered = items;
 
-        foreach (FacetDefinition definition in definitions)
+        foreach (FacetDefinition definition in definitions.Where(d => d.Enabled))
         {
             if (!selected.TryGetValue(definition.Alias, out IList<string>? chosen) || chosen.Count == 0)
             {
                 continue;
             }
 
+            // Dependency rule: this facet stays inert while a facet it depends on has no
+            // selection of its own ("News works only together with Date").
+            var missingRequirements = (definition.Requires ?? new List<string>())
+                .Select(r => r?.Trim() ?? string.Empty)
+                .Where(r => r.Length > 0 && !activeAliases.Contains(r))
+                .ToList();
+
+            if (missingRequirements.Count > 0)
+            {
+                notes.Add(
+                    $"'{definition.Alias}' is waiting for: {string.Join(", ", missingRequirements)}.");
+                continue;
+            }
+
             var chosenSet = new HashSet<string>(chosen, StringComparer.OrdinalIgnoreCase);
             FacetDefinition captured = definition;
+            var hasCustomRanges = captured.Ranges != null && captured.Ranges.Count > 0;
 
-            filtered = definition.Kind == FacetKind.Field
-                ? filtered.Where(item => chosenSet.Contains(ReadSortableValue(item, captured.Field) ?? string.Empty))
-                : filtered.Where(item => captured.Ranges
-                    .Where(r => chosenSet.Contains(r.Alias))
-                    .Any(r => FallsInRange(item, captured, r)));
+            filtered = (!hasCustomRanges)
+                ? filtered.Where(item => {
+                    var targetField = !string.IsNullOrWhiteSpace(captured.Field) ? captured.Field : captured.Alias;
+                    var val = FieldValue(item, targetField) ?? ReadSortableValue(item, targetField);
+                    if (string.IsNullOrEmpty(val)) return false;
+                    var tokens = val.Split(new[] { ',', ';', '|' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    return tokens.Any(t => chosenSet.Contains(t)) || chosenSet.Contains(val);
+                })
+                : filtered.Where(item => {
+                    var matchingRanges = (captured.Ranges ?? Array.Empty<FacetRange>())
+                        .Where(r => chosenSet.Contains(r.Alias))
+                        .ToList();
+
+                    if (matchingRanges.Count > 0)
+                    {
+                        return matchingRanges.Any(r => FallsInRange(item, captured, r));
+                    }
+
+                    // Fallback for ad-hoc selection or aliases without explicit range bounds
+                    return chosenSet.Any(val => FallsInRange(item, captured, new FacetRange { Alias = val, Label = val }));
+                });
         }
 
         var result = filtered.ToList();
@@ -563,20 +734,19 @@ internal sealed partial class SearchResultProcessor
         return result;
     }
 
-    private static bool FallsInRange(SearchResultItem item, FacetDefinition definition, FacetRange range)
+    private bool FallsInRange(SearchResultItem item, FacetDefinition definition, FacetRange range)
     {
-        // The raw field, not the __Sort_ twin: Umbraco writes sort-optimised dates and numbers in a
-        // different representation, and a range has to read the value the way it was indexed.
-        var raw = FieldValue(item, definition.Field) ?? ReadSortableValue(item, definition.Field);
-
-        if (string.IsNullOrEmpty(raw))
+        if (item is null || definition is null || range is null)
         {
             return false;
         }
 
+        var fieldName = !string.IsNullOrWhiteSpace(definition.Field) ? definition.Field : (definition.Alias ?? string.Empty);
+        var raw = FieldValue(item, fieldName) ?? ReadSortableValue(item, fieldName);
+
         if (definition.Kind == FacetKind.Numeric)
         {
-            if (!double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var value))
+            if (string.IsNullOrEmpty(raw) || !double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var value))
             {
                 return false;
             }
@@ -584,22 +754,200 @@ internal sealed partial class SearchResultProcessor
             var lower = ParseNumericBound(range.From);
             var upper = ParseNumericBound(range.To);
 
+            if (lower is null && upper is null)
+            {
+                (lower, upper) = ExtractNumericBounds(range.Alias, range.Label);
+            }
+
             return (lower is null || value >= lower) && (upper is null || value < upper);
         }
 
-        if (!TryParseDate(raw, out DateTime date))
+        if (definition.Kind == FacetKind.DateRange)
         {
+            // Resolve the document's date through the fallback chain rather than trusting one
+            // field name outright: content that never had the configured property still buckets
+            // by its real dates instead of silently vanishing from every bucket.
+            string? dateRaw = ResolveDateValue(item, fieldName);
+
+            if (dateRaw is null || !TryParseDate(dateRaw, out DateTime date))
+            {
+                return false;
+            }
+
+            DateTime? from = ParseDateBound(range.From);
+            DateTime? to = ParseDateBound(range.To);
+
+            if (from is null && to is null)
+            {
+                (from, to) = ExtractDateBounds(range.Alias, range.Label);
+            }
+
+            return (from is null || date >= from) && (to is null || date < to);
+        }
+
+        // Subtree / Path / Content page matching (e.g. Specific Policy Page, Subtree Root)
+        if (fieldName.Equals(ImobisoftSearchConstants.IndexFields.Path, StringComparison.OrdinalIgnoreCase) ||
+            fieldName.Equals("path", StringComparison.OrdinalIgnoreCase) ||
+            fieldName.Equals(ImobisoftSearchConstants.IndexFields.Key, StringComparison.OrdinalIgnoreCase) ||
+            fieldName.Equals("key", StringComparison.OrdinalIgnoreCase) ||
+            fieldName.Equals(ImobisoftSearchConstants.IndexFields.NodeId, StringComparison.OrdinalIgnoreCase) ||
+            fieldName.Equals("id", StringComparison.OrdinalIgnoreCase))
+        {
+            var matchTarget = !string.IsNullOrWhiteSpace(range.From) ? range.From.Trim() : (range.Alias ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(matchTarget))
+            {
+                return false;
+            }
+
+            if (matchTarget.StartsWith("umb://document/", StringComparison.OrdinalIgnoreCase))
+            {
+                matchTarget = matchTarget.Substring("umb://document/".Length).Replace("-", "");
+            }
+            else if (matchTarget.StartsWith("umb://media/", StringComparison.OrdinalIgnoreCase))
+            {
+                matchTarget = matchTarget.Substring("umb://media/".Length).Replace("-", "");
+            }
+
+            // The picked page may be stored as a GUID while paths carry numeric ids; resolve once
+            // so both the id comparison and the path-segment comparison below can hit.
+            var resolvedTarget = matchTarget;
+            if (_nodeIdResolver is not null &&
+                Guid.TryParse(matchTarget, out Guid nodeKey))
+            {
+                resolvedTarget = _nodeIdResolver(nodeKey)?.ToString(CultureInfo.InvariantCulture) ?? matchTarget;
+            }
+
+            if (item.Key.HasValue)
+            {
+                var keyStr = item.Key.Value.ToString();
+                var keyStrN = item.Key.Value.ToString("N");
+                if (keyStr.Equals(matchTarget, StringComparison.OrdinalIgnoreCase) ||
+                    keyStrN.Equals(matchTarget, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            if (!string.IsNullOrEmpty(item.Id) &&
+                (item.Id.Equals(matchTarget, StringComparison.OrdinalIgnoreCase) ||
+                 item.Id.Equals(resolvedTarget, StringComparison.Ordinal)))
+            {
+                return true;
+            }
+
+            if (!string.IsNullOrEmpty(item.Path))
+            {
+                var segments = item.Path.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (segments.Contains(matchTarget, StringComparer.OrdinalIgnoreCase) ||
+                    segments.Contains(resolvedTarget, StringComparer.Ordinal))
+                {
+                    return true;
+                }
+            }
+
             return false;
         }
 
-        DateTime? from = ParseDateBound(range.From);
-        DateTime? to = ParseDateBound(range.To);
+        // Document Type matching (e.g. specific content types like policyPage, newsArticle)
+        if (fieldName.Equals(ImobisoftSearchConstants.IndexFields.NodeTypeAlias, StringComparison.OrdinalIgnoreCase) ||
+            fieldName.Equals("contentTypeAlias", StringComparison.OrdinalIgnoreCase) ||
+            fieldName.Equals("contentType", StringComparison.OrdinalIgnoreCase))
+        {
+            var matchType = !string.IsNullOrWhiteSpace(range.From) ? range.From.Trim() : (range.Alias ?? string.Empty).Trim();
+            return !string.IsNullOrEmpty(item.ContentTypeAlias) &&
+                   (item.ContentTypeAlias.Equals(matchType, StringComparison.OrdinalIgnoreCase) ||
+                    (!string.IsNullOrEmpty(range.Alias) && item.ContentTypeAlias.Equals(range.Alias, StringComparison.OrdinalIgnoreCase)));
+        }
 
-        return (from is null || date >= from) && (to is null || date < to);
+        // Generic field value matching
+        var targetVal = !string.IsNullOrWhiteSpace(range.From) ? range.From.Trim() : (range.Alias ?? string.Empty).Trim();
+        return !string.IsNullOrEmpty(raw) &&
+               ((!string.IsNullOrEmpty(targetVal) && raw.Equals(targetVal, StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrEmpty(range.Alias) && raw.Equals(range.Alias, StringComparison.OrdinalIgnoreCase)));
     }
 
     private static double? ParseNumericBound(string value)
         => double.TryParse(value, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed) ? parsed : null;
+
+    private static (double? Lower, double? Upper) ExtractNumericBounds(string? alias, string? label)
+    {
+        var combined = $"{alias} {label}".Trim();
+        if (string.IsNullOrWhiteSpace(combined))
+        {
+            return (null, null);
+        }
+
+        // e.g. 25-to-50, 25-50, 25 to 50, 25_50
+        Match matchRange = Regex.Match(combined, @"(\d+(?:\.\d+)?)\s*(?:to|-|_)\s*(\d+(?:\.\d+)?)", RegexOptions.IgnoreCase);
+        if (matchRange.Success)
+        {
+            double? l = double.TryParse(matchRange.Groups[1].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var lVal) ? lVal : null;
+            double? u = double.TryParse(matchRange.Groups[2].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var uVal) ? uVal : null;
+            return (l, u);
+        }
+
+        // e.g. under-25, under 25, <25, less-than-25
+        Match matchUnder = Regex.Match(combined, @"(?:under|<|less(?:_|-|\s)?than)\s*(\d+(?:\.\d+)?)", RegexOptions.IgnoreCase);
+        if (matchUnder.Success && double.TryParse(matchUnder.Groups[1].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var upper))
+        {
+            return (null, upper);
+        }
+
+        // e.g. over-100, 100+, 100-and-above, >100, 100-plus
+        Match matchOver = Regex.Match(combined, @"(?:over|>|above|\+)\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:\+|and(?:_|-|\s)?above|&above|plus)", RegexOptions.IgnoreCase);
+        if (matchOver.Success)
+        {
+            var valStr = !string.IsNullOrEmpty(matchOver.Groups[1].Value) ? matchOver.Groups[1].Value : matchOver.Groups[2].Value;
+            if (double.TryParse(valStr, NumberStyles.Any, CultureInfo.InvariantCulture, out var lower))
+            {
+                return (lower, null);
+            }
+        }
+
+        return (null, null);
+    }
+
+    private static (DateTime? From, DateTime? To) ExtractDateBounds(string? alias, string? label)
+    {
+        var combined = $"{alias} {label}".Trim();
+        if (string.IsNullOrWhiteSpace(combined))
+        {
+            return (null, null);
+        }
+
+        // e.g. Year "2026", "2025", "2024"
+        Match matchYear = Regex.Match(combined, @"\b(20\d\d)\b");
+        if (matchYear.Success && int.TryParse(matchYear.Groups[1].Value, out var year))
+        {
+            return (new DateTime(year, 1, 1, 0, 0, 0, DateTimeKind.Utc), new DateTime(year + 1, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        }
+
+        // e.g. "past-24h", "24-hours", "last-24-hours", "today"
+        if (Regex.IsMatch(combined, @"(?:24\s*h|today|last\s*24|past\s*24)", RegexOptions.IgnoreCase))
+        {
+            return (DateTime.UtcNow.AddHours(-24), DateTime.UtcNow);
+        }
+
+        // e.g. "past-week", "7-days", "last-7-days", "7d"
+        if (Regex.IsMatch(combined, @"(?:7\s*d|week|past\s*7|last\s*7)", RegexOptions.IgnoreCase))
+        {
+            return (DateTime.UtcNow.AddDays(-7), DateTime.UtcNow);
+        }
+
+        // e.g. "past-month", "30-days", "last-30-days", "30d"
+        if (Regex.IsMatch(combined, @"(?:30\s*d|month|past\s*30|last\s*30)", RegexOptions.IgnoreCase))
+        {
+            return (DateTime.UtcNow.AddDays(-30), DateTime.UtcNow);
+        }
+
+        // e.g. "past-year", "1-year", "last-year", "1y"
+        if (Regex.IsMatch(combined, @"(?:1\s*y|year|past\s*year|last\s*year)", RegexOptions.IgnoreCase))
+        {
+            return (DateTime.UtcNow.AddYears(-1), DateTime.UtcNow);
+        }
+
+        return (null, null);
+    }
 
     /// <summary>
     /// Accepts an ISO date or a relative expression such as <c>now-7d</c>, so that a "last week"
@@ -648,6 +996,48 @@ internal sealed partial class SearchResultProcessor
     }
 
     /// <summary>
+    /// Finds the first parseable date for a document, trying the facet's configured field first
+    /// and then Umbraco's standard date fields. <c>updateDate</c> moves every time an editor
+    /// re-saves a page, so <c>createDate</c> - which never changes - is kept in the chain as a
+    /// stable fallback for content that lacks the configured property.
+    /// </summary>
+    private static string? ResolveDateValue(SearchResultItem item, string fieldName)
+    {
+        foreach (string candidate in DateFieldCandidates(fieldName))
+        {
+            var raw = FieldValue(item, candidate) ?? ReadSortableValue(item, candidate);
+
+            if (!string.IsNullOrEmpty(raw) && TryParseDate(raw, out _))
+            {
+                return raw;
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<string> DateFieldCandidates(string configured)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var cfg = (configured ?? string.Empty).Trim();
+
+        if (cfg.Length > 0 && !cfg.Equals(SortRule.ScoreField, StringComparison.OrdinalIgnoreCase))
+        {
+            seen.Add(cfg);
+            yield return cfg;
+        }
+
+        foreach (string standard in new[] { ImobisoftSearchConstants.IndexFields.UpdateDate, ImobisoftSearchConstants.IndexFields.CreateDate })
+        {
+            if (seen.Add(standard))
+            {
+                yield return standard;
+            }
+        }
+    }
+
+    /// <summary>
     /// Reads a date out of an index, whichever way it was written.
     /// <para>
     /// A date can reach us three ways: Lucene's <c>yyyyMMddHHmmssfff</c> string, a raw tick count
@@ -691,6 +1081,23 @@ internal sealed partial class SearchResultProcessor
             return true;
         }
 
+        // Unix epoch values - seconds or milliseconds - as written by some external indexers.
+        if (raw.All(char.IsDigit)
+            && long.TryParse(raw, NumberStyles.None, CultureInfo.InvariantCulture, out var epoch))
+        {
+            if (epoch >= 1_000_000_000_000)
+            {
+                date = DateTimeOffset.FromUnixTimeMilliseconds(epoch).UtcDateTime;
+                return true;
+            }
+
+            if (epoch >= 1_000_000_000 && raw.Length <= 11)
+            {
+                date = DateTimeOffset.FromUnixTimeSeconds(epoch).UtcDateTime;
+                return true;
+            }
+        }
+
         return DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out date);
     }
 
@@ -707,7 +1114,11 @@ internal sealed partial class SearchResultProcessor
             return;
         }
 
-        var pattern = string.Join("|", words.Select(Regex.Escape));
+        // The index matched each term as a prefix (created* also hits creates/creative), so the
+        // highlight has to do the same: anchor the literal word and let any tail continue.
+        // Matching the bare word alone leaves prefix-matched documents - where the exact spelling
+        // never occurs - with a snippet but nothing marked inside it.
+        var pattern = string.Join("|", words.Select(w => Regex.Escape(w) + "\\w*"));
         var matcher = new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
         foreach (SearchResultItem item in items)
@@ -731,6 +1142,11 @@ internal sealed partial class SearchResultProcessor
     /// to come first - often a short one like a title or a URL segment - which shows the word with
     /// no sentence around it. The word has to be read in context to be worth showing at all.
     /// </para>
+    /// <para>
+    /// Block-list properties (Umbraco's "modules", "banner" and friends) are indexed as raw JSON, so
+    /// the value that matched may be a serialized blob rather than prose. Flattening it first lets
+    /// the snippet show the sentence a visitor actually wrote instead of JSON soup.
+    /// </para>
     /// </summary>
     private static string? ResolveHighlightSource(
         SearchResultItem item,
@@ -740,7 +1156,7 @@ internal sealed partial class SearchResultProcessor
     {
         if (!string.IsNullOrWhiteSpace(highlight.Field))
         {
-            return FieldValue(item, highlight.Field);
+            return FlattenStructuredValue(FieldValue(item, highlight.Field));
         }
 
         string? containingTerm = null;
@@ -748,7 +1164,7 @@ internal sealed partial class SearchResultProcessor
 
         foreach (var fieldName in plan.Indexes.SelectMany(x => x.Fields).Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            var value = FieldValue(item, fieldName);
+            var value = FlattenStructuredValue(FieldValue(item, fieldName));
 
             if (string.IsNullOrWhiteSpace(value))
             {
@@ -767,6 +1183,88 @@ internal sealed partial class SearchResultProcessor
         // does not return - so fall back to any text this document has, then to its name.
         return containingTerm ?? anyValue ?? item.Name;
     }
+
+    private static readonly HashSet<string> JsonNoiseKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "contentTypeKey", "key", "udi", "settingsKey", "settingsUdi", "icon", "culture",
+    };
+
+    /// <summary>
+    /// Block lists and similar structured properties reach the index as JSON. When a stored value is
+    /// a JSON document, this walks it and returns just the readable strings inside - markup stripped,
+    /// technical keys skipped - so matching text can be shown as a normal sentence. Non-JSON input
+    /// passes through untouched.
+    /// </summary>
+    private static string? FlattenStructuredValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.TrimStart();
+
+        if (trimmed[0] != '{' && trimmed[0] != '[')
+        {
+            return value;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(value);
+            var builder = new StringBuilder();
+            AppendReadableStrings(document.RootElement, builder);
+
+            var flattened = builder.ToString().Trim();
+
+            return flattened.Length > 0 ? flattened : value;
+        }
+        catch (JsonException)
+        {
+            return value;
+        }
+    }
+
+    private static void AppendReadableStrings(JsonElement element, StringBuilder builder)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.String:
+                var text = element.GetString();
+
+                if (string.IsNullOrWhiteSpace(text) || JsonNoiseKeys.Contains(text.Trim()))
+                {
+                    break;
+                }
+
+                // Rich text values arrive with their markup; strip tags so snippets read cleanly.
+                builder.Append(TagStripper.Replace(text, " ")).Append(' ');
+                break;
+
+            case JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (JsonNoiseKeys.Contains(property.Name))
+                    {
+                        continue;
+                    }
+
+                    AppendReadableStrings(property.Value, builder);
+                }
+
+                break;
+
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    AppendReadableStrings(item, builder);
+                }
+
+                break;
+        }
+    }
+
+    private static readonly Regex TagStripper = new("<[^>]+>", RegexOptions.Compiled);
 
     private static string BuildSnippet(string source, Regex matcher, HighlightRules highlight)
     {

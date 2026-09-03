@@ -34,7 +34,6 @@ D:\imobisoft\Imobisoft.Search\Imobisoft.Search\obj\Debug\net10.0\Imobisoft.Searc
 D:\imobisoft\Imobisoft.Search\Imobisoft.Search\obj\Debug\net10.0\Imobisoft.Search.RazorAssemblyInfo.cs
 D:\imobisoft\Imobisoft.Search\Imobisoft.Search\obj\Debug\net10.0\Imobisoft.Search.sourcelink.json
 D:\imobisoft\Imobisoft.Search\Imobisoft.Search\obj\Debug\net10.0\compressed\splqjphge0-{0}-h2dgf3qiy3-h2dgf3qiy3.gz
-D:\imobisoft\Imobisoft.Search\Imobisoft.Search\obj\Debug\net10.0\compressed\ee9apxmh1x-{0}-mk4joobkll-mk4joobkll.gz
 D:\imobisoft\Imobisoft.Search\Imobisoft.Search\obj\Debug\net10.0\compressed\hav7u33l6k-{0}-1erntoibtu-1erntoibtu.gz
 D:\imobisoft\Imobisoft.Search\Imobisoft.Search\bin\Debug\net10.0\wwwroot\auth-fetch.js
 D:\imobisoft\Imobisoft.Search\Imobisoft.Search\bin\Debug\net10.0\wwwroot\data-cache.js
@@ -44,4 +43,6 @@ D:\imobisoft\Imobisoft.Search\Imobisoft.Search\bin\Debug\net10.0\wwwroot\auth-fe
 D:\imobisoft\Imobisoft.Search\Imobisoft.Search\bin\Debug\net10.0\wwwroot\data-cache.js.gz
 D:\imobisoft\Imobisoft.Search\Imobisoft.Search\bin\Debug\net10.0\wwwroot\umbraco-package.json.gz
 D:\imobisoft\Imobisoft.Search\Imobisoft.Search\bin\Debug\net10.0\wwwroot\workspace.js.gz
-D:\imobisoft\Imobisoft.Search\Imobisoft.Search\obj\Debug\net10.0\compressed\yngxw0rsot-{0}-ewce94mosw-ewce94mosw.gz
+D:\imobisoft\Imobisoft.Search\Imobisoft.Search\obj\Debug\net10.0\compressed\ee9apxmh1x-{0}-letvvmbh2w-letvvmbh2w.gz
+D:\imobisoft\Imobisoft.Search\Imobisoft.Search\obj\Debug\net10.0\compressed\yngxw0rsot-{0}-k9v8gg8gvk-k9v8gg8gvk.gz
+D:\imobisoft\Imobisoft.Search\Imobisoft.Search\obj\Debug\net10.0\staticwebassets.upToDateCheck.txt

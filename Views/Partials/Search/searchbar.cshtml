@@ -1,0 +1,60 @@
+@using Imobisoft.Search.Models
+@model SearchBarModel
+@* The search bar the package ships with. A consuming site can take over this exact spot by
+   creating its own file at Views/Partials/Search/searchbar.cshtml - the site's file wins over
+   this one automatically, with no configuration, and every built-in search page picks it up.
+   The only contract: a GET form containing a text input named "q". *@
+<style>
+    .imsb-form {
+        display: flex;
+        gap: 8px;
+        max-width: 560px;
+    }
+
+    .imsb-input {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 10px 16px;
+        font-size: 15px;
+        color: #1e293b;
+        background: #fff;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        outline: none;
+        box-sizing: border-box;
+    }
+
+    .imsb-input:focus {
+        border-color: #6366f1;
+        box-shadow: 0 0 0 3px rgb(99 102 241 / .15);
+    }
+
+    .imsb-btn {
+        padding: 10px 20px;
+        font-size: 15px;
+        font-weight: 600;
+        color: #fff;
+        cursor: pointer;
+        background: #4f46e5;
+        border: 0;
+        border-radius: 8px;
+    }
+
+        .imsb-btn:hover { background: #4338ca; }
+
+    @@media (max-width: 480px) {
+        .imsb-form { flex-direction: column; }
+    }
+</style>
+
+<form role="search" method="get" action="@Model.Action" class="imsb-form @Model.FormClass">
+    <input type="search"
+           id="q"
+           name="q"
+           class="imsb-input @Model.InputClass"
+           value="@Model.Term"
+           placeholder="@Model.Placeholder"
+           autocomplete="off"
+           aria-label="Search" />
+    <button type="submit" class="imsb-btn @Model.ButtonClass">@Model.ButtonText</button>
+</form>

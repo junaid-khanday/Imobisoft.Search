@@ -1,0 +1,58 @@
+@model Imobisoft.Search.Web.ImobisoftSearchListingViewModel
+@* The list of result cards. Override at Views/Partials/Search/results.cshtml for a fully
+   custom card design - each item carries Name, Url, Highlight (safe to @Html.Raw), Url
+   display, Culture, Fields (e.g. updateDate) and IsBestBet. Keep the <ol data-imobisoft-results>
+   wrapper and one <li> per item: the Load More script appends <li> children by that attribute. *@
+@{
+    Imobisoft.Search.Models.SearchResponse? response = Model.Response;
+}
+<ol class="isl-results" data-imobisoft-results>
+    @foreach (var item in response!.Results)
+    {
+        <li class="isl-card @(item.IsBestBet ? "is-bestbet" : "")">
+            <div class="isl-card-header">
+                @if (item.IsBestBet)
+                {
+                    <span class="isl-badge isl-badge-bestbet">★ Pinned Best Bet</span>
+                }
+                @if (!string.IsNullOrWhiteSpace(item.ContentTypeAlias) || !string.IsNullOrWhiteSpace(item.IndexType))
+                {
+                    <span class="isl-badge">@(item.ContentTypeAlias ?? item.IndexType)</span>
+                }
+            </div>
+
+            <h3 class="isl-title">
+                @if (!string.IsNullOrWhiteSpace(item.Url))
+                {
+                    <a href="@item.Url">@item.Name</a>
+                }
+                else
+                {
+                    <span>@item.Name</span>
+                }
+            </h3>
+
+            @if (!string.IsNullOrWhiteSpace(item.Highlight))
+            {
+                @* The engine HTML-encodes the snippet and leaves only the configured
+                   highlight tag intact, so this is safe to render as markup. *@
+                <p class="isl-snippet">@Html.Raw(item.Highlight)</p>
+            }
+
+            <div class="isl-meta">
+                @if (!string.IsNullOrWhiteSpace(item.Url))
+                {
+                    <span class="isl-meta-url">@item.Url</span>
+                }
+                @if (!string.IsNullOrWhiteSpace(item.Culture))
+                {
+                    <span>@item.Culture</span>
+                }
+                @if (item.Fields.TryGetValue("updateDate", out var updateDate) && !string.IsNullOrWhiteSpace(updateDate))
+                {
+                    <span>Updated: @updateDate</span>
+                }
+            </div>
+        </li>
+    }
+</ol>

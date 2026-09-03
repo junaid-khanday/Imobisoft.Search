@@ -2,142 +2,649 @@
 @{
     Layout = null;
     SearchResponse? response = Model.Response;
+    var activeFilters = Context.GetActiveFilters();
+    var hasActiveFilters = Context.HasActiveFilters();
+    var facetCounts = Context.GetSearchFilters();
 }
-@*
-    The package's built-in search page. Deliberately unstyled - plain elements only, so it inherits
-    whatever the site's stylesheet does with them and there is nothing to undo.
-
-    To replace it, create Views/ImobisoftSearch/Index.cshtml in the site. A view of that name there
-    wins over this one, and nothing else changes.
-*@
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>@(Model.HasSearched ? $"{Model.Term} - Search" : "Search")</title>
+    <title>@(Model.HasSearched && !string.IsNullOrWhiteSpace(Model.Term) ? $"{Model.Term} - Search" : "Search")</title>
+    <style>
+        :root {
+            --imobisoft-primary: #1b264f;
+            --imobisoft-primary-hover: #121a38;
+            --imobisoft-accent: #2563eb;
+            --imobisoft-bg: #f8fafc;
+            --imobisoft-card-bg: #ffffff;
+            --imobisoft-border: #e2e8f0;
+            --imobisoft-border-focus: #3b82f6;
+            --imobisoft-text: #1e293b;
+            --imobisoft-text-muted: #64748b;
+            --imobisoft-text-subtle: #94a3b8;
+            --imobisoft-highlight: #fef08a;
+            --imobisoft-radius: 8px;
+            --imobisoft-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
+            --imobisoft-shadow-hover: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
+            --imobisoft-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: var(--imobisoft-font);
+            background-color: var(--imobisoft-bg);
+            color: var(--imobisoft-text);
+            line-height: 1.5;
+            padding: 32px 20px;
+        }
+
+        .imobisoft-container {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        /* Search Header */
+        .imobisoft-header {
+            margin-bottom: 28px;
+        }
+
+        .imobisoft-header h1 {
+            font-size: 26px;
+            font-weight: 700;
+            color: var(--imobisoft-primary);
+            margin-bottom: 16px;
+        }
+
+        .imobisoft-search-form {
+            display: flex;
+            gap: 10px;
+            align-items: stretch;
+            width: 100%;
+        }
+
+        .imobisoft-input-wrap {
+            position: relative;
+            flex: 1;
+        }
+
+        .imobisoft-input {
+            width: 100%;
+            height: 46px;
+            padding: 0 16px;
+            font-size: 15px;
+            border: 1px solid var(--imobisoft-border);
+            border-radius: var(--imobisoft-radius);
+            background: var(--imobisoft-card-bg);
+            color: var(--imobisoft-text);
+            outline: none;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .imobisoft-input:focus {
+            border-color: var(--imobisoft-border-focus);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+
+        .imobisoft-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            height: 46px;
+            padding: 0 24px;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: var(--imobisoft-radius);
+            cursor: pointer;
+            text-decoration: none;
+            border: none;
+            transition: background 0.15s ease, transform 0.1s ease;
+        }
+
+        .imobisoft-btn-primary {
+            background: var(--imobisoft-primary);
+            color: #ffffff;
+        }
+
+        .imobisoft-btn-primary:hover {
+            background: var(--imobisoft-primary-hover);
+        }
+
+        .imobisoft-btn-secondary {
+            background: var(--imobisoft-card-bg);
+            color: var(--imobisoft-text);
+            border: 1px solid var(--imobisoft-border);
+        }
+
+        .imobisoft-btn-secondary:hover {
+            background: #f1f5f9;
+            border-color: #cbd5e1;
+        }
+
+        /* Suggestion & Info Banners */
+        .imobisoft-suggestion {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: var(--imobisoft-radius);
+            padding: 10px 16px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: #1e40af;
+        }
+
+        .imobisoft-suggestion a {
+            color: #1d4ed8;
+            font-weight: 700;
+            text-decoration: underline;
+        }
+
+        .imobisoft-stats-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-bottom: 14px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--imobisoft-border);
+            font-size: 13.5px;
+            color: var(--imobisoft-text-muted);
+        }
+
+        .imobisoft-stats-bar strong {
+            color: var(--imobisoft-text);
+        }
+
+        .imobisoft-groups-pills {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        .imobisoft-group-pill {
+            background: #ffffff;
+            border: 1px solid var(--imobisoft-border);
+            padding: 4px 10px;
+            border-radius: 16px;
+            font-size: 12px;
+            color: var(--imobisoft-text-muted);
+        }
+
+        .imobisoft-group-pill strong {
+            color: var(--imobisoft-primary);
+        }
+
+        /* Filter bar: sits above the search box and is there the moment the page opens */
+        .imobisoft-filter-bar {
+            display: flex;
+            gap: 14px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+            background: var(--imobisoft-card-bg);
+            border: 1px solid var(--imobisoft-border);
+            border-radius: var(--imobisoft-radius);
+            padding: 14px 16px;
+            margin-bottom: 24px;
+            box-shadow: var(--imobisoft-shadow);
+        }
+
+        .imobisoft-filter-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .imobisoft-filter-label {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--imobisoft-primary);
+        }
+
+        /* Filter dropdowns */
+        .imobisoft-filter-select {
+            min-width: 190px;
+            height: 36px;
+            padding: 0 10px;
+            font-size: 13px;
+            color: var(--imobisoft-text);
+            background: var(--imobisoft-card-bg);
+            border: 1px solid var(--imobisoft-border);
+            border-radius: var(--imobisoft-radius);
+            outline: none;
+            cursor: pointer;
+            transition: border-color 0.15s ease;
+        }
+
+        .imobisoft-filter-select:focus {
+            border-color: var(--imobisoft-border-focus);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+
+        .imobisoft-clear-filters {
+            display: inline-flex;
+            align-items: center;
+            font-size: 12.5px;
+            color: #dc2626;
+            text-decoration: none;
+            font-weight: 600;
+            padding: 8px 10px;
+            border-radius: 6px;
+            transition: background 0.12s ease;
+        }
+
+        .imobisoft-clear-filters:hover {
+            background: #fef2f2;
+        }
+
+        /* Results List */
+        .imobisoft-main {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .imobisoft-results-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .imobisoft-result-card {
+            background: var(--imobisoft-card-bg);
+            border: 1px solid var(--imobisoft-border);
+            border-radius: var(--imobisoft-radius);
+            padding: 18px 20px;
+            box-shadow: var(--imobisoft-shadow);
+            transition: box-shadow 0.15s ease, border-color 0.15s ease;
+            position: relative;
+        }
+
+        .imobisoft-result-card:hover {
+            box-shadow: var(--imobisoft-shadow-hover);
+            border-color: #cbd5e1;
+        }
+
+        .imobisoft-result-card.is-bestbet {
+            border-left: 4px solid #f59e0b;
+        }
+
+        .imobisoft-result-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        .imobisoft-badge {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 7px;
+            border-radius: 4px;
+            display: inline-block;
+        }
+
+        .imobisoft-badge-type {
+            background: #f1f5f9;
+            color: var(--imobisoft-text-muted);
+        }
+
+        .imobisoft-badge-bestbet {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .imobisoft-result-title {
+            font-size: 17px;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .imobisoft-result-title a {
+            color: var(--imobisoft-primary);
+            text-decoration: none;
+        }
+
+        .imobisoft-result-title a:hover {
+            color: var(--imobisoft-accent);
+            text-decoration: underline;
+        }
+
+        .imobisoft-result-snippet {
+            font-size: 13.5px;
+            color: #475569;
+            line-height: 1.55;
+            margin-bottom: 8px;
+        }
+
+        .imobisoft-result-snippet mark {
+            background: var(--imobisoft-highlight);
+            font-weight: 600;
+            padding: 0 2px;
+            border-radius: 2px;
+        }
+
+        .imobisoft-result-meta {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            font-size: 12px;
+            color: var(--imobisoft-text-subtle);
+            flex-wrap: wrap;
+        }
+
+        .imobisoft-result-url {
+            color: #059669;
+        }
+
+        /* Empty States */
+        .imobisoft-empty-box {
+            background: var(--imobisoft-card-bg);
+            border: 1px dashed var(--imobisoft-border);
+            border-radius: var(--imobisoft-radius);
+            padding: 48px 24px;
+            text-align: center;
+            color: var(--imobisoft-text-muted);
+        }
+
+        .imobisoft-empty-box h3 {
+            font-size: 18px;
+            color: var(--imobisoft-primary);
+            margin-bottom: 8px;
+        }
+
+        /* Pagination & Load More */
+        .imobisoft-pagination-wrap {
+            margin-top: 24px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .imobisoft-btn-load-more {
+            width: 100%;
+            max-width: 320px;
+            height: 44px;
+            background: var(--imobisoft-card-bg);
+            border: 1px solid var(--imobisoft-primary);
+            color: var(--imobisoft-primary);
+            font-weight: 600;
+            font-size: 14px;
+            border-radius: var(--imobisoft-radius);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .imobisoft-btn-load-more:hover:not(:disabled) {
+            background: var(--imobisoft-primary);
+            color: #ffffff;
+        }
+
+        .imobisoft-btn-load-more:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .imobisoft-page-nav {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            list-style: none;
+            flex-wrap: wrap;
+        }
+
+        .imobisoft-page-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 36px;
+            height: 36px;
+            padding: 0 8px;
+            font-size: 13.5px;
+            font-weight: 500;
+            border-radius: 6px;
+            border: 1px solid var(--imobisoft-border);
+            background: var(--imobisoft-card-bg);
+            color: var(--imobisoft-text);
+            text-decoration: none;
+            transition: all 0.12s ease;
+        }
+
+        .imobisoft-page-link:hover {
+            border-color: var(--imobisoft-primary);
+            color: var(--imobisoft-primary);
+        }
+
+        .imobisoft-page-link.is-active {
+            background: var(--imobisoft-primary);
+            border-color: var(--imobisoft-primary);
+            color: #ffffff;
+            font-weight: 700;
+        }
+    </style>
 </head>
 <body>
-    <h1>Search</h1>
-
-    @* A plain GET form, so a search is bookmarkable, shareable and works with the back button. *@
-    <form method="get" action="@Model.PagePath">
-        <label for="q">Search</label>
-        <input type="search" id="q" name="q" value="@Model.Term" />
-        <button type="submit">Search</button>
-
-        @* Carries the chosen filters through when a new term is submitted. Without these the form
-           posts only q, and every search silently clears the filters. *@
-        @foreach (var filter in Context.GetActiveFilters())
+    <div class="imobisoft-container">
+        @* One GET form holds the search box and every filter dropdown, so picking an option
+           re-runs the search with the term and every other selection intact. *@
+        <form method="get" action="@Model.PagePath">
+        @* The filters sit on top, before the search box, and are here the moment the page
+           opens - the bar is driven by the profile's facet definitions, with live counts joining
+           from the response once a search (or the automatic browse pass) has produced them. *@
+        @if (Model.ConfiguredFacets.Count > 0 || Model.ConfiguredSortOptions.Count > 0)
         {
-            foreach (var value in filter.Value)
-            {
-                <input type="hidden" name="f_@filter.Key" value="@value" />
-            }
-        }
-    </form>
-
-    @if (response is null)
-    {
-        <p>Enter a word to search for.</p>
-        return;
-    }
-
-    @if (!string.IsNullOrWhiteSpace(response.Suggestion))
-    {
-        <p>
-            Did you mean
-            <a href="@Model.PagePath?q=@Uri.EscapeDataString(response.Suggestion)">@response.Suggestion</a>?
-        </p>
-    }
-
-    @* Filters come from the Facets tab of the search profile. The links carry the selection in the
-       query string, and the package reads it back on the next request - no code needed here. *@
-    @foreach (FacetResult facet in Context.GetSearchFilters())
-    {
-        <fieldset>
-            <legend>@facet.Label</legend>
-            <ul>
-                @foreach (FacetValue choice in facet.Values)
+            <div class="imobisoft-filter-bar">
+                @foreach (FacetDefinition definition in Model.ConfiguredFacets)
                 {
-                    <li>
-                        <a href="@Context.ToggleFilterUrl(facet.Alias, choice.Value)" rel="nofollow">
-                            @(choice.IsSelected ? "[x]" : "[ ]") @choice.Label (@choice.Count)
-                        </a>
-                    </li>
+                    FacetResult? counts = facetCounts.FirstOrDefault(f =>
+                        f.Alias.Equals(definition.Alias, StringComparison.OrdinalIgnoreCase));
+                    var label = string.IsNullOrWhiteSpace(definition.Label) ? definition.Alias : definition.Label;
+
+                    <label class="imobisoft-filter-item">
+                        <span class="imobisoft-filter-label">@label</span>
+                        <select class="imobisoft-filter-select"
+                                name="f_@definition.Alias"
+                                aria-label="@label"
+                                onchange="this.form.submit()">
+                            <option value="">All @label</option>
+                            @if (counts is not null)
+                            {
+                                @foreach (FacetValue choice in counts.Values)
+                                {
+                                    <option value="@choice.Value" selected="@choice.IsSelected">@choice.Label (@choice.Count)</option>
+                                }
+                            }
+                        </select>
+                    </label>
                 }
-            </ul>
-        </fieldset>
-    }
 
-    @if (Context.HasActiveFilters())
-    {
-        <p><a href="@Context.ClearFiltersUrl()" rel="nofollow">Clear filters</a></p>
-    }
+                @if (Model.ConfiguredSortOptions.Count > 0)
+                {
+                    <label class="imobisoft-filter-item">
+                        <span class="imobisoft-filter-label">Sort by</span>
+                        <select class="imobisoft-filter-select"
+                                name="sort"
+                                aria-label="Sort by"
+                                onchange="this.form.submit()">
+                            <option value="" selected="@string.IsNullOrEmpty(Model.SelectedSort)">Relevance</option>
+                            @foreach (SortOption option in Model.ConfiguredSortOptions)
+                            {
+                                @* Options without a field ARE the relevance choice, already
+                                   covered by the blank entry above - skip them to avoid duplicates. *@
+                                if (string.IsNullOrWhiteSpace(option.Field))
+                                {
+                                    continue;
+                                }
+                                <option value="@option.Alias"
+                                        selected="@option.Alias.Equals(Model.SelectedSort, StringComparison.OrdinalIgnoreCase)">
+                                    @option.Label
+                                </option>
+                            }
+                        </select>
+                    </label>
+                }
 
-    <p>@response.TotalResults result@(response.TotalResults == 1 ? "" : "s") for &quot;@response.Term&quot;</p>
+                @if (hasActiveFilters)
+                {
+                    <a href="@Context.ClearFiltersUrl()" class="imobisoft-clear-filters" rel="nofollow">
+                        ✕ Clear all filters
+                    </a>
+                }
+            </div>
+        }
 
-    @if (response.Groups.Count > 0)
-    {
-        <ul>
-            @foreach (var group in response.Groups)
+        @* Filter selections for which no dropdown is rendered (an alias since renamed, say)
+           still have to survive the round trip. *@
+        @foreach (var filter in activeFilters.Where(f => !Model.ConfiguredFacets.Any(x => x.Alias.Equals(f.Key, StringComparison.OrdinalIgnoreCase))))
             {
-                <li>@group.Key: @group.Value</li>
+                foreach (var value in filter.Value)
+                {
+                    <input type="hidden" name="f_@filter.Key" value="@value" />
+                }
             }
-        </ul>
-    }
 
-    @if (response.Results.Count == 0)
-    {
-        <p>Nothing matched.</p>
-        return;
-    }
+            <header class="imobisoft-header">
+                <h1>Search</h1>
+                <partial name="~/Views/Partials/Search/searchbar.cshtml"
+                         model="new Imobisoft.Search.Models.SearchBarModel { Term = Model.Term }" />
+            </header>
 
-    <ol id="imobisoft-search-results">
-        <partial name="_Results" model="Model" />
-    </ol>
+            @if (response is null)
+            {
+                <div class="imobisoft-empty-box">
+                    <h3>Welcome to Search</h3>
+                    <p>Type keywords into the search box above, or pick a filter, to find pages, articles, media, and documents.</p>
+                </div>
+            }
+            else
+            {
+                @* A response exists even before the first term: the browse pass serves the
+                   profile's "results before searching" so the page opens with content. *@
+                @* Did You Mean Suggestion *@
+                @if (!string.IsNullOrWhiteSpace(response.Suggestion))
+                {
+                    <div class="imobisoft-suggestion">
+                        Did you mean
+                        <a href="@Model.PagePath?q=@Uri.EscapeDataString(response.Suggestion)">@response.Suggestion</a>?
+                    </div>
+                }
 
-    @if (response.Page < response.TotalPages)
-    {
-        @* Works without JavaScript as an ordinary link to the next page. The script below upgrades
-           it to append in place, so the two behaviours never disagree about what page 2 is. *@
-        <p>
-            <a id="imobisoft-search-more"
-               href="@(Model.PagePath + Context.SearchUrlForPage(response.Page + 1))"
-               data-next-page="@(response.Page + 1)"
-               data-total-pages="@response.TotalPages">Load more</a>
-        </p>
-
-        <script>
-            (function () {
-                var link = document.getElementById('imobisoft-search-more');
-                var list = document.getElementById('imobisoft-search-results');
-                if (!link || !list) return;
-
-                link.addEventListener('click', async function (e) {
-                    e.preventDefault();
-
-                    var next = parseInt(link.getAttribute('data-next-page'), 10);
-                    var total = parseInt(link.getAttribute('data-total-pages'), 10);
-
-                    // Same query string as the current page, with the page number advanced, so
-                    // filters and the term carry over untouched.
-                    var params = new URLSearchParams(window.location.search);
-                    params.set('page', next);
-
-                    var response = await fetch('@Model.PagePath/results?' + params.toString());
-                    if (!response.ok) return;
-
-                    list.insertAdjacentHTML('beforeend', await response.text());
-
-                    if (next >= total) {
-                        link.parentNode.removeChild(link);
-                    } else {
-                        link.setAttribute('data-next-page', next + 1);
+                <div class="imobisoft-stats-bar">
+                    <div>
+                        Found <strong>@response.TotalResults</strong> result@(response.TotalResults == 1 ? "" : "s")
+                        @if (!string.IsNullOrWhiteSpace(response.Term))
+                        {
+                            <span>for &ldquo;<strong>@response.Term</strong>&rdquo;</span>
+                        }
+                    </div>
+                    @if (response.TotalResults > 0 && response.EnableLoadMore)
+                    {
+                        <div>Page <strong>@response.Page</strong> of <strong>@Math.Max(1, response.TotalPages)</strong></div>
                     }
-                });
-            })();
-        </script>
-    }
+                </div>
+
+                @* Content Type Group Breakdown *@
+                @if (response.Groups.Count > 0)
+                {
+                    <div class="imobisoft-groups-pills">
+                        @foreach (var group in response.Groups)
+                        {
+                            <span class="imobisoft-group-pill">@group.Key: <strong>@group.Value</strong></span>
+                        }
+                    </div>
+                }
+
+                @if (response.Results.Count == 0 && response.TotalResults == 0)
+                {
+                    <div class="imobisoft-empty-box">
+                        <h3>No results matched your search</h3>
+                        <p>Try searching with different keywords, checking your spelling, or clearing active filters.</p>
+                        @if (hasActiveFilters)
+                        {
+                            <p style="margin-top: 14px;">
+                                <a href="@Context.ClearFiltersUrl()" class="imobisoft-btn imobisoft-btn-secondary" style="height: 36px; padding: 0 16px; font-size: 13px;">Clear active filters</a>
+                            </p>
+                        }
+                    </div>
+                }
+                else if (response.Results.Count == 0)
+                {
+                    @* Matches exist but this page holds none of them: the visitor paged past the
+                       end, or the profile's "results before searching" limit is set to zero. *@
+                    <div class="imobisoft-empty-box">
+                        <h3>Nothing to show on this page</h3>
+                        <p>@response.TotalResults result@(response.TotalResults == 1 ? " matches" : " matches") were found.
+                           Use the page controls above, or ask your editor to raise the profile's page limits in the Search section.</p>
+                    </div>
+                }
+                else
+                {
+                    <ol id="imobisoft-search-results" class="imobisoft-results-list">
+                        <partial name="_Results" model="Model" />
+                    </ol>
+
+                    @* Load More pagination: rendered only when the profile enables it and
+                       further pages exist. When disabled, the profile serves exactly one page
+                       of PageSize items and nothing beyond it. *@
+                    @if (response.EnableLoadMore && response.Page < response.TotalPages)
+                    {
+                        <div id="imobisoft-load-more-wrap" class="imobisoft-pagination-wrap">
+                            <button id="imobisoft-search-more"
+                                    type="button"
+                                    class="imobisoft-btn-load-more"
+                                    data-next-page="@(response.Page + 1)"
+                                    data-total-pages="@response.TotalPages">
+                                Load more results
+                            </button>
+                        </div>
+
+                        <script>
+                            (function () {
+                                var btn = document.getElementById('imobisoft-search-more');
+                                var list = document.getElementById('imobisoft-search-results');
+                                if (!btn || !list) return;
+
+                                btn.addEventListener('click', async function (e) {
+                                    e.preventDefault();
+
+                                    var next = parseInt(btn.getAttribute('data-next-page'), 10);
+                                    var total = parseInt(btn.getAttribute('data-total-pages'), 10);
+
+                                    btn.disabled = true;
+                                    btn.textContent = 'Loading more results...';
+
+                                    var params = new URLSearchParams(window.location.search);
+                                    params.set('page', next);
+
+                                    try {
+                                        var fetchUrl = '@(Model.PagePath.TrimEnd('/'))/results?' + params.toString();
+                                        var res = await fetch(fetchUrl);
+                                        if (!res.ok) throw new Error('Failed to fetch results');
+
+                                        var html = await res.text();
+                                        list.insertAdjacentHTML('beforeend', html);
+
+                                        if (next >= total) {
+                                            var wrap = document.getElementById('imobisoft-load-more-wrap');
+                                            if (wrap) wrap.parentNode.removeChild(wrap);
+                                            else btn.parentNode.removeChild(btn);
+                                        } else {
+                                            btn.setAttribute('data-next-page', next + 1);
+                                            btn.disabled = false;
+                                            btn.textContent = 'Load more results';
+                                        }
+                                    } catch (err) {
+                                        console.error('Error loading more results:', err);
+                                        btn.disabled = false;
+                                        btn.textContent = 'Load more results';
+                                    }
+                                });
+                            })();
+                        </script>
+                    }
+                }
+            }
+        </form>
+    </div>
 </body>
 </html>

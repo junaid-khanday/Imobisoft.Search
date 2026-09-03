@@ -1,0 +1,387 @@
+@model Imobisoft.Search.Web.ImobisoftSearchListingViewModel
+@{
+    Imobisoft.Search.Models.SearchResponse? response = Model.Response;
+}
+@* Everything a site needs, in one drop-in block: filters above the search box from the moment
+   the page opens, results, spelling suggestions and Load More - all driven by the profile
+   configured in the backoffice. Styles are scoped under .isl and driven by CSS variables, so a
+   site re-themes by overriding the variables (or the isl- classes) in its own stylesheet. *@
+<div class="isl" data-imobisoft-listing>
+    <style>
+        .isl {
+            --isl-accent: #1b264f;
+            --isl-accent-hover: #121a38;
+            --isl-link: #2563eb;
+            --isl-surface: #ffffff;
+            --isl-border: #e2e8f0;
+            --isl-border-focus: #3b82f6;
+            --isl-text: #1e293b;
+            --isl-muted: #64748b;
+            --isl-subtle: #94a3b8;
+            --isl-highlight: #fef08a;
+            --isl-radius: 8px;
+            --isl-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
+            font-size: 15px;
+            line-height: 1.5;
+            color: var(--isl-text);
+        }
+
+        .isl *,
+        .isl *::before,
+        .isl *::after { box-sizing: border-box; }
+
+        /* Filter bar: sits above the search box and is there the moment the page opens */
+        .isl-filter-bar {
+            display: flex;
+            gap: 14px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+            background: var(--isl-surface);
+            border: 1px solid var(--isl-border);
+            border-radius: var(--isl-radius);
+            padding: 14px 16px;
+            margin-bottom: 18px;
+            box-shadow: var(--isl-shadow);
+        }
+
+        .isl-filter-item { display: flex; flex-direction: column; gap: 5px; }
+
+        .isl-filter-label {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--isl-accent);
+        }
+
+        .isl-select,
+        .isl-input {
+            font-size: 14px;
+            color: var(--isl-text);
+            background: var(--isl-surface);
+            border: 1px solid var(--isl-border);
+            border-radius: var(--isl-radius);
+            outline: none;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .isl-select:focus,
+        .isl-input:focus {
+            border-color: var(--isl-border-focus);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+
+        .isl-select {
+            min-width: 180px;
+            height: 36px;
+            padding: 0 10px;
+            cursor: pointer;
+        }
+
+        .isl-form { display: flex; gap: 10px; margin-bottom: 20px; }
+
+        .isl-field { position: relative; flex: 1; }
+
+        .isl-input { width: 100%; height: 46px; padding: 0 16px; }
+
+        .isl-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            height: 46px;
+            padding: 0 24px;
+            font-size: 14px;
+            font-weight: 600;
+            border: none;
+            border-radius: var(--isl-radius);
+            cursor: pointer;
+            text-decoration: none;
+            background: var(--isl-accent);
+            color: #fff;
+            transition: background 0.15s ease;
+        }
+
+        .isl-btn:hover { background: var(--isl-accent-hover); }
+
+        .isl-clear-filters {
+            display: inline-flex;
+            align-items: center;
+            font-size: 12.5px;
+            font-weight: 600;
+            color: #dc2626;
+            text-decoration: none;
+            padding: 8px 10px;
+            border-radius: 6px;
+        }
+
+        .isl-clear-filters:hover { background: #fef2f2; }
+
+        .isl-suggestion {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: var(--isl-radius);
+            padding: 10px 16px;
+            margin-bottom: 16px;
+            font-size: 14px;
+            color: #1e40af;
+        }
+
+        .isl-suggestion a { color: #1d4ed8; font-weight: 700; }
+
+        .isl-stats {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            padding-bottom: 12px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid var(--isl-border);
+            font-size: 13.5px;
+            color: var(--isl-muted);
+        }
+
+        .isl-stats strong { color: var(--isl-text); }
+
+        .isl-groups { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+
+        .isl-group-pill {
+            background: var(--isl-surface);
+            border: 1px solid var(--isl-border);
+            padding: 4px 10px;
+            border-radius: 16px;
+            font-size: 12px;
+            color: var(--isl-muted);
+        }
+
+        .isl-group-pill strong { color: var(--isl-accent); }
+
+        .isl-results {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .isl-card {
+            background: var(--isl-surface);
+            border: 1px solid var(--isl-border);
+            border-radius: var(--isl-radius);
+            padding: 18px 20px;
+            box-shadow: var(--isl-shadow);
+        }
+
+        .isl-card.is-bestbet { border-left: 4px solid #f59e0b; }
+
+        .isl-card-header { display: flex; gap: 8px; margin-bottom: 6px; }
+
+        .isl-badge {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 7px;
+            border-radius: 4px;
+            display: inline-block;
+            background: #f1f5f9;
+            color: var(--isl-muted);
+        }
+
+        .isl-badge-bestbet { background: #fef3c7; color: #92400e; }
+
+        .isl-title { font-size: 17px; font-weight: 600; margin: 0 0 6px; }
+
+        .isl-title a { color: var(--isl-accent); text-decoration: none; }
+
+        .isl-title a:hover { color: var(--isl-link); text-decoration: underline; }
+
+        .isl-snippet { font-size: 13.5px; color: #475569; margin: 0 0 8px; }
+
+        .isl-snippet mark { background: var(--isl-highlight); padding: 0 2px; border-radius: 2px; }
+
+        .isl-meta {
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap;
+            font-size: 12px;
+            color: var(--isl-subtle);
+        }
+
+        .isl-meta-url { color: #059669; }
+
+        .isl-empty {
+            background: var(--isl-surface);
+            border: 1px dashed var(--isl-border);
+            border-radius: var(--isl-radius);
+            padding: 48px 24px;
+            text-align: center;
+            color: var(--isl-muted);
+        }
+
+        .isl-empty h3 { margin: 0 0 8px; color: var(--isl-accent); }
+
+        .isl-loadmore { display: flex; justify-content: center; margin-top: 22px; }
+
+        .isl-btn-more {
+            width: 100%;
+            max-width: 320px;
+            height: 44px;
+            background: var(--isl-surface);
+            border: 1px solid var(--isl-accent);
+            color: var(--isl-accent);
+            font-weight: 600;
+            font-size: 14px;
+            border-radius: var(--isl-radius);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .isl-btn-more:hover:not(:disabled) { background: var(--isl-accent); color: #fff; }
+
+        .isl-btn-more:disabled { opacity: 0.6; cursor: wait; }
+
+        .isl-profile { font-size: 11px; color: var(--isl-subtle); }
+
+        @@media (max-width: 44rem) {
+            .isl-select { min-width: 100%; }
+            .isl-form { flex-direction: column; }
+        }
+    </style>
+
+    @* One GET form holds every filter dropdown and the search box, so picking an option re-runs
+       the search with the term and every other selection intact. Each section below is its own
+       overridable partial: a site drops Views/Partials/Search/filters.cshtml, results.cshtml,
+       noresults.cshtml or loadmore.cshtml into its project to replace just that piece - the
+       package copies keep serving everywhere else. *@
+    <form method="get" action="">
+        @* The bar is driven by the profile's facet DEFINITIONS, so the dropdowns are here the
+           moment the page opens - before any word is typed - exactly as configured in the CMS.
+           Counts merge in from the response once a search (including the automatic browse pass)
+           has produced them. *@
+        <partial name="~/Views/Partials/Search/filters.cshtml" model="Model" />
+
+        @{
+            var searchBar = new Imobisoft.Search.Models.SearchBarModel
+            {
+                Term = Model.Term,
+                FormClass = "isl-form",
+                WrapClass = "isl-field",
+                InputClass = "isl-input",
+                ButtonClass = "isl-btn",
+            };
+        }
+        <partial name="~/Views/Partials/Search/searchbar.cshtml" model="searchBar" />
+
+        @if (response is null)
+        {
+            <div class="isl-empty">
+                <h3>Welcome to Search</h3>
+                <p>Type keywords into the search box above, or pick a filter, to find pages, articles, media, and documents.</p>
+            </div>
+        }
+        else
+        {
+            @* The browse pass fills the list before any term is typed, honouring the profile's
+               "results before searching" setting. *@
+            @if (!string.IsNullOrWhiteSpace(response.Suggestion))
+            {
+                <div class="isl-suggestion">
+                    Did you mean <a href="?q=@Uri.EscapeDataString(response.Suggestion)">@response.Suggestion</a>?
+                </div>
+            }
+
+            <div class="isl-stats">
+                <div>
+                    Found <strong>@response.TotalResults</strong> result@(response.TotalResults == 1 ? "" : "s")
+                    @if (!string.IsNullOrWhiteSpace(response.Term))
+                    {
+                        <span>for &ldquo;<strong>@response.Term</strong>&rdquo;</span>
+                    }
+                </div>
+                @if (response.TotalResults > 0 && response.EnableLoadMore)
+                {
+                    <div>Page <strong>@response.Page</strong> of <strong>@Math.Max(1, response.TotalPages)</strong></div>
+                }
+                @* Which profile answered - so a site can see at a glance that the rules it
+                   configured in the backoffice are the ones in effect here. *@
+                <span class="isl-profile">Profile: @response.ProfileAlias</span>
+            </div>
+
+            @if (response.Groups.Count > 0)
+            {
+                <div class="isl-groups">
+                    @foreach (var group in response.Groups)
+                    {
+                        <span class="isl-group-pill">@group.Key: <strong>@group.Value</strong></span>
+                    }
+                </div>
+            }
+
+            @if (response.Results.Count == 0)
+            {
+                <partial name="~/Views/Partials/Search/noresults.cshtml" model="Model" />
+            }
+            else
+            {
+                <partial name="~/Views/Partials/Search/results.cshtml" model="Model" />
+                <partial name="~/Views/Partials/Search/loadmore.cshtml" model="Model" />
+            }
+        }
+    </form>
+</div>
+
+<script>
+    (function () {
+        document.querySelectorAll('[data-imobisoft-listing]').forEach(function (root) {
+            var button = root.querySelector('[data-imobisoft-more]');
+            var list = root.querySelector('[data-imobisoft-results]');
+            if (!button || !list || button.dataset.imobisoftBound) return;
+            button.dataset.imobisoftBound = 'true';
+
+            button.addEventListener('click', function () {
+                var next = parseInt(button.getAttribute('data-next-page'), 10);
+                var total = parseInt(button.getAttribute('data-total-pages'), 10);
+                var label = button.textContent;
+
+                button.disabled = true;
+                button.textContent = 'Loading...';
+
+                // The next page is this same URL at the next page number, so whatever the host
+                // page is - an Umbraco template, the built-in page, anything - it just re-renders.
+                var params = new URLSearchParams(window.location.search);
+                params.set('page', next);
+
+                fetch(window.location.pathname + '?' + params.toString())
+                    .then(function (res) {
+                        if (!res.ok) throw new Error('HTTP ' + res.status);
+                        return res.text();
+                    })
+                    .then(function (html) {
+                        var doc = new DOMParser().parseFromString(html, 'text/html');
+
+                        doc.querySelectorAll('[data-imobisoft-results] > li').forEach(function (li) {
+                            list.appendChild(li);
+                        });
+
+                        var fresh = doc.querySelector('[data-imobisoft-more]');
+                        if (!fresh || next >= total) {
+                            var wrap = button.closest('.isl-loadmore');
+                            if (wrap) {
+                                wrap.parentNode.removeChild(wrap);
+                            } else {
+                                button.parentNode.removeChild(button);
+                            }
+                        } else {
+                            button.setAttribute('data-next-page', fresh.getAttribute('data-next-page'));
+                            button.setAttribute('data-total-pages', fresh.getAttribute('data-total-pages'));
+                            button.disabled = false;
+                            button.textContent = label;
+                        }
+                    })
+                    .catch(function (err) {
+                        console.error('Imobisoft Search: failed to load more results.', err);
+                        button.disabled = false;
+                        button.textContent = label;
+                    });
+            });
+        });
+    })();
+</script>

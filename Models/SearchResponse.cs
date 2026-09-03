@@ -91,6 +91,12 @@ public sealed class SearchResponse
 
     public int TotalPages => PageSize <= 0 ? 0 : (int)Math.Ceiling(TotalResults / (double)PageSize);
 
+    /// <summary>True when there are more results available to fetch for Load More or Infinite Scroll.</summary>
+    public bool HasMore => Page < TotalPages;
+
+    /// <summary>Whether Load More pagination is configured for this profile.</summary>
+    public bool EnableLoadMore { get; set; }
+
     /// <summary>Counts per document type, populated when <see cref="ResultRules.GroupByContentType"/> is on.</summary>
     public IDictionary<string, int> Groups { get; set; } =
         new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -100,6 +106,12 @@ public sealed class SearchResponse
     /// matched result window before paging.
     /// </summary>
     public IList<FacetResult> Facets { get; set; } = new List<FacetResult>();
+
+    /// <summary>
+    /// Alias of the <see cref="SortOption"/> applied to this response, echoed back so the site can
+    /// mark the right choice as selected. Null when the profile's default ranking was used.
+    /// </summary>
+    public string? SelectedSort { get; set; }
 
     /// <summary>
     /// A corrected term to offer as "did you mean", set when the query returned little or nothing

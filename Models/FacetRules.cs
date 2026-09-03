@@ -59,6 +59,16 @@ public sealed class FacetDefinition
 
     /// <summary>Hides buckets with no matches instead of returning them at zero.</summary>
     public bool HideEmpty { get; set; } = true;
+
+    /// <summary>Whether this filter is enabled and active in search results.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// Aliases of other facets that must have an active selection before this facet's own
+    /// selection narrows results. Until every listed facet is also in use, selections made here
+    /// are recorded but inert - which is what powers rules like "Year only works together with Date".
+    /// </summary>
+    public IList<string> Requires { get; set; } = new List<string>();
 }
 
 /// <summary>One bucket in a computed facet.</summary>
