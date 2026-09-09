@@ -95,15 +95,15 @@ internal sealed class SearchQueryPlanner
 
         var indexPlans = new List<IndexQueryPlan>();
 
-        // The include gate: until a profile names at least one document type (or entity type),
-        // nothing is searchable - that is what keeps a fresh install from exposing the whole site.
+        // Which kinds of document can match. Only an explicit narrowing that resolves to nothing
+        // ends up empty here - an unnarrowed profile searches content and media.
         var typeClause = BuildTypeClause(rules.Sources);
 
         if (string.IsNullOrEmpty(typeClause))
         {
             return SearchPlan.Blocked(
                 rules,
-                "Nothing is included yet. Add document types under Sources & Scope to turn search on.");
+                "The profile's entity types resolve to nothing searchable. Check Sources & Scope.");
         }
 
         foreach (var indexName in indexNames)
@@ -232,27 +232,36 @@ internal sealed class SearchQueryPlanner
     /// Builds the clause that limits which kinds of document can match. Document type and media type
     /// restrictions have to be scoped to their own index type, otherwise excluding a document type
     /// would silently exclude every media item too.
+    /// <para>
+    /// A profile that narrows nothing searches content and media, which is what "leave empty for
+    /// all" means everywhere else - the models, the dashboard's Sources tab and the readme all say
+    /// so. Members are the one exception and are never in scope unless the profile names them
+    /// outright: member records are not site content, and a profile that simply did not narrow
+    /// anything must not put them in front of a visitor.
+    /// </para>
     /// </summary>
     private static string BuildTypeClause(SourceRules sources)
     {
         var hasContentRule = sources.IncludeContentTypes.Count > 0;
         var hasMediaRule = sources.IncludeMediaTypes.Count > 0;
 
-        // Everything is excluded by default: content appears only through the include list, media
-        // only through its own, and members only when the profile names the member entity outright.
-        // An explicit entity-type selection also keeps its branch open. A profile that names nothing
-        // therefore matches no document type at all - the Sources tab is what turns search on.
         bool IndexTypesContains(string indexType)
             => sources.IndexTypes.Any(x => x.Equals(indexType, StringComparison.OrdinalIgnoreCase));
 
+        // Nothing named at all - no entity type, no document type, no media type - is the
+        // unnarrowed profile, not an empty one. Returning no clause here is what used to leave a
+        // profile created from the dashboard answering every search, and every filter count, with
+        // nothing at all while the Sources tab reported "All Categories".
+        var narrowed = sources.IndexTypes.Count > 0 || hasContentRule || hasMediaRule;
+
         var allowed = new List<string>();
 
-        if (hasContentRule || IndexTypesContains(ImobisoftSearchConstants.IndexTypes.Content))
+        if (!narrowed || hasContentRule || IndexTypesContains(ImobisoftSearchConstants.IndexTypes.Content))
         {
             allowed.Add(ImobisoftSearchConstants.IndexTypes.Content);
         }
 
-        if (hasMediaRule || IndexTypesContains(ImobisoftSearchConstants.IndexTypes.Media))
+        if (!narrowed || hasMediaRule || IndexTypesContains(ImobisoftSearchConstants.IndexTypes.Media))
         {
             allowed.Add(ImobisoftSearchConstants.IndexTypes.Media);
         }

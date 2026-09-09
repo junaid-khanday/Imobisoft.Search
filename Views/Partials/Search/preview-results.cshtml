@@ -15,9 +15,14 @@
     var stylesView = Themes.ResolvePartial(Model.Theme, "styles");
     var resultsView = Themes.ResolvePartial(Model.Theme, "results");
     var noResultsView = Themes.ResolvePartial(Model.Theme, "noresults");
+    var aiAnswerView = Themes.ResolvePartial(Model.Theme, "aianswer");
 }
 <div class="isl" data-imobisoft-preview="results">
     <partial name="@stylesView" model="Model" />
+
+    @* Rendered here too, so an editor tuning the AI settings sees the answer box exactly as the
+       site will serve it rather than having to open the front end to check. *@
+    <partial name="@aiAnswerView" model="Model" />
 
     @if (response is null)
     {

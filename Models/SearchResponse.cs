@@ -119,6 +119,22 @@ public sealed class SearchResponse
     /// </summary>
     public string? Suggestion { get; set; }
 
+    /// <summary>
+    /// A short answer written from these results by the AI add-on. Null whenever the add-on is off,
+    /// unconfigured, or could not answer - which is why a view must treat it as optional decoration
+    /// above the results rather than as the results themselves.
+    /// </summary>
+    public AiAnswer? AiAnswer { get; set; }
+
+    /// <summary>
+    /// The terms the AI query-understanding pass added to what the visitor typed, when it ran.
+    /// Surfaced so the dashboard can show why a search matched more than the words suggest.
+    /// </summary>
+    public IList<string> AiExpandedTerms { get; set; } = new List<string>();
+
+    /// <summary>True when the AI reordered this page of results.</summary>
+    public bool AiReranked { get; set; }
+
     /// <summary>Only populated when <see cref="SearchRequest.IncludeDiagnostics"/> is set.</summary>
     public SearchDiagnostics? Diagnostics { get; set; }
 

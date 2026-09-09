@@ -1,0 +1,60 @@
+@model Imobisoft.Search.Web.ImobisoftSearchListingViewModel
+@* The AI answer box, above the results.
+
+   Renders nothing at all unless the AI add-on produced an answer for this search, so a site with
+   the add-on off - or a search the model could not answer - looks exactly as it did before.
+
+   Override at Views/Partials/Search/aianswer.cshtml, or per theme at
+   Views/Partials/Search/Themes/<name>/aianswer.cshtml, to restyle it. The answer text is already
+   HTML-encoded by the engine; the citation markers ([1], [2]) are plain text inside it and line up
+   with the numbered Sources list. *@
+@{
+    Imobisoft.Search.Models.AiAnswer? answer = Model.Response?.AiAnswer;
+}
+@if (answer is not null && !string.IsNullOrWhiteSpace(answer.Text))
+{
+    <section class="isl-ai" aria-label="AI answer">
+        <div class="isl-ai-head">
+            <span class="isl-ai-badge">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                    <path d="M12 3l1.9 4.6 4.6 1.9-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"></path>
+                </svg>
+                AI answer
+            </span>
+
+            @* Said out loud rather than hidden: an answer the sources did not really support is
+               worth flagging to the visitor, not dressing up as a confident one. *@
+            @if (answer.IsInconclusive)
+            {
+                <span class="isl-ai-flag">No direct answer found</span>
+            }
+        </div>
+
+        <p class="isl-ai-text">@answer.Text</p>
+
+        @if (answer.Sources.Count > 0)
+        {
+            <ol class="isl-ai-sources">
+                @foreach (var source in answer.Sources)
+                {
+                    <li class="isl-ai-source">
+                        <span class="isl-ai-source-num">@source.Number</span>
+                        @if (!string.IsNullOrWhiteSpace(source.Url))
+                        {
+                            <a href="@source.Url">@source.Name</a>
+                        }
+                        else
+                        {
+                            <span>@source.Name</span>
+                        }
+                    </li>
+                }
+            </ol>
+        }
+
+        @* A generated answer has to say it is one. Kept as part of the default markup rather than
+           left to the site, so the disclosure cannot be lost by forgetting to add it. *@
+        <p class="isl-ai-note">Generated from the search results above by AI. Check the sources before relying on it.</p>
+    </section>
+}

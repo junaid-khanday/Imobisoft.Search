@@ -51,10 +51,24 @@ public sealed class SearchPageScaffolder
     suggestions and Load More - comes from the package, rendered with whichever theme the search
     profile selects. Change the theme under Search > your profile > Results, not here.
 
-    To wrap this in the site's own layout, set Layout above to your master view. To take the markup
-    over completely, create Views/Partials/Search/Themes/<name>/ and pick that theme.
+    To put this inside the site's own chrome, set Layout above to your master view and delete the
+    <!DOCTYPE> ... </html> wrapper below - the search block itself is the one line in the middle.
+    To take the markup over completely, create Views/Partials/Search/Themes/<name>/ and pick that
+    theme in the backoffice.
 *@
-@await Component.InvokeAsync("ImobisoftSearchListing")
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    @* Without this the page renders at desktop width on a phone, which is what an unstyled search
+       page looks like when it is really just missing its viewport. *@
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@Model.Name</title>
+</head>
+<body>
+    @await Component.InvokeAsync("ImobisoftSearchListing")
+</body>
+</html>
 """;
 
     private readonly IContentTypeService _contentTypeService;

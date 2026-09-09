@@ -46,21 +46,32 @@
 
         @if (Model.ConfiguredSortOptions.Count > 0)
         {
+            @* An option with no field is the "relevance" choice - an empty field is what tells the
+               engine to leave the profile's own ranking alone. It is rendered like every other
+               option, from its own alias and its own label, so an editor who renames it in the CMS
+               sees the new name here. Only when the profile defines no such option is a blank
+               fallback emitted, so a visitor always has a way back to the default order. *@
+            SortOption? relevance = Model.ConfiguredSortOptions
+                .FirstOrDefault(o => string.IsNullOrWhiteSpace(o.Field));
+
+            var noSortPicked = string.IsNullOrEmpty(Model.SelectedSort);
+
             <label class="isl-filter-item">
                 <span class="isl-filter-label">Sort by</span>
                 <select class="isl-select"
                         name="sort"
                         aria-label="Sort by"
                         onchange="this.form.submit()">
-                    <option value="" selected="@string.IsNullOrEmpty(Model.SelectedSort)">Relevance</option>
+                    @if (relevance is null)
+                    {
+                        <option value="" selected="@noSortPicked">Relevance</option>
+                    }
                     @foreach (SortOption option in Model.ConfiguredSortOptions)
                     {
-                        if (string.IsNullOrWhiteSpace(option.Field))
-                        {
-                            continue;
-                        }
+                        var isRelevance = ReferenceEquals(option, relevance);
+
                         <option value="@option.Alias"
-                                selected="@option.Alias.Equals(Model.SelectedSort, StringComparison.OrdinalIgnoreCase)">
+                                selected="@(option.Alias.Equals(Model.SelectedSort, StringComparison.OrdinalIgnoreCase) || (isRelevance && noSortPicked))">
                             @option.Label
                         </option>
                     }

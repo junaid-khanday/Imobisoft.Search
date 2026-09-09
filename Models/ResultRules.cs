@@ -118,9 +118,9 @@ public sealed class ResultRules
     /// Anything the theme does not define falls back to the package's own partial, so a theme can
     /// restyle just the result cards and inherit the rest.
     /// <para>
-    /// Empty means the built-in look. The package ships no themes - a site authors its own under
-    /// <c>Views/Partials/Search/Themes/</c> and they appear in the backoffice picker, applying to
-    /// the front-end search page and the Test Search panel alike.
+    /// Empty means the built-in look. The package ships one theme, <c>modern</c>; a site authors
+    /// its own under <c>Views/Partials/Search/Themes/</c> and they appear in the backoffice picker
+    /// alongside it, applying to the front-end search page and the Test Search panel alike.
     /// </para>
     /// </summary>
     public string Theme { get; set; } = string.Empty;

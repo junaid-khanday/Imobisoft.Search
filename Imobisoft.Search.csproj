@@ -37,7 +37,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="../README.md" Pack="true" PackagePath="\" Condition="Exists('../README.md')" />
+    <!-- PackageReadmeFile above names README.md, so this has to be unconditional: a missing readme
+         fails the pack with NU5039 rather than being quietly skipped. -->
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <ItemGroup>
@@ -52,6 +54,7 @@
   <ItemGroup>
     <!-- Pinned to the 17 line: Umbraco.Cms.* 17.x packages pin each other to [17.0.0, 18.0.0),
          so an Umbraco 18 site needs a separate build of this package. -->
+    <PackageReference Include="Anthropic" Version="12.46.0" />
     <PackageReference Include="Umbraco.Cms.Api.Management" Version="[17.0.0, 18.0.0)" />
     <PackageReference Include="Umbraco.Cms.Web.Common" Version="[17.0.0, 18.0.0)" />
   </ItemGroup>

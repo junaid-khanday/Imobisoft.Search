@@ -61,4 +61,10 @@ public sealed class SearchSettings
     public AnalyticsSettings Analytics { get; set; } = new();
 
     public SuggestionSettings Suggestions { get; set; } = new();
+
+    /// <summary>
+    /// The AI add-on: the credential and which of the AI features are switched on. Entirely inert
+    /// until a key is saved, so an existing site is unaffected by the add-on existing.
+    /// </summary>
+    public AiSettings Ai { get; set; } = new();
 }

@@ -18,6 +18,7 @@ import {
     purgeInsights,
     getSettings,
     updateSettings,
+    testAiConnection,
     previewSearch,
     renderPreview,
     getThemes,
@@ -62,6 +63,9 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         _testDiagnosticsOpen: { state: true },
         _themes: { state: true },
         _testRendered: { state: true },
+        _testRenderError: { state: true },
+        _aiTestResult: { state: true },
+        _aiTesting: { state: true },
         _showMessageBox: { state: true },
         _messageBoxType: { state: true },
         _messageBoxTitle: { state: true },
@@ -175,6 +179,11 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         this._testDiagnosticsOpen = false;
         this._themes = null;
         this._testRendered = null;
+        // Kept apart from _testRendered so a failed render reports itself without discarding the
+        // markup already on screen.
+        this._testRenderError = null;
+        this._aiTestResult = null;
+        this._aiTesting = false;
         this._showMessageBox = false;
         this._messageBoxType = 'confirm';
         this._messageBoxTitle = '';
@@ -500,8 +509,12 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         fuzziness: res.data.suggestions?.fuzziness ?? 0.65,
                         maximumEditDistance: res.data.suggestions?.maximumEditDistance ?? 3,
                         autocompleteSize: res.data.suggestions?.autocompleteSize ?? 10
-                    }
+                    },
+                    // Taken wholesale rather than field-by-field: apiKey arrives masked and
+                    // hasApiKey is server-computed, so rebuilding it here would drop both.
+                    ai: res.data.ai
                 };
+                this._ensureAiSettings(this._settings);
             }
         } catch (e) {
             console.error("Failed to load settings:", e);
@@ -529,6 +542,37 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
 
     // ----------------- PROFILE FACTORY & SERIALIZATION -----------------
 
+    // The filter dimensions a new profile starts with. Every field named here is written by Umbraco
+    // itself into both the content and media indexes, so the dropdowns have real values on a site
+    // that has configured nothing. Kept in step with SearchProfile.DefaultFacets() in C#, which is
+    // what the installer seeds the very first profile with.
+    static _defaultFacets = () => ([
+        { alias: 'contentType', field: '__NodeTypeAlias', label: 'Content type', kind: 'field', maxValues: 20, hideEmpty: true, enabled: true, ranges: [], requires: [] },
+        { alias: 'section', field: '__IndexType', label: 'Section', kind: 'field', maxValues: 10, hideEmpty: true, enabled: true, ranges: [], requires: [] },
+        {
+            alias: 'updated', field: 'updateDate', label: 'Last updated', kind: 'dateRange',
+            maxValues: 20, hideEmpty: true, enabled: true, requires: [],
+            // Relative bounds rather than fixed dates, so "last 7 days" still means the last seven
+            // days a year after the site went live.
+            ranges: [
+                { alias: 'last7', label: 'Last 7 days', from: 'now-7d', to: '' },
+                { alias: 'last30', label: 'Last 30 days', from: 'now-30d', to: '' },
+                { alias: 'last12m', label: 'Last 12 months', from: 'now-12m', to: '' },
+                { alias: 'older', label: 'Over a year ago', from: '', to: 'now-12m' }
+            ]
+        }
+    ]);
+
+    // The choices a new profile offers in "Sort by". The relevance entry carries no field on
+    // purpose: an empty field tells the engine to leave the profile's own ranking alone.
+    static _defaultSortOptions = () => ([
+        { alias: 'relevance', label: 'Relevance', field: '', direction: 'ascending', enabled: true },
+        { alias: 'nameAsc', label: 'Title A - Z', field: 'nodeName', direction: 'ascending', enabled: true },
+        { alias: 'nameDesc', label: 'Title Z - A', field: 'nodeName', direction: 'descending', enabled: true },
+        { alias: 'newest', label: 'Newest first', field: 'updateDate', direction: 'descending', enabled: true },
+        { alias: 'oldest', label: 'Oldest first', field: 'updateDate', direction: 'ascending', enabled: true }
+    ]);
+
     _createEmptyProfile() {
         return {
             key: this._generateGuid(),
@@ -539,7 +583,11 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             rules: {
                 sources: {
                     indexes: [],
-                    indexTypes: [],
+                    // Naming the two indexes every Umbraco site ships with is what turns search on:
+                    // the engine treats a profile that names no entity type and no document type as
+                    // "nothing included yet" and refuses to run, so a profile created with these
+                    // empty would answer every search - and every filter count - with nothing.
+                    indexTypes: ['content', 'media'],
                     includeContentTypes: [],
                     excludeContentTypes: [],
                     includeMediaTypes: [],
@@ -576,13 +624,17 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 },
                 results: {
                     pageSize: 10,
+                    browsePageSize: 10,
                     maxResults: 500,
                     enableLoadMore: false,
                     returnFields: [],
                     groupByContentType: false,
+                    enableDeduplication: true,
                     deduplicateByField: '',
+                    minimumActiveFilters: 0,
+                    theme: '',
                     highlight: {
-                        enabled: false,
+                        enabled: true,
                         highlightMatches: true,
                         mode: 'sentence',
                         field: '',
@@ -591,7 +643,13 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         startTag: '<mark>',
                         endTag: '</mark>'
                     },
-                    facets: []
+                    // A search page with nothing above the box looks unfinished, so a new profile
+                    // ships the filter dimensions and sort choices every Umbraco site can answer
+                    // without a property being configured first. They are ordinary facets - editors
+                    // retune or delete them under Filters like any other.
+                    facets: ImobisoftSearchWorkspace._defaultFacets(),
+                    sortOptions: ImobisoftSearchWorkspace._defaultSortOptions(),
+                    resetFilter: { enabled: false, label: '', scope: 'all', facets: [] }
                 }
             }
         };
@@ -612,8 +670,52 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 fuzziness: 0.65,
                 maximumEditDistance: 3,
                 autocompleteSize: 10
+            },
+            // Mirrors AiSettings in C#. Everything here is inert until a key is saved, so these
+            // defaults describe a switched-off add-on rather than a configured one.
+            ai: {
+                // On by default: the default provider is the built-in one, which needs no key and
+                // costs nothing, so the answer box works on a fresh install.
+                enabled: true,
+                provider: 'builtin',
+                apiKey: '',
+                hasApiKey: false,
+                model: 'claude-opus-5',
+                baseUrl: '',
+                timeoutSeconds: 12,
+                cacheMinutes: 60,
+                maxRequestsPerMinute: 60,
+                answer: { enabled: true, maxSources: 5, maxWords: 90, showSources: true, effort: 'low' },
+                queryUnderstanding: { enabled: false, maxAddedTerms: 6, minimumWords: 3, effort: 'low' },
+                rerank: { enabled: false, topN: 10, effort: 'low' }
             }
         };
+    }
+
+    // Backfills the AI block on a settings payload saved before the add-on existed, so the panel
+    // and the toggles read the same shape whether or not the site has ever opened them.
+    _ensureAiSettings(s) {
+        if (!s) return;
+        const d = this._createEmptySettings().ai;
+        if (!s.ai) { s.ai = d; return; }
+        for (const key of Object.keys(d)) {
+            if (s.ai[key] === undefined) s.ai[key] = d[key];
+        }
+
+        // Normalise the provider to one of the known ids, case-insensitively. The picker compares
+        // this string exactly, so anything unexpected - a value from an older build, a casing
+        // difference from a different serialiser - would match no radio and leave the panel
+        // showing the wrong engine. Anything unrecognised falls back to the free one, never a
+        // paid one: guessing wrong must not start billing somebody.
+        const known = ImobisoftSearchWorkspace._aiProviders.map(p => p.id);
+        const match = known.find(id => id.toLowerCase() === String(s.ai.provider || '').toLowerCase());
+        s.ai.provider = match || 'builtin';
+        for (const group of ['answer', 'queryUnderstanding', 'rerank']) {
+            if (!s.ai[group]) { s.ai[group] = d[group]; continue; }
+            for (const key of Object.keys(d[group])) {
+                if (s.ai[group][key] === undefined) s.ai[group][key] = d[group][key];
+            }
+        }
     }
 
     _generateGuid() {
@@ -783,10 +885,13 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
 
         if (!p.rules.results) p.rules.results = {};
         if (p.rules.results.pageSize === undefined) p.rules.results.pageSize = 10;
+        if (p.rules.results.browsePageSize === undefined) p.rules.results.browsePageSize = 10;
         if (p.rules.results.maxResults === undefined) p.rules.results.maxResults = 500;
         if (p.rules.results.enableLoadMore === undefined) p.rules.results.enableLoadMore = false;
         if (!p.rules.results.returnFields) p.rules.results.returnFields = [];
         if (p.rules.results.groupByContentType === undefined) p.rules.results.groupByContentType = false;
+        if (p.rules.results.enableDeduplication === undefined) p.rules.results.enableDeduplication = true;
+        if (p.rules.results.minimumActiveFilters === undefined) p.rules.results.minimumActiveFilters = 0;
         if (!p.rules.results.deduplicateByField) p.rules.results.deduplicateByField = '';
         if (!p.rules.results.highlight) p.rules.results.highlight = { enabled: false, highlightMatches: true, mode: 'sentence', field: '', snippetLength: 200, sentenceContext: 0, startTag: '<mark>', endTag: '</mark>' };
         if (!p.rules.results.facets) p.rules.results.facets = [];
@@ -1204,6 +1309,14 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             this._sidePanelData = {
                 facets: JSON.parse(JSON.stringify(this._currentProfile.rules?.results?.facets || []))
             };
+        } else if (type === 'editAi') {
+            this._ensureAiSettings(this._settings);
+            // Deep copy: the panel is cancellable, and these edits must not reach the live settings
+            // object until Save. _aiTestResult is cleared so a stale "Connected" from a previous
+            // key cannot vouch for a new one.
+            this._sidePanelData = JSON.parse(JSON.stringify(this._settings.ai));
+            this._aiTestResult = null;
+            this._aiTesting = false;
         } else if (type === 'profileMetadata') {
             this._sidePanelData = {
                 name: this._currentProfile.name,
@@ -1499,6 +1612,25 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     async _saveSidePanel() {
         const d = this._sidePanelData;
         const errs = {};
+
+        // AI configuration is site-wide, not part of a profile, so it saves through the settings
+        // endpoint and returns before the profile save at the bottom of this method.
+        if (this._sidePanelType === 'editAi') {
+            const next = JSON.parse(JSON.stringify(d));
+
+            // An untouched field still holds the server's mask. Sending it back is what tells the
+            // server to keep the stored key; sending a typed value replaces it, and sending an
+            // empty string clears it.
+            if (!d._apiKeyTouched) {
+                next.apiKey = this._settings.ai.apiKey || '';
+            }
+            delete next._apiKeyTouched;
+
+            this._settings.ai = next;
+            this._closeSidePanel();
+            await this._saveSettings();
+            return;
+        }
 
         if (this._sidePanelType === 'editField') {
             if (!d.name || !d.name.trim()) errs.name = "Field name is required.";
@@ -1905,13 +2037,27 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
 
             // Both calls run: the JSON response drives the facet chips, the counts and the query
             // plan diagnostics, while the render supplies the themed markup shown in the frame.
-            // Failing to render a theme must not lose the results that already came back.
+            //
+            // A render that fails must not take the panel with it. Dropping the markup empties the
+            // filter strip and the result list, which is what made clicking Reset Filters look like
+            // it had thrown the editor out of Test Search: the reset itself worked, and then the
+            // whole search surface vanished underneath it. The last good markup stays on screen and
+            // the failure is reported above it instead.
             try {
                 const rendered = await renderPreview(this._fetch.bind(this), req);
-                this._testRendered = rendered.ok && rendered.data ? rendered.data : null;
+                const data = rendered.ok ? rendered.data : null;
+
+                if (data && !data.error) {
+                    this._testRendered = data;
+                    this._testRenderError = null;
+                } else {
+                    this._testRenderError = data?.error
+                        || `The themed preview could not be rendered (HTTP ${rendered.status}).`;
+                }
             } catch (renderError) {
                 console.error("Theme preview render failed:", renderError);
-                this._testRendered = null;
+                this._testRenderError = renderError?.message
+                    || "The themed preview could not be rendered.";
             }
         } catch (e) {
             console.error("Test search error:", e);
@@ -1965,7 +2111,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     // How many results this render is showing, and how long the search took. Rendered at the top
     // of the box rather than above the list, so it reads as a heading for the whole search.
     _renderTestMeta() {
-        if (!this._testRendered || this._testRendered.error) {
+        if (!this._testRendered) {
             return nothing;
         }
 
@@ -2002,23 +2148,23 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         }
 
         if (!rendered) {
-            return html`
-                <div class="empty-state">
-                    <i class="icon-search empty-icon"></i>
-                    <h4>Search Rule Tester</h4>
-                    <p>Enter a query above to see live results and inspect query planning diagnostics.</p>
-                </div>
-            `;
-        }
-
-        if (rendered.error) {
-            return html`
-                <div class="empty-state">
-                    <h4>The theme failed to render</h4>
-                    <p><code>${rendered.error}</code></p>
-                    <p>Fix the theme's view, then run the search again.</p>
-                </div>
-            `;
+            // Nothing has rendered yet. An error at this point is the first render failing, so it
+            // is the more useful thing to say - there is no markup being kept back behind it.
+            return this._testRenderError
+                ? html`
+                    <div class="empty-state">
+                        <h4>The theme failed to render</h4>
+                        <p><code>${this._testRenderError}</code></p>
+                        <p>Fix the theme's view, then run the search again.</p>
+                    </div>
+                `
+                : html`
+                    <div class="empty-state">
+                        <i class="icon-search empty-icon"></i>
+                        <h4>Search Rule Tester</h4>
+                        <p>Enter a query above to see live results and inspect query planning diagnostics.</p>
+                    </div>
+                `;
         }
 
         const shown = this._testResults?.results?.length || 0;
@@ -2053,6 +2199,13 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         try {
             const res = await updateSettings(this._fetch.bind(this), this._settings);
             if (res.ok) {
+                // Re-read from the response rather than keeping the posted object: the server
+                // re-masks the API key, and holding the typed one in memory afterwards is exactly
+                // what "the dashboard cannot read the key" is meant to prevent.
+                if (res.data) {
+                    this._settings = res.data;
+                    this._ensureAiSettings(this._settings);
+                }
                 this._showToast("Search settings updated successfully!", "success");
             } else {
                 this._showToast("Failed to save search settings.", "error");
@@ -2606,7 +2759,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 <div class="mf-field">
                     <div class="field-left-info">
                         <div class="setting-title">Index Entity Types</div>
-                        <div class="setting-desc">Filter by Examine entity type (content, media, member). Leave empty for all.</div>
+                        <div class="setting-desc">Filter by Examine entity type. Leave empty for content and media - members are only searched when you select them here.</div>
                     </div>
                     <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editSourceEntityTypes')}>
                         <div class="field-box-header">
@@ -2624,8 +2777,8 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                 </div>
                             ` : html`
                                 <div class="selected-placeholder">
-                                    <span class="placeholder-tag">All Entity Categories</span>
-                                    <span class="placeholder-meta">Content, Media, and Member entities eligible.</span>
+                                    <span class="placeholder-tag">Content &amp; Media</span>
+                                    <span class="placeholder-meta">Not narrowed - content and media are searched. Select Member above to include member records.</span>
                                 </div>
                             `}
                         </div>
@@ -3166,7 +3319,6 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                 </span>
                             </div>
                         </div>
-                        </div>
                     </div>
                 </div>
 
@@ -3411,6 +3563,16 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                             <!-- Counts, top right, above the filters -->
                             <div class="test-box-meta">${this._renderTestMeta()}</div>
 
+                            <!-- A render that failed while markup was already on screen. Reported
+                                 here rather than by clearing the panel, so the filters, the term
+                                 and the results the editor was working with all stay put. -->
+                            ${this._testRenderError && this._testRendered ? html`
+                                <div class="test-render-error">
+                                    <strong>The themed preview is out of date.</strong>
+                                    <code>${this._testRenderError}</code>
+                                </div>
+                            ` : nothing}
+
                             <!-- The theme's filter markup, injected into this shadow root. Its
                                  stylesheet is scoped here by the shadow boundary, so it styles
                                  these dropdowns and cannot reach the backoffice around them. -->
@@ -3508,6 +3670,26 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                             </div>
                                         `)}
                                     </div>
+
+                                    <!-- What the AI add-on did, when it is on. Shown next to the
+                                         query plan because "why did this match" now has two
+                                         possible answers, and the expanded terms are the other. -->
+                                    ${(this._testResults.aiExpandedTerms || []).length > 0 || this._testResults.aiReranked || this._testResults.aiAnswer ? html`
+                                        <div class="diag-section">
+                                            <div class="diag-label">AI</div>
+                                            <div class="diag-tags">
+                                                ${this._testResults.aiAnswer ? html`
+                                                    <span class="diag-tag">
+                                                        answer${this._testResults.aiAnswer.fromCache ? ' (cached)' : ''}
+                                                    </span>
+                                                ` : nothing}
+                                                ${this._testResults.aiReranked ? html`<span class="diag-tag">re-ranked</span>` : nothing}
+                                                ${(this._testResults.aiExpandedTerms || []).map(t => html`
+                                                    <span class="diag-tag diag-tag-term">+${t}</span>
+                                                `)}
+                                            </div>
+                                        </div>
+                                    ` : nothing}
 
                                     <!-- Rule Notes -->
                                     ${(this._testResults.diagnostics.notes || []).length > 0 ? html`
@@ -3734,6 +3916,8 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
 
         return html`
             <div class="settings-view">
+                ${this._renderAiSettingsCard()}
+
                 <div class="rule-section-grid">
                     <!-- Analytics Settings -->
                     <div class="card">
@@ -3846,6 +4030,76 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         `;
     }
 
+    // The AI add-on summary, above the ordinary settings cards. Everything it reports is derived
+    // from saved state, so it doubles as the answer to "is AI actually on right now" - the question
+    // an editor asks when the search page looks the same as it did yesterday.
+    _renderAiSettingsCard() {
+        this._ensureAiSettings(this._settings);
+        const ai = this._settings.ai;
+
+        // On is not the same as working: a model provider with no key runs nothing, so the card
+        // says so rather than showing a green light over a purely keyword-driven search. The
+        // built-in provider needs nothing, so on really does mean live.
+        const usesModel = ai.provider !== 'builtin';
+        const live = ai.enabled && (!usesModel || ai.hasApiKey);
+
+        // Query understanding and re-ranking exist only on a model provider, so they are not
+        // counted as active while the built-in engine is selected even if their toggles are on.
+        const features = [
+            ['AI answer', ai.answer.enabled],
+            ['Query understanding', usesModel && ai.queryUnderstanding.enabled],
+            ['Re-ranking', usesModel && ai.rerank.enabled],
+        ];
+        const active = features.filter(([, on]) => on).map(([name]) => name);
+
+        return html`
+            <div class="ai-hero ${live ? 'is-live' : ''}">
+                <div class="ai-hero-main">
+                    <div class="ai-hero-title">
+                        <span class="ai-hero-mark">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 3l1.9 4.6 4.6 1.9-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"></path>
+                            </svg>
+                        </span>
+                        <div>
+                            <h4>AI Search Add-on</h4>
+                            <span class="ai-hero-sub">
+                                Answers questions from your own content, understands how visitors phrase them,
+                                and reorders results by what actually helps.
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="selected-chips-wrap" style="margin-top:14px;">
+                        <span class="selected-chip ${live ? 'chip-success' : 'chip-muted'}">
+                            ${live ? '✓ Live' : (ai.enabled ? '⚠ On, but no API key saved' : '✕ Off')}
+                        </span>
+                        <span class="selected-chip ${usesModel ? '' : 'chip-success'}">
+                            ${usesModel
+                                ? html`<strong>${ImobisoftSearchWorkspace._aiProviderName(ai.provider)}:</strong> ${ai.model || '—'}`
+                                : html`✓ Built-in — free, no API key`}
+                        </span>
+                        ${usesModel ? html`
+                            <span class="selected-chip ${ai.hasApiKey ? 'chip-success' : 'chip-muted'}">
+                                ${ai.hasApiKey ? '✓ API key saved' : '✕ No API key'}
+                            </span>
+                        ` : nothing}
+                        <span class="selected-chip ${active.length ? 'chip-success' : 'chip-muted'}">
+                            ${active.length ? `✓ ${active.join(', ')}` : '✕ No AI features enabled'}
+                        </span>
+                    </div>
+                </div>
+
+                <div class="ai-hero-actions">
+                    <button class="btn btn-primary" @click=${() => this._openSidePanel('editAi')}>
+                        Configure
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
     // ----------------- SIDE PANEL DRAWER -----------------
 
     _renderSidePanel() {
@@ -3883,6 +4137,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         else if (t === 'editSourceRoots') { title = "Search Subtree Roots"; labelTag = "ROOTS"; }
         else if (t === 'editSourceProtection') { title = "Visibility & Protection Rules"; labelTag = "VISIBILITY"; }
         else if (t === 'profileMetadata') { title = "Profile Metadata & Settings"; labelTag = "PROFILE"; }
+        else if (t === 'editAi') { title = "AI Search Add-on"; labelTag = "AI"; }
 
         const itemName = d.label || d.name || d.alias || d.title || title;
 
@@ -3890,6 +4145,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             <div class="side-panel-overlay" @click=${this._closeSidePanel}>
                 <div class="side-panel-wrapper" @click=${e => e.stopPropagation()}>
                     <div class="sp-body">
+                        ${t === 'editAi' ? this._renderAiSidePanelBody(d) : nothing}
                         ${t === 'manageFields' ? this._renderManageFieldsSidePanelBody(d) : nothing}
                         ${t === 'editField' ? this._renderFieldSidePanelBody(d) : nothing}
                         ${t === 'editMatchParameters' ? this._renderMatchParametersSidePanelBody(d) : nothing}
@@ -4734,6 +4990,384 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                               placeholder="e.g.&#10;confidential&#10;internal&#10;draft"
                               .value=${d._termsInput || ''}
                               @input=${e => { d._termsInput = e.target.value; this.requestUpdate(); }}></textarea>
+                </div>
+            </div>
+        `;
+    }
+
+    // Runs one real request against the provider so a bad key fails here rather than silently on
+    // the search page. The saved key is never readable, so an untouched field sends nothing and the
+    // server tests what it already has.
+    async _testAiConnection(d) {
+        this._aiTesting = true;
+        this._aiTestResult = null;
+        this.requestUpdate();
+
+        try {
+            const res = await testAiConnection(this._fetch.bind(this), {
+                apiKey: d._apiKeyTouched ? (d.apiKey || '') : '',
+                model: d.model || ''
+            });
+            this._aiTestResult = res.ok && res.data
+                ? res.data
+                : { success: false, message: 'The test request could not be sent.' };
+        } catch (e) {
+            console.error('AI connection test failed:', e);
+            this._aiTestResult = { success: false, message: e?.message || 'The test request could not be sent.' };
+        } finally {
+            this._aiTesting = false;
+            this.requestUpdate();
+        }
+    }
+
+    _renderAiFeatureBlock(feature, title, description, extra) {
+        return html`
+            <div class="ai-feature ${feature.enabled ? 'is-on' : ''}">
+                <!-- A div rather than a label: the switch inside is already a label, and nesting
+                     one label in another is invalid markup with an ambiguous click target. -->
+                <div class="sp-toggle-row">
+                    <div class="sp-toggle-info">
+                        <span class="sp-toggle-title">${title}</span>
+                        <span class="sp-toggle-desc">${description}</span>
+                    </div>
+                    <label class="switch switch-sm">
+                        <input type="checkbox"
+                               .checked=${!!feature.enabled}
+                               @change=${e => { feature.enabled = e.target.checked; this.requestUpdate(); }}>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                ${feature.enabled ? extra : nothing}
+            </div>
+        `;
+    }
+
+    // The answer engines on offer. Ids match the AiProvider enum's camelCase serialisation exactly -
+    // a mismatch here is what would silently reset the picker to the wrong option after a save.
+    static _aiProviders = [
+        {
+            id: 'builtin',
+            name: 'Built-in',
+            free: true,
+            description: 'No API key, no account, no cost, and nothing leaves your server. Pulls the sentences that answer the question straight out of the results the search found.',
+        },
+        {
+            id: 'anthropic',
+            name: 'Claude',
+            free: false,
+            description: "Anthropic's Claude, through its official SDK. Writes a real answer rather than quoting one, and unlocks query understanding and re-ranking.",
+        },
+        {
+            id: 'openAiCompatible',
+            name: 'OpenAI-compatible',
+            free: false,
+            description: 'Any endpoint speaking OpenAI’s chat API — OpenAI, Azure, Gemini, Groq, Mistral, DeepSeek, Together, OpenRouter, or a local Ollama. You supply the URL, key and model.',
+        },
+    ];
+
+    static _aiProviderName(id) {
+        const found = ImobisoftSearchWorkspace._aiProviders.find(p => p.id === id);
+        return found ? found.name : 'Model';
+    }
+
+    // Switching provider carries a sensible model across rather than leaving the previous
+    // provider's model id in the box, which would fail with a confusing "model not found".
+    _pickAiProvider(d, id) {
+        if (d.provider === id) return;
+        d.provider = id;
+
+        if (id === 'anthropic' && !String(d.model || '').startsWith('claude')) {
+            d.model = 'claude-opus-5';
+        } else if (id === 'openAiCompatible' && String(d.model || '').startsWith('claude')) {
+            d.model = '';
+        }
+
+        this._aiTestResult = null;
+        this.requestUpdate();
+    }
+
+    // A feature the built-in engine genuinely cannot do. Shown as unavailable rather than hidden,
+    // so an editor can see what switching to a model provider would buy them - and shown as
+    // unavailable rather than as a toggle that silently does nothing.
+    _renderAiLockedFeature(title, description) {
+        return html`
+            <div class="ai-feature is-locked">
+                <div class="sp-toggle-row">
+                    <div class="sp-toggle-info">
+                        <span class="sp-toggle-title">${title}</span>
+                        <span class="sp-toggle-desc">${description}</span>
+                    </div>
+                    <span class="ai-locked-tag">Needs Claude</span>
+                </div>
+            </div>
+        `;
+    }
+
+    _renderAiSidePanelBody(d) {
+        const test = this._aiTestResult;
+        const usesModel = d.provider !== 'builtin';
+
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-toggle-row" style="margin-bottom: 18px;">
+                    <div class="sp-toggle-info">
+                        <span class="sp-toggle-title">Enable the AI add-on</span>
+                        <span class="sp-toggle-desc">
+                            Master switch. With this off — or with no API key — search behaves exactly as it does
+                            without the add-on, and no requests are ever sent to the provider.
+                        </span>
+                    </div>
+                    <label class="switch switch-sm">
+                        <input type="checkbox"
+                               .checked=${!!d.enabled}
+                               @change=${e => { d.enabled = e.target.checked; this.requestUpdate(); }}>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <div class="sp-section-title">Answer engine</div>
+
+                <div class="ai-provider-grid">
+                    ${ImobisoftSearchWorkspace._aiProviders.map(p => html`
+                        <label class="ai-provider ${d.provider === p.id ? 'is-picked' : ''}">
+                            <input type="radio" name="isl-ai-provider" value=${p.id}
+                                   .checked=${d.provider === p.id}
+                                   @change=${() => this._pickAiProvider(d, p.id)}>
+                            <span class="ai-provider-body">
+                                <strong>
+                                    ${p.name}
+                                    <span class="${p.free ? 'ai-tag-free' : 'ai-tag-paid'}">${p.free ? 'Free' : 'Your key'}</span>
+                                </strong>
+                                <span>${p.description}</span>
+                            </span>
+                        </label>
+                    `)}
+                </div>
+
+                ${usesModel ? html`
+                    ${d.provider === 'openAiCompatible' ? html`
+                        <div class="sp-group" style="margin-bottom: 18px;">
+                            <label class="sp-label">API base URL</label>
+                            <input type="text"
+                                   class="sp-input"
+                                   autocomplete="off"
+                                   spellcheck="false"
+                                   placeholder="https://api.openai.com/v1"
+                                   .value=${d.baseUrl || ''}
+                                   @input=${e => { d.baseUrl = e.target.value; this._aiTestResult = null; this.requestUpdate(); }}>
+                            <span class="sp-hint">
+                                The root of the API — <code>/chat/completions</code> is added for you. Examples:
+                                <code>https://api.openai.com/v1</code>,
+                                <code>https://generativelanguage.googleapis.com/v1beta/openai</code> (Gemini),
+                                <code>https://api.groq.com/openai/v1</code>,
+                                <code>https://openrouter.ai/api/v1</code>,
+                                <code>http://localhost:11434/v1</code> (Ollama).
+                            </span>
+                        </div>
+                    ` : nothing}
+
+                    <div class="sp-group" style="margin-bottom: 18px;">
+                        <label class="sp-label">API key${d.provider === 'openAiCompatible' ? ' (leave empty for a local model)' : ''}</label>
+                        <input type="password"
+                               class="sp-input"
+                               autocomplete="off"
+                               spellcheck="false"
+                               placeholder=${d.hasApiKey ? 'A key is saved — type to replace it' : (d.provider === 'anthropic' ? 'sk-ant-...' : 'sk-...')}
+                               .value=${d.apiKey || ''}
+                               @input=${e => { d.apiKey = e.target.value; d._apiKeyTouched = true; this._aiTestResult = null; this.requestUpdate(); }}>
+                        <span class="sp-hint">
+                            Stored on the server and never sent back to this screen — once saved it can be replaced
+                            but not read. Clear the field and save to remove it.
+                        </span>
+                    </div>
+
+                    <div class="sp-group" style="margin-bottom: 18px;">
+                        <label class="sp-label">Model</label>
+                        <input type="text"
+                               class="sp-input"
+                               autocomplete="off"
+                               spellcheck="false"
+                               list="isl-ai-model-suggestions"
+                               placeholder=${d.provider === 'anthropic' ? 'claude-opus-5' : 'gpt-4o-mini'}
+                               .value=${d.model || ''}
+                               @input=${e => { d.model = e.target.value; this._aiTestResult = null; }}>
+                        <!-- Free text with suggestions rather than a fixed dropdown: a model
+                             released after this package shipped must still be selectable. -->
+                        <datalist id="isl-ai-model-suggestions">
+                            ${(d.provider === 'anthropic'
+                                ? ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5']
+                                : ['gpt-4o-mini', 'gpt-4o', 'gemini-2.0-flash', 'llama-3.3-70b-versatile', 'mistral-small-latest', 'deepseek-chat']
+                              ).map(m => html`<option value=${m}></option>`)}
+                        </datalist>
+                        <span class="sp-hint">
+                            Exactly as your provider names it. Search is a page a visitor waits on — if answers
+                            feel slow, try a smaller model before turning features off; summarising results
+                            found by the search is well within a cheap model's reach.
+                        </span>
+                    </div>
+
+                    <div class="ai-test-row">
+                        <button class="btn btn-secondary btn-sm"
+                                ?disabled=${this._aiTesting}
+                                @click=${() => this._testAiConnection(d)}>
+                            ${this._aiTesting ? 'Testing…' : 'Test connection'}
+                        </button>
+                        ${test ? html`
+                            <span class="ai-test-result ${test.success ? 'is-ok' : 'is-bad'}">
+                                ${test.success ? '✓' : '✕'} ${test.message}
+                            </span>
+                        ` : html`
+                            <span class="sp-hint" style="margin:0;">Sends one small request to check the key and model.</span>
+                        `}
+                    </div>
+                ` : nothing}
+
+                <div class="sp-section-title">What the AI does</div>
+
+                ${this._renderAiFeatureBlock(
+                    d.answer,
+                    'AI answer above the results',
+                    usesModel
+                        ? 'Writes a short answer to the visitor\'s question from the results the search found — and only from those, with a citation per claim.'
+                        : 'Pulls the sentences that answer the question out of the results the search found, with a citation each. Says so plainly when the results do not answer it.',
+                    html`
+                        <div class="form-row-3col" style="margin-top:12px;">
+                            <div class="form-group">
+                                <label class="sp-label">Results used as sources</label>
+                                <input type="number" class="sp-input" min="1" max="12"
+                                       .value=${String(d.answer.maxSources)}
+                                       @change=${e => { d.answer.maxSources = Math.min(12, Math.max(1, parseInt(e.target.value) || 5)); this.requestUpdate(); }}>
+                            </div>
+                            <div class="form-group">
+                                <label class="sp-label">Max length (words)</label>
+                                <input type="number" class="sp-input" min="20" max="400"
+                                       .value=${String(d.answer.maxWords)}
+                                       @change=${e => { d.answer.maxWords = Math.min(400, Math.max(20, parseInt(e.target.value) || 90)); this.requestUpdate(); }}>
+                            </div>
+                            <!-- Effort is how hard a model thinks, so it means nothing to the
+                                 built-in extractor and is hidden rather than shown inert. -->
+                            ${usesModel ? html`
+                                <div class="form-group">
+                                    <label class="sp-label">Effort</label>
+                                    <select class="sp-input" .value=${d.answer.effort || 'low'}
+                                            @change=${e => { d.answer.effort = e.target.value; this.requestUpdate(); }}>
+                                        <option value="low">Low — fastest</option>
+                                        <option value="medium">Medium</option>
+                                        <option value="high">High — slowest</option>
+                                    </select>
+                                </div>
+                            ` : nothing}
+                        </div>
+                        <label class="toggle-item" style="margin-top:8px;">
+                            <div class="toggle-info">
+                                <strong>Show numbered sources</strong>
+                                <span>Lists the pages each claim came from, so a visitor can check the answer.</span>
+                            </div>
+                            <input type="checkbox" class="switch-input"
+                                   .checked=${!!d.answer.showSources}
+                                   @change=${e => { d.answer.showSources = e.target.checked; this.requestUpdate(); }}>
+                        </label>
+                    `)}
+
+                ${!usesModel ? html`
+                    ${this._renderAiLockedFeature(
+                        'Query understanding',
+                        'Turns a typed question into the words your pages actually use before the search runs — "how do I cancel my booking" also finds "Cancellations and refunds".')}
+                    ${this._renderAiLockedFeature(
+                        'AI re-ranking',
+                        'Reorders the first page by which result actually answers the question, rather than by how often the words appear.')}
+                ` : html`
+                ${this._renderAiFeatureBlock(
+                    d.queryUnderstanding,
+                    'Query understanding',
+                    'Turns a typed question into the words your pages actually use before the search runs — "how do I cancel my booking" also finds "Cancellations and refunds".',
+                    html`
+                        <div class="ai-warn">Adds a model call before every search, on the path the visitor is waiting on.</div>
+                        <div class="form-row-3col" style="margin-top:12px;">
+                            <div class="form-group">
+                                <label class="sp-label">Max added terms</label>
+                                <input type="number" class="sp-input" min="1" max="20"
+                                       .value=${String(d.queryUnderstanding.maxAddedTerms)}
+                                       @change=${e => { d.queryUnderstanding.maxAddedTerms = Math.min(20, Math.max(1, parseInt(e.target.value) || 6)); this.requestUpdate(); }}>
+                            </div>
+                            <div class="form-group">
+                                <label class="sp-label">Only for searches of N+ words</label>
+                                <input type="number" class="sp-input" min="1" max="10"
+                                       .value=${String(d.queryUnderstanding.minimumWords)}
+                                       @change=${e => { d.queryUnderstanding.minimumWords = Math.min(10, Math.max(1, parseInt(e.target.value) || 3)); this.requestUpdate(); }}>
+                            </div>
+                            <div class="form-group">
+                                <label class="sp-label">Effort</label>
+                                <select class="sp-input" .value=${d.queryUnderstanding.effort || 'low'}
+                                        @change=${e => { d.queryUnderstanding.effort = e.target.value; this.requestUpdate(); }}>
+                                    <option value="low">Low — fastest</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="high">High — slowest</option>
+                                </select>
+                            </div>
+                        </div>
+                        <span class="sp-hint">
+                            Only widens the search — your visitor's own words are always kept, so a misread question
+                            still finds everything a plain keyword search would have. Ignored on profiles set to
+                            "all terms must match", where extra words would narrow instead.
+                        </span>
+                    `)}
+
+                ${this._renderAiFeatureBlock(
+                    d.rerank,
+                    'AI re-ranking',
+                    'Reorders the first page by which result actually answers the question, rather than by how often the words appear.',
+                    html`
+                        <div class="ai-warn">Adds a model call after every search, on the path the visitor is waiting on.</div>
+                        <div class="form-row-2col" style="margin-top:12px;">
+                            <div class="form-group">
+                                <label class="sp-label">Results reordered</label>
+                                <input type="number" class="sp-input" min="2" max="25"
+                                       .value=${String(d.rerank.topN)}
+                                       @change=${e => { d.rerank.topN = Math.min(25, Math.max(2, parseInt(e.target.value) || 10)); this.requestUpdate(); }}>
+                            </div>
+                            <div class="form-group">
+                                <label class="sp-label">Effort</label>
+                                <select class="sp-input" .value=${d.rerank.effort || 'low'}
+                                        @change=${e => { d.rerank.effort = e.target.value; this.requestUpdate(); }}>
+                                    <option value="low">Low — fastest</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="high">High — slowest</option>
+                                </select>
+                            </div>
+                        </div>
+                    `)}
+                `}
+
+                <div class="sp-section-title">Cost &amp; safety limits</div>
+
+                <div class="form-row-3col">
+                    <div class="form-group">
+                        <label class="sp-label">Cache answers for (minutes)</label>
+                        <input type="number" class="sp-input" min="0" max="1440"
+                               .value=${String(d.cacheMinutes)}
+                               @change=${e => { d.cacheMinutes = Math.min(1440, Math.max(0, parseInt(e.target.value) || 0)); this.requestUpdate(); }}>
+                        <span class="sp-hint">The same question asked twice costs one call. 0 disables caching.</span>
+                    </div>
+                    <div class="form-group">
+                        <label class="sp-label">Max model calls per minute</label>
+                        <input type="number" class="sp-input" min="0" max="1000"
+                               .value=${String(d.maxRequestsPerMinute)}
+                               @change=${e => { d.maxRequestsPerMinute = Math.min(1000, Math.max(0, parseInt(e.target.value) || 0)); this.requestUpdate(); }}>
+                        <span class="sp-hint">Past this, search quietly drops back to keyword results. 0 = no ceiling.</span>
+                    </div>
+                    <div class="form-group">
+                        <label class="sp-label">Timeout (seconds)</label>
+                        <input type="number" class="sp-input" min="2" max="120"
+                               .value=${String(d.timeoutSeconds)}
+                               @change=${e => { d.timeoutSeconds = Math.min(120, Math.max(2, parseInt(e.target.value) || 12)); this.requestUpdate(); }}>
+                        <span class="sp-hint">How long a visitor waits before results are served without AI.</span>
+                    </div>
+                </div>
+
+                <div class="ai-note">
+                    Every AI feature fails open: a timeout, a rate limit, an expired key or a provider outage
+                    costs the AI extras, never the results. Search keeps working.
                 </div>
             </div>
         `;
@@ -7998,6 +8632,176 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         .suggestion-link {
             text-decoration: underline;
             cursor: pointer;
+        }
+
+        /* ---------- AI add-on ---------- */
+
+        .ai-hero {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            flex-wrap: wrap;
+            padding: 18px 20px;
+            margin-bottom: 18px;
+            border: 1px solid #ddd6fe;
+            border-radius: var(--radius-md, 10px);
+            background: linear-gradient(135deg, #faf8ff 0%, #ffffff 60%);
+        }
+
+        .ai-hero.is-live { border-color: #a78bfa; }
+
+        .ai-hero-main { flex: 1 1 420px; min-width: 0; }
+
+        .ai-hero-title { display: flex; align-items: flex-start; gap: 12px; }
+
+        .ai-hero-title h4 { margin: 0 0 2px; font-size: 15px; }
+
+        .ai-hero-mark {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            flex: 0 0 auto;
+            border-radius: 8px;
+            background: #ede9fe;
+            color: #6d28d9;
+        }
+
+        .ai-hero-sub { font-size: 12.5px; color: #64748b; display: block; max-width: 62ch; }
+
+        .ai-hero-actions { flex: 0 0 auto; }
+
+        .ai-feature {
+            border: 1px solid #e2e8f0;
+            border-radius: var(--radius-sm, 8px);
+            padding: 14px 16px;
+            margin-bottom: 12px;
+            background: #fff;
+        }
+
+        .ai-feature.is-on { border-color: #c4b5fd; background: #fdfcff; }
+
+        .ai-feature.is-locked { background: #f8fafc; opacity: .75; }
+
+        .ai-locked-tag {
+            flex: 0 0 auto;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: .03em;
+            text-transform: uppercase;
+            color: #6d28d9;
+            background: #ede9fe;
+            border-radius: 999px;
+            padding: 4px 10px;
+        }
+
+        .ai-provider-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+
+        .ai-provider {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 14px;
+            border: 1px solid #e2e8f0;
+            border-radius: var(--radius-sm, 8px);
+            background: #fff;
+            cursor: pointer;
+        }
+
+        .ai-provider.is-picked { border-color: #a78bfa; background: #fdfcff; }
+
+        .ai-provider input { margin-top: 3px; flex: 0 0 auto; }
+
+        .ai-provider-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+
+        .ai-provider-body strong { font-size: 13.5px; display: flex; align-items: center; gap: 8px; }
+
+        .ai-provider-body span { font-size: 12px; color: #64748b; line-height: 1.5; }
+
+        .ai-tag-free,
+        .ai-tag-paid {
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: .04em;
+            text-transform: uppercase;
+            border-radius: 999px;
+            padding: 2px 8px;
+        }
+
+        .ai-tag-free { color: #15803d; background: #dcfce7; }
+
+        .ai-tag-paid { color: #92400e; background: #fef3c7; }
+
+        .ai-feature .sp-toggle-row { margin: 0; }
+
+        .ai-warn {
+            margin-top: 12px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+            font-size: 12px;
+            color: #92400e;
+        }
+
+        .ai-note {
+            margin-top: 18px;
+            padding: 12px 14px;
+            border-radius: var(--radius-sm, 8px);
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            font-size: 12.5px;
+            color: #475569;
+        }
+
+        .sp-section-title {
+            margin: 22px 0 12px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            color: #94a3b8;
+        }
+
+        .ai-test-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 4px;
+        }
+
+        .ai-test-result { font-size: 12.5px; font-weight: 600; }
+
+        .ai-test-result.is-ok { color: #15803d; }
+
+        .ai-test-result.is-bad { color: #b91c1c; }
+
+        /* Sits above the filter strip when a render failed but the panel kept its last good
+           markup, so the failure is visible without the search surface disappearing. */
+        .test-render-error {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 10px 16px;
+            margin-bottom: 12px;
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            color: #991b1b;
+        }
+
+        .test-render-error code {
+            font-size: 12px;
+            word-break: break-word;
         }
 
         .active-filters-bar {

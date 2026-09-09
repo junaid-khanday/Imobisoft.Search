@@ -47,12 +47,14 @@ function _read(key, ttl, producer) {
 }
 
 async function _json(fetchFn, url, options = {}) {
+    // options is spread first, then headers: spreading options last would overwrite the merged
+    // header object with the caller's own and drop the Accept header on every POST and PUT.
     const response = await fetchFn(url, {
+        ...options,
         headers: {
             'Accept': 'application/json',
             ...(options.headers || {})
-        },
-        ...options
+        }
     });
 
     let data = null;
@@ -227,6 +229,18 @@ export async function updateSettings(fetchFn, settings) {
     });
     _entries.delete("settings");
     return res;
+}
+
+// Verifies an AI credential against the provider. Never cached - the whole point is to find out
+// what is true right now, and a cached "Connected" for a key that has since been revoked is worse
+// than no test at all.
+export async function testAiConnection(fetchFn, { apiKey = '', model = '' } = {}) {
+    const url = `${getBaseApiUrl()}settings/ai/test`;
+    return _json(fetchFn, url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey, model })
+    });
 }
 
 // ----------------- PREVIEW & AUTOCOMPLETE API -----------------

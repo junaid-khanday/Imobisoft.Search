@@ -65,7 +65,19 @@ public sealed class SearchSettingsService : ISearchSettingsService
         try
         {
             var json = _keyValueService.GetValue(ImobisoftSearchConstants.Settings.KeyValueKey);
-            return SearchProfileJson.DeserializeOrDefault<SearchSettings>(json);
+            SearchSettings settings = SearchProfileJson.DeserializeOrDefault<SearchSettings>(json);
+
+            // Settings saved before the AI add-on had a free tier name no provider and hold no key:
+            // AI was off because nothing was available without paying, not because the site declined
+            // it. Adopt the new default for those rather than leaving a free feature switched off on
+            // every site that upgrades. Turning AI off today writes a provider too, so a real choice
+            // is never overridden here.
+            if (!settings.Ai.ProviderWasStored && string.IsNullOrWhiteSpace(settings.Ai.ApiKey))
+            {
+                settings.Ai.Enabled = true;
+            }
+
+            return settings;
         }
         catch (Exception ex)
         {

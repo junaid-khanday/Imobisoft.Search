@@ -34,6 +34,7 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
     };
 
     private readonly IExamineManager _examineManager;
+    private readonly Ai.IAiSearchService _ai;
     private readonly ISearchProfileService _profileService;
     private readonly IIndexCatalogService _catalog;
     private readonly ISearchSettingsService _settingsService;
@@ -51,6 +52,7 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
 
     public ImobisoftSearchService(
         IExamineManager examineManager,
+        Ai.IAiSearchService ai,
         ISearchProfileService profileService,
         IIndexCatalogService catalog,
         ISearchSettingsService settingsService,
@@ -64,6 +66,7 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
         ILogger<ImobisoftSearchService> logger)
     {
         _examineManager = examineManager;
+        _ai = ai;
         _profileService = profileService;
         _catalog = catalog;
         _settingsService = settingsService;
@@ -95,7 +98,7 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
             cancellationToken);
 
     /// <inheritdoc />
-    public Task<SearchResponse> SearchAsync(SearchRequest request, CancellationToken cancellationToken = default)
+    public async Task<SearchResponse> SearchAsync(SearchRequest request, CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
 
@@ -114,24 +117,46 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
         if (!_options.Enabled)
         {
             _logger.LogDebug("Imobisoft.Search is disabled in configuration; returning no results.");
-            return Task.FromResult(SearchResponse.Empty(request.Term, profileAlias, request.Page, pageSize));
+            return SearchResponse.Empty(request.Term, profileAlias, request.Page, pageSize);
         }
 
         if (profile is { Enabled: false })
         {
             _logger.LogDebug("Search profile '{Alias}' is disabled; returning no results.", profileAlias);
-            return Task.FromResult(SearchResponse.Empty(request.Term, profileAlias, request.Page, pageSize));
+            return SearchResponse.Empty(request.Term, profileAlias, request.Page, pageSize);
         }
 
         ApplyQueryStringFilters(request);
 
         (SearchRuleSet effectiveRules, string? appliedSort) = ApplyRequestedSort(rules, request);
 
-        SearchResponse response = Execute(effectiveRules, request, profileAlias, pageSize, stopwatch, cancellationToken);
+        // The visitor's own words, kept aside before the AI pass is allowed to widen them. The
+        // response, the analytics and the "results for ..." heading all report this, never the
+        // expanded form - what a visitor typed is not the engine's to rewrite.
+        var originalTerm = request.Term;
+
+        IReadOnlyList<string> expandedTerms = await ExpandQueryAsync(effectiveRules, request, cancellationToken);
+
+        // Trimming is deferred: the AI passes below read each result's text out of its fields, and
+        // the trim would have removed exactly those. It runs once the AI has had its look.
+        (SearchResponse response, SearchPlan? plan) = Execute(
+            effectiveRules, request, profileAlias, pageSize, stopwatch, cancellationToken, trimFields: false);
+
+        request.Term = originalTerm;
+        response.Term = originalTerm;
+        response.AiExpandedTerms = expandedTerms.ToList();
 
         response.SelectedSort = appliedSort;
 
         AddSuggestion(response, rules, request, profileAlias, cancellationToken);
+
+        await ApplyAiToResultsAsync(response, request, cancellationToken);
+
+        // Now that the AI has read the results, cut them back to what the profile said to return.
+        if (plan is not null)
+        {
+            TrimReturnedFields(response, plan);
+        }
 
         stopwatch.Stop();
         RecordAnalytics(response, request, (int)stopwatch.ElapsedMilliseconds);
@@ -143,7 +168,73 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
 
         PublishToRequest(response);
 
-        return Task.FromResult(response);
+        return response;
+    }
+
+    /// <summary>
+    /// Widens the query with terms the AI drew out of a natural-language question, mutating the
+    /// request in place for the duration of the search.
+    /// <para>
+    /// Only ever runs when the profile ORs its terms together. Under "all terms must match" an added
+    /// word becomes another requirement rather than another chance to match, so a helpful expansion
+    /// would empty the result list - exactly backwards from what it is for.
+    /// </para>
+    /// </summary>
+    private async Task<IReadOnlyList<string>> ExpandQueryAsync(
+        SearchRuleSet rules,
+        SearchRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (rules.Matching.AllTermsMustMatch || string.IsNullOrWhiteSpace(request.Term))
+        {
+            return Array.Empty<string>();
+        }
+
+        IReadOnlyList<string>? expanded = await _ai.ExpandQueryAsync(request.Term, cancellationToken);
+
+        if (expanded is null || expanded.Count == 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        request.Term = request.Term + " " + string.Join(' ', expanded);
+
+        return expanded;
+    }
+
+    /// <summary>
+    /// The two AI passes that read the results rather than the query: reordering the page, then
+    /// answering from it.
+    /// <para>
+    /// Both are skipped for a browse listing (no question to answer) and beyond the first page (an
+    /// answer belongs at the top of a search, not halfway down it). They run in order because the
+    /// answer should be written from the results as the visitor will see them.
+    /// </para>
+    /// </summary>
+    private async Task ApplyAiToResultsAsync(
+        SearchResponse response,
+        SearchRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Term) || response.Page > 1 || response.Results.Count == 0)
+        {
+            return;
+        }
+
+        // Deliberately not skipped for the dashboard's preview: an editor turning these settings on
+        // needs to see the answer box the site will serve. The test panel runs a search per Enter
+        // rather than per keystroke, and the response cache collapses its two calls into one, so
+        // the cost of that is a single request per distinct search.
+        IReadOnlyList<SearchResultItem>? reranked =
+            await _ai.RerankAsync(request.Term, response.Results.ToList(), cancellationToken);
+
+        if (reranked is not null)
+        {
+            response.Results = reranked.ToList();
+            response.AiReranked = true;
+        }
+
+        response.AiAnswer = await _ai.AnswerAsync(request.Term, response.Results.ToList(), cancellationToken);
     }
 
     /// <summary>
@@ -353,6 +444,25 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
         int pageSize,
         Stopwatch stopwatch,
         CancellationToken cancellationToken)
+        => Execute(rules, request, profileAlias, pageSize, stopwatch, cancellationToken, trimFields: true).Response;
+
+    /// <param name="trimFields">
+    /// Whether to cut each result down to the profile's return fields before returning.
+    /// <para>
+    /// The AI passes read the result's text out of those same fields, and the trim happens to strip
+    /// exactly the ones worth reading - a profile with return fields configured left the answer
+    /// engine looking at nothing but a node name and a pair of dates. A caller that runs AI defers
+    /// the trim until afterwards; everything else trims here as before.
+    /// </para>
+    /// </param>
+    private (SearchResponse Response, SearchPlan? Plan) Execute(
+        SearchRuleSet rules,
+        SearchRequest request,
+        string profileAlias,
+        int pageSize,
+        Stopwatch stopwatch,
+        CancellationToken cancellationToken,
+        bool trimFields)
     {
         var planner = new SearchQueryPlanner(_catalog, _idKeyMap);
         SearchPlan plan = planner.Plan(rules, request);
@@ -370,7 +480,7 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
                 };
             }
 
-            return blocked;
+            return (blocked, null);
         }
 
         var executionNotes = new List<string>();
@@ -379,7 +489,11 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
         var processor = new SearchResultProcessor(IsProtectedPath, ResolveNodeIdForFacets);
         SearchResponse response = processor.Process(matches, plan, request, profileAlias);
 
-        TrimReturnedFields(response, plan);
+        if (trimFields)
+        {
+            TrimReturnedFields(response, plan);
+        }
+
         ResolveUrls(response);
 
         if (response.Diagnostics is not null)
@@ -390,7 +504,7 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
             }
         }
 
-        return response;
+        return (response, plan);
     }
 
     /// <summary>

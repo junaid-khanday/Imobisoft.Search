@@ -2,9 +2,13 @@ namespace Imobisoft.Search.Models;
 
 /// <summary>
 /// Defines <em>what</em> is searchable: which indexes are queried and which documents inside them
-/// are eligible. Per-type lists narrow an index that is already in scope through
-/// <see cref="IndexTypes"/>; a profile that names neither stays dark, which is the "include to
-/// switch search on" model.
+/// are eligible.
+/// <para>
+/// Every list here narrows; leaving one empty does not restrict. A profile that narrows nothing
+/// searches content and media. Members are the one exception: they are only ever in scope when
+/// <see cref="IndexTypes"/> names them outright, because member records are not site content and
+/// must not reach a visitor through a profile that simply did not narrow anything.
+/// </para>
 /// </summary>
 public sealed class SourceRules
 {
@@ -16,7 +20,8 @@ public sealed class SourceRules
 
     /// <summary>
     /// Restricts to documents of these Examine index types (<c>content</c>, <c>media</c>,
-    /// <c>member</c>). Empty means all of them.
+    /// <c>member</c>). Empty means content and media - <c>member</c> is never included implicitly
+    /// and has to be named here.
     /// </summary>
     public IList<string> IndexTypes { get; set; } = new List<string>();
 

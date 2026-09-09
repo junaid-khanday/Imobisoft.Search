@@ -13,9 +13,9 @@ namespace Imobisoft.Search.Services;
 public sealed class SearchThemeService : ISearchThemeService
 {
     /// <summary>
-    /// Where themes are looked for. A site authors them here; the package ships none, so the list
-    /// is whatever the site has created (plus the built-in look, which is the absence of a theme).
-    /// Compiled views are scanned too, so a Razor class library may contribute themes as well.
+    /// Where themes are looked for. The package ships one ("modern"); a site authors its own here
+    /// alongside it, plus the built-in look, which is the absence of a theme. Compiled views are
+    /// scanned too, so a Razor class library may contribute themes as well.
     /// </summary>
     private const string ThemeRoot = "Views/Partials/Search/Themes";
 
@@ -26,7 +26,7 @@ public sealed class SearchThemeService : ISearchThemeService
     /// The pieces a theme may replace. A theme defining none of these is still listed - it simply
     /// renders exactly like the built-in look.
     /// </summary>
-    private static readonly string[] Parts = { "styles", "results", "filters", "noresults", "loadmore", "searchbar" };
+    private static readonly string[] Parts = { "styles", "results", "filters", "noresults", "loadmore", "searchbar", "aianswer" };
 
     private readonly IRazorViewEngine _viewEngine;
     private readonly ApplicationPartManager _partManager;
@@ -185,7 +185,7 @@ public sealed class SearchThemeService : ISearchThemeService
     }
 
     /// <summary>
-    /// Pulls "Compact" out of "/Views/Partials/Search/Themes/Compact/results.cshtml", ignoring any
+    /// Pulls "modern" out of "/Views/Partials/Search/Themes/modern/results.cshtml", ignoring any
     /// view that is not a theme part sitting directly in a theme folder.
     /// </summary>
     private static string? ThemeNameFromPath(string? relativePath)

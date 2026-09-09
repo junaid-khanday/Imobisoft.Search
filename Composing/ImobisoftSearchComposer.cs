@@ -64,6 +64,10 @@ public sealed class ImobisoftSearchComposer : IComposer
 
         builder.Services.AddHttpContextAccessor();
 
+        // Pooled connections for the OpenAI-compatible provider. Registered rather than newing an
+        // HttpClient per call, which is what exhausts sockets under load.
+        builder.Services.AddHttpClient();
+
         builder.Services.AddSingleton<ISearchProfileRepository, SearchProfileRepository>();
         builder.Services.AddSingleton<ISearchProfileService, SearchProfileService>();
         builder.Services.AddSingleton<IIndexCatalogService, IndexCatalogService>();
@@ -85,6 +89,10 @@ public sealed class ImobisoftSearchComposer : IComposer
         // front end actually serves, rather than its own approximation of it.
         builder.Services.AddSingleton<ISearchRenderService, SearchRenderService>();
         builder.Services.AddSingleton<ISearchSettingsService, SearchSettingsService>();
+
+        // Singleton because it owns the provider client and the per-minute rate window - both of
+        // which have to be shared across requests to mean anything.
+        builder.Services.AddSingleton<Services.Ai.IAiSearchService, Services.Ai.SearchAiService>();
         builder.Services.AddSingleton<ISearchAnalyticsRepository, SearchAnalyticsRepository>();
 
         // Singleton because it owns the queue that the background writer drains.

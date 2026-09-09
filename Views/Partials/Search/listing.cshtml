@@ -31,6 +31,7 @@
     var resultsView = Themes.ResolvePartial(theme, "results");
     var noResultsView = Themes.ResolvePartial(theme, "noresults");
     var loadMoreView = Themes.ResolvePartial(theme, "loadmore");
+    var aiAnswerView = Themes.ResolvePartial(theme, "aianswer");
 }
 <div class="isl" data-imobisoft-listing>
     <partial name="@stylesView" model="Model" />
@@ -110,6 +111,10 @@
                 </div>
             }
 
+            @* Above the results, and only ever when the AI add-on actually answered. The partial
+               renders nothing at all otherwise, so this line is inert on a site without a key. *@
+            <partial name="@aiAnswerView" model="Model" />
+
             @if (response.Results.Count == 0)
             {
                 <partial name="@noResultsView" model="Model" />
@@ -134,7 +139,11 @@
             button.addEventListener('click', function () {
                 var next = parseInt(button.getAttribute('data-next-page'), 10);
                 var total = parseInt(button.getAttribute('data-total-pages'), 10);
-                var label = button.textContent;
+
+                // The whole inner markup, not just its text: a theme's button can hold icons and a
+                // "page 1 of 5" counter, and putting plain text back would flatten them away for
+                // good after the first click.
+                var markup = button.innerHTML;
 
                 button.disabled = true;
                 button.textContent = 'Loading...';
@@ -168,13 +177,16 @@
                             button.setAttribute('data-next-page', fresh.getAttribute('data-next-page'));
                             button.setAttribute('data-total-pages', fresh.getAttribute('data-total-pages'));
                             button.disabled = false;
-                            button.textContent = label;
+
+                            // The server's own button for the page now on screen, so a theme's
+                            // counter reads the page the visitor is actually looking at.
+                            button.innerHTML = fresh.innerHTML;
                         }
                     })
                     .catch(function (err) {
                         console.error('Imobisoft Search: failed to load more results.', err);
                         button.disabled = false;
-                        button.textContent = label;
+                        button.innerHTML = markup;
                     });
             });
         });

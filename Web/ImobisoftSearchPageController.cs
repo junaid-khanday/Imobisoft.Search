@@ -74,6 +74,14 @@ public sealed class ImobisoftSearchController : Controller
 
         ImobisoftSearchPageViewModel model = await BuildModel(q, page, cancellationToken);
 
+        // No search ran - the profile defines no filters and nothing was asked for - so there is no
+        // result list to render. The results partial reads the response outright, so handing it a
+        // null one would throw rather than return the nothing this endpoint actually has.
+        if (model.Response is null)
+        {
+            return Content(string.Empty, "text/html");
+        }
+
         return PartialView(_themes.ResolvePartial(model.Theme, "results"), model);
     }
 

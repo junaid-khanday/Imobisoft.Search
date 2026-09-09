@@ -121,6 +121,99 @@
 
         .isl-suggestion a { color: #1d4ed8; font-weight: 700; }
 
+        /* ---------- AI answer ---------- */
+
+        .isl-ai {
+            border: 1px solid #ddd6fe;
+            border-radius: var(--isl-radius);
+            background: linear-gradient(180deg, #faf8ff 0%, #fff 100%);
+            padding: 16px 18px;
+            margin-bottom: 18px;
+        }
+
+        .isl-ai-head {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 8px;
+        }
+
+        .isl-ai-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: .02em;
+            text-transform: uppercase;
+            color: #6d28d9;
+        }
+
+        .isl-ai-flag {
+            font-size: 12px;
+            font-weight: 600;
+            color: #92400e;
+            background: #fef3c7;
+            border-radius: 999px;
+            padding: 2px 10px;
+        }
+
+        .isl-ai-text {
+            margin: 0;
+            font-size: 15.5px;
+            line-height: 1.6;
+            color: var(--isl-text);
+        }
+
+        .isl-ai-sources {
+            list-style: none;
+            margin: 12px 0 0;
+            padding: 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .isl-ai-source {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            max-width: 100%;
+            font-size: 13px;
+            background: #fff;
+            border: 1px solid var(--isl-border);
+            border-radius: 999px;
+            padding: 4px 12px 4px 4px;
+        }
+
+        .isl-ai-source-num {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            flex: 0 0 auto;
+            border-radius: 50%;
+            background: #ede9fe;
+            color: #6d28d9;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .isl-ai-source a,
+        .isl-ai-source span:last-child {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .isl-ai-note {
+            margin: 12px 0 0;
+            font-size: 12px;
+            color: var(--isl-muted);
+        }
+
         .isl-stats {
             display: flex;
             align-items: center;
