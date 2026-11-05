@@ -3,13 +3,35 @@
    custom card design - each item carries Name, Url, Highlight (safe to @Html.Raw), Url
    display, Culture, Fields (e.g. updateDate) and IsBestBet. Keep the <ol data-imobisoft-results>
    wrapper and one <li> per item: the Load More script appends <li> children by that attribute. *@
+@inject Imobisoft.Search.Services.Ai.IAiTextService AiTools
 @{
     Imobisoft.Search.Models.SearchResponse? response = Model.Response;
+
+    // The AI text tools, when a key has been added and the profile switched them on. The settings
+    // ride on the list as data attributes; ai.js reads them and builds the buttons, so overriding
+    // this file keeps the tools as long as the attributes and the per-item key come with it.
+    Imobisoft.Search.Models.AiRules? ai = AiTools.IsAvailable(response?.ProfileAlias)
+        ? AiTools.RulesFor(response?.ProfileAlias)
+        : null;
+
+    var aiActions = ai is null
+        ? string.Empty
+        : string.Join(',', ai.Actions.Select(a => char.ToLowerInvariant(a.ToString()[0]) + a.ToString()[1..]));
 }
-<ol class="isl-results" data-imobisoft-results>
+@if (ai is not null)
+{
+    <link rel="stylesheet" href="/App_Plugins/Imobisoft.Search/ai.css" />
+}
+<ol class="isl-results"
+    data-imobisoft-results
+    data-imobisoft-ai-endpoint="@(ai is null ? null : "/" + ImobisoftSearchConstants.Web.SearchPagePath + "/ai")"
+    data-imobisoft-ai-actions="@(ai is null ? null : aiActions)"
+    data-imobisoft-ai-languages="@(ai is null ? null : string.Join(',', ai.Languages))"
+    data-imobisoft-ai-profile="@(ai is null ? null : response?.ProfileAlias)">
     @foreach (var item in response!.Results)
     {
-        <li class="isl-card @(item.IsBestBet ? "is-bestbet" : "")">
+        <li class="isl-card @(item.IsBestBet ? "is-bestbet" : "")"
+            data-imobisoft-key="@(ai is not null && item.Key.HasValue ? item.Key.Value.ToString() : null)">
             <div class="isl-card-header">
                 @if (item.IsBestBet)
                 {
@@ -56,3 +78,7 @@
         </li>
     }
 </ol>
+@if (ai is not null)
+{
+    <script src="/App_Plugins/Imobisoft.Search/ai.js" defer></script>
+}

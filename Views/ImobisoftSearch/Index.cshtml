@@ -1,4 +1,5 @@
 @model ImobisoftSearchPageViewModel
+@inject Imobisoft.Search.Services.Ai.IAiTextService AiTools
 @{
     Layout = null;
     SearchResponse? response = Model.Response;
@@ -579,9 +580,32 @@
                 }
                 else
                 {
-                    <ol id="imobisoft-search-results" class="imobisoft-results-list">
+                    @* The AI text tools, when a key has been added and the profile switched them on.
+                       ai.js reads these attributes and builds the per-result buttons. *@
+                    AiRules? ai = AiTools.IsAvailable(response.ProfileAlias)
+                        ? AiTools.RulesFor(response.ProfileAlias)
+                        : null;
+
+                    var aiActions = ai is null
+                        ? string.Empty
+                        : string.Join(',', ai.Actions.Select(a => char.ToLowerInvariant(a.ToString()[0]) + a.ToString()[1..]));
+
+                    @if (ai is not null)
+                    {
+                        <link rel="stylesheet" href="/App_Plugins/Imobisoft.Search/ai.css" />
+                    }
+                    <ol id="imobisoft-search-results"
+                        class="imobisoft-results-list"
+                        data-imobisoft-ai-endpoint="@(ai is null ? null : "/" + ImobisoftSearchConstants.Web.SearchPagePath + "/ai")"
+                        data-imobisoft-ai-actions="@(ai is null ? null : aiActions)"
+                        data-imobisoft-ai-languages="@(ai is null ? null : string.Join(',', ai.Languages))"
+                        data-imobisoft-ai-profile="@(ai is null ? null : response.ProfileAlias)">
                         <partial name="_Results" model="Model" />
                     </ol>
+                    @if (ai is not null)
+                    {
+                        <script src="/App_Plugins/Imobisoft.Search/ai.js" defer></script>
+                    }
 
                     @* Load More pagination: rendered only when the profile enables it and
                        further pages exist. When disabled, the profile serves exactly one page

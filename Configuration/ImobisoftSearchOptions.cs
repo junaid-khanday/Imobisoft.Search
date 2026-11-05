@@ -68,6 +68,17 @@ public sealed class ImobisoftSearchOptions
     public bool EnableHeaderSearchBox { get; set; } = true;
 
     /// <summary>
+    /// Allows the AI text tools - summarise, shorten, key points, translate - to run on the site.
+    /// <para>
+    /// This is the deployment-level switch, and it governs a public endpoint that spends money at an
+    /// AI provider on request. Day to day the tools are controlled in the backoffice (the profile
+    /// editor's AI tab) and stay off until a key is added; setting this to <c>false</c> takes the
+    /// endpoint out of the site altogether, whatever the backoffice says.
+    /// </para>
+    /// </summary>
+    public bool EnableAiTextTools { get; set; } = true;
+
+    /// <summary>
     /// Reads filter selections straight off the query string, so a search page needs no code to
     /// support filtering - the links the package generates are enough.
     /// </summary>

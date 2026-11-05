@@ -2,6 +2,22 @@
   "version": 4,
   "targets": {
     "net10.0": {
+      "Anthropic/13.5.0": {
+        "type": "package",
+        "dependencies": {
+          "Microsoft.Extensions.AI.Abstractions": "10.5.1"
+        },
+        "compile": {
+          "lib/net9.0/Anthropic.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net9.0/Anthropic.dll": {
+            "related": ".xml"
+          }
+        }
+      },
       "Asp.Versioning.Abstractions/8.1.0": {
         "type": "package",
         "dependencies": {
@@ -591,6 +607,19 @@
         },
         "runtime": {
           "lib/netstandard1.3/Microsoft.AspNetCore.Http.Features.dll": {
+            "related": ".xml"
+          }
+        }
+      },
+      "Microsoft.Extensions.AI.Abstractions/10.5.1": {
+        "type": "package",
+        "compile": {
+          "lib/net10.0/Microsoft.Extensions.AI.Abstractions.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net10.0/Microsoft.Extensions.AI.Abstractions.dll": {
             "related": ".xml"
           }
         }
@@ -2636,6 +2665,27 @@
     }
   },
   "libraries": {
+    "Anthropic/13.5.0": {
+      "sha512": "Chj4tZ3tYFNjJ0A1n8zboAJ7sxhd70HvYG6Ob438PwQztv4bq23CIXBjMcAp0yGJ15j2ES2GM+KWk6ZudFhl/w==",
+      "type": "package",
+      "path": "anthropic/13.5.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "LICENSE",
+        "LICENSE-MIT",
+        "README.md",
+        "anthropic.13.5.0.nupkg.sha512",
+        "anthropic.nuspec",
+        "lib/net8.0/Anthropic.dll",
+        "lib/net8.0/Anthropic.xml",
+        "lib/net9.0/Anthropic.dll",
+        "lib/net9.0/Anthropic.xml",
+        "lib/netstandard2.0/Anthropic.dll",
+        "lib/netstandard2.0/Anthropic.xml",
+        "logo.png"
+      ]
+    },
     "Asp.Versioning.Abstractions/8.1.0": {
       "sha512": "mpeNZyMdvrHztJwR1sXIUQ+3iioEU97YMBnFA9WLbsPOYhGwDJnqJMmEd8ny7kcmS9OjTHoEuX/bSXXY3brIFA==",
       "type": "package",
@@ -3424,6 +3474,29 @@
         "lib/netstandard1.3/Microsoft.AspNetCore.Http.Features.xml",
         "microsoft.aspnetcore.http.features.1.0.2.nupkg.sha512",
         "microsoft.aspnetcore.http.features.nuspec"
+      ]
+    },
+    "Microsoft.Extensions.AI.Abstractions/10.5.1": {
+      "sha512": "nB0l3IlsVbNeUxsE7nZNb9GY8rP1OSeqpj0pseORPejt474HNKEauTWTLdSJPkSvPlRMxowZNMo6nyp7APAiSg==",
+      "type": "package",
+      "path": "microsoft.extensions.ai.abstractions/10.5.1",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "Icon.png",
+        "README.md",
+        "lib/net10.0/Microsoft.Extensions.AI.Abstractions.dll",
+        "lib/net10.0/Microsoft.Extensions.AI.Abstractions.xml",
+        "lib/net462/Microsoft.Extensions.AI.Abstractions.dll",
+        "lib/net462/Microsoft.Extensions.AI.Abstractions.xml",
+        "lib/net8.0/Microsoft.Extensions.AI.Abstractions.dll",
+        "lib/net8.0/Microsoft.Extensions.AI.Abstractions.xml",
+        "lib/net9.0/Microsoft.Extensions.AI.Abstractions.dll",
+        "lib/net9.0/Microsoft.Extensions.AI.Abstractions.xml",
+        "lib/netstandard2.0/Microsoft.Extensions.AI.Abstractions.dll",
+        "lib/netstandard2.0/Microsoft.Extensions.AI.Abstractions.xml",
+        "microsoft.extensions.ai.abstractions.10.5.1.nupkg.sha512",
+        "microsoft.extensions.ai.abstractions.nuspec"
       ]
     },
     "Microsoft.Extensions.AmbientMetadata.Application/9.9.0": {
@@ -6446,6 +6519,7 @@
   },
   "projectFileDependencyGroups": {
     "net10.0": [
+      "Anthropic >= 13.5.0",
       "Umbraco.Cms.Api.Management >= 17.0.0 < 18.0.0",
       "Umbraco.Cms.Web.Common >= 17.0.0 < 18.0.0"
     ]
@@ -6503,6 +6577,10 @@
         "framework": "net10.0",
         "targetAlias": "net10.0",
         "dependencies": {
+          "Anthropic": {
+            "target": "Package",
+            "version": "[13.5.0, )"
+          },
           "Umbraco.Cms.Api.Management": {
             "target": "Package",
             "version": "[17.0.0, 18.0.0)"

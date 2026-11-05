@@ -19,6 +19,11 @@ import {
     getSettings,
     updateSettings,
     uploadSearchBoxIcon,
+    getAiSettings,
+    saveAiKey,
+    deleteAiKey,
+    getAiModels,
+    testAi,
     previewSearch,
     getAutocomplete,
     getNodeName
@@ -42,6 +47,9 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         _settingsSaving: { state: true },
         _profileSaving: { state: true },
         _iconUploading: { state: true },
+        _aiStatus: { state: true },
+        _aiBusy: { state: true },
+        _aiModels: { state: true },
         _profileActiveTab: { state: true },
         _filterProfilesQuery: { state: true },
         _sidePanelOpen: { state: true },
@@ -150,6 +158,9 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         this._settingsSaving = false;
         this._profileSaving = false;
         this._iconUploading = false;
+        this._aiStatus = { hasKey: false, hint: '', detectedProvider: '', detectedProviderName: '', providers: [] };
+        this._aiBusy = false;
+        this._aiModels = { loaded: false, ok: false, error: '', models: [], suggested: '' };
         this._profileActiveTab = 'sources';
         this._filterProfilesQuery = '';
         this._sidePanelOpen = false;
@@ -336,6 +347,18 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             isDefault: false,
             enabled: true,
             rules: {
+                ai: {
+                    enabled: false,
+                    provider: 'auto',
+                    model: '',
+                    baseUrl: '',
+                    actions: ['summarise', 'shorten', 'keyPoints', 'translate'],
+                    languages: ['English', 'French', 'German', 'Spanish'],
+                    maxInputCharacters: 6000,
+                    maxOutputTokens: 2048,
+                    cacheMinutes: 1440,
+                    requestsPerMinutePerVisitor: 8
+                },
                 searchBox: {
                     enabled: true,
                     placeholder: 'Search...',
@@ -564,6 +587,18 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
 
         // Booleans are filled only when absent, never with ||, so switching one off survives the
         // round trip through the API instead of springing back to its default.
+        if (!p.rules.ai) p.rules.ai = {};
+        if (p.rules.ai.enabled === undefined) p.rules.ai.enabled = false;
+        if (p.rules.ai.provider === undefined) p.rules.ai.provider = 'auto';
+        if (p.rules.ai.model === undefined) p.rules.ai.model = '';
+        if (p.rules.ai.baseUrl === undefined) p.rules.ai.baseUrl = '';
+        if (!Array.isArray(p.rules.ai.actions)) p.rules.ai.actions = ['summarise', 'shorten', 'keyPoints', 'translate'];
+        if (!Array.isArray(p.rules.ai.languages)) p.rules.ai.languages = ['English', 'French', 'German', 'Spanish'];
+        if (p.rules.ai.maxInputCharacters === undefined) p.rules.ai.maxInputCharacters = 6000;
+        if (p.rules.ai.maxOutputTokens === undefined) p.rules.ai.maxOutputTokens = 2048;
+        if (p.rules.ai.cacheMinutes === undefined) p.rules.ai.cacheMinutes = 1440;
+        if (p.rules.ai.requestsPerMinutePerVisitor === undefined) p.rules.ai.requestsPerMinutePerVisitor = 8;
+
         if (!p.rules.searchBox) p.rules.searchBox = {};
         if (p.rules.searchBox.enabled === undefined) p.rules.searchBox.enabled = true;
         if (p.rules.searchBox.placeholder === undefined) p.rules.searchBox.placeholder = 'Search...';
@@ -1006,6 +1041,22 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         } else if (type === 'manageFacets') {
             this._sidePanelData = {
                 facets: JSON.parse(JSON.stringify(this._currentProfile.rules?.results?.facets || []))
+            };
+        } else if (type === 'editAiActions') {
+            const ai = this._currentProfile.rules?.ai || {};
+            const languages = ai.languages || [];
+            this._sidePanelData = {
+                actions: [...(ai.actions || [])],
+                languages: [...languages],
+                _languagesInput: languages.join('\n')
+            };
+        } else if (type === 'editAiLimits') {
+            const ai = this._currentProfile.rules?.ai || {};
+            this._sidePanelData = {
+                maxInputCharacters: ai.maxInputCharacters ?? 6000,
+                maxOutputTokens: ai.maxOutputTokens ?? 2048,
+                cacheMinutes: ai.cacheMinutes ?? 1440,
+                requestsPerMinutePerVisitor: ai.requestsPerMinutePerVisitor ?? 8
             };
         } else if (type === 'editSearchBox') {
             const box = this._currentProfile.rules?.searchBox || {};
@@ -1607,6 +1658,18 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         } else if (this._sidePanelType === 'manageFacets') {
             if (!this._currentProfile.rules.results) this._currentProfile.rules.results = {};
             this._currentProfile.rules.results.facets = d.facets || [];
+        } else if (this._sidePanelType === 'editAiActions') {
+            if (!this._currentProfile.rules.ai) this._currentProfile.rules.ai = {};
+            this._currentProfile.rules.ai.actions = d.actions || [];
+            this._currentProfile.rules.ai.languages = this._toPathList(d._languagesInput, d.languages);
+        } else if (this._sidePanelType === 'editAiLimits') {
+            if (!this._currentProfile.rules.ai) this._currentProfile.rules.ai = {};
+            const ai = this._currentProfile.rules.ai;
+            ai.maxInputCharacters = Math.min(40000, Math.max(200, parseInt(d.maxInputCharacters) || 6000));
+            ai.maxOutputTokens = Math.min(8192, Math.max(256, parseInt(d.maxOutputTokens) || 2048));
+            const cacheParsed = parseInt(d.cacheMinutes);
+            ai.cacheMinutes = Number.isFinite(cacheParsed) ? Math.min(20160, Math.max(0, cacheParsed)) : 1440;
+            ai.requestsPerMinutePerVisitor = Math.min(120, Math.max(1, parseInt(d.requestsPerMinutePerVisitor) || 8));
         } else if (this._sidePanelType === 'editSearchBox') {
             if (!this._currentProfile.rules.searchBox) this._currentProfile.rules.searchBox = {};
             this._currentProfile.rules.searchBox.enabled = !!d.enabled;
@@ -2043,6 +2106,16 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                 </svg>
                                 <span>Search Box</span>
                             </button>
+                            <button class="btn ${this._profileActiveTab === 'ai' ? 'active' : ''}"
+                                    @click=${() => { this._profileActiveTab = 'ai'; this._loadAiSettings(); }}
+                                    title="AI">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"></path>
+                                    <line x1="18" y1="16" x2="18" y2="21"></line>
+                                    <line x1="15.5" y1="18.5" x2="20.5" y2="18.5"></line>
+                                </svg>
+                                <span>AI</span>
+                            </button>
                             <button class="btn ${this._profileActiveTab === 'sources' ? 'active' : ''}"
                                     @click=${() => { this._profileActiveTab = 'sources'; this.requestUpdate(); }}
                                     title="Source">
@@ -2283,12 +2356,438 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         return html`
             <div class="profile-editor-view">
                 <div class="editor-tab-body">
+                    ${this._profileActiveTab === 'ai' ? this._renderAiTab(p) : nothing}
                     ${this._profileActiveTab === 'searchBox' ? this._renderSearchBoxTab(p) : nothing}
                     ${this._profileActiveTab === 'sources' ? this._renderSourcesTab(p) : nothing}
                     ${this._profileActiveTab === 'matching' ? this._renderMatchingTab(p) : nothing}
                     ${this._profileActiveTab === 'ranking' ? this._renderRankingTab(p) : nothing}
                     ${this._profileActiveTab === 'results' ? this._renderResultsTab(p) : nothing}
                     ${this._profileActiveTab === 'facets' ? this._renderFacetsTab(p) : nothing}
+                </div>
+            </div>
+        `;
+    }
+
+    // --- AI: KEY MANAGEMENT -----------------
+
+    async _loadAiSettings(force = false) {
+        try {
+            const res = await getAiSettings(this._fetch.bind(this), { force });
+            if (res.ok && res.data) {
+                this._aiStatus = res.data;
+            }
+        } catch (e) {
+            console.error("Failed to load AI settings:", e);
+        } finally {
+            this.requestUpdate();
+        }
+    }
+
+    /**
+     * Asks the provider which models this key can run. The ids come from the provider, so the
+     * dropdown can never offer a slug it would reject - which is the whole point of fetching rather
+     * than hardcoding a list that goes stale.
+     *
+     * @param applySuggestion set the profile's model from the provider's list when it is empty or
+     *        no longer offered. This is what makes adding a key enough on its own.
+     */
+    async _loadAiModels(applySuggestion = false) {
+        this._aiBusy = true;
+        this.requestUpdate();
+
+        try {
+            const res = await getAiModels(this._fetch.bind(this), this._currentProfile?.alias);
+            const data = res.data || {};
+
+            this._aiModels = {
+                loaded: true,
+                ok: !!data.ok,
+                error: data.error || '',
+                models: data.models || [],
+                suggested: data.suggested || ''
+            };
+
+            if (!data.ok) {
+                return;
+            }
+
+            const profile = this._currentProfile;
+            if (!applySuggestion || !profile) {
+                return;
+            }
+
+            if (!profile.rules.ai) profile.rules.ai = {};
+
+            const current = profile.rules.ai.model || '';
+            const offered = this._aiModels.models.some(m => m.id === current);
+
+            if ((!current || !offered) && data.suggested) {
+                profile.rules.ai.model = data.suggested;
+                await this._saveCurrentProfile();
+                this._showToast(`Model set to ${data.suggestedLabel || data.suggested}.`, "success");
+            }
+        } catch (e) {
+            console.error("Failed to list AI models:", e);
+            this._aiModels = { loaded: true, ok: false, error: 'Could not list models.', models: [], suggested: '' };
+        } finally {
+            this._aiBusy = false;
+            this.requestUpdate();
+        }
+    }
+
+    /**
+     * Saves the key on its own, not with the profile. It is write-only across the API, so there is
+     * nothing to put in the profile payload and nothing that comes back except "a key is set".
+     */
+    async _saveAiKey() {
+        const input = this.renderRoot.querySelector('#imobisoft-ai-key');
+        const key = (input?.value || '').trim();
+
+        if (!key) {
+            this._showToast("Paste an API key first.", "warning");
+            return;
+        }
+
+        this._aiBusy = true;
+        this.requestUpdate();
+
+        try {
+            const res = await saveAiKey(this._fetch.bind(this), key);
+
+            if (res.ok && res.data) {
+                this._aiStatus = res.data;
+                if (input) input.value = '';
+
+                // The key's own shape says which provider it belongs to, so the provider field is
+                // set from it - that is what makes pasting a key enough on its own.
+                const profile = this._currentProfile;
+                let switched = '';
+
+                if (profile && res.data.detectedProvider) {
+                    if (!profile.rules.ai) profile.rules.ai = {};
+
+                    const detected = res.data.detectedProvider.charAt(0).toLowerCase() + res.data.detectedProvider.slice(1);
+                    const current = String(profile.rules.ai.provider || 'auto');
+                    const wasExplicit = current.toLowerCase() !== 'auto';
+                    const differs = current.toLowerCase() !== detected.toLowerCase();
+
+                    if (!wasExplicit || differs) {
+                        // Swapping in a key from a different provider has to re-point the provider
+                        // too, or the new key goes to the old provider's endpoint and comes back
+                        // rejected - which reads as a bad key rather than a stale setting.
+                        profile.rules.ai.provider = detected;
+
+                        if (wasExplicit && differs) {
+                            // The model and base URL belonged to the provider being replaced.
+                            profile.rules.ai.model = '';
+                            profile.rules.ai.baseUrl = '';
+                            switched = res.data.detectedProviderName;
+                        }
+
+                        const match = (res.data.providers || []).find(x => x.value === res.data.detectedProvider);
+                        if (match && match.defaultModel && !profile.rules.ai.model) {
+                            profile.rules.ai.model = match.defaultModel;
+                        }
+                    }
+
+                    await this._saveCurrentProfile();
+                }
+
+                this._showToast(
+                    switched
+                        ? `Key saved - recognised as ${switched}, so the provider was switched. Fetching its models…`
+                        : res.data.detectedProviderName
+                            ? `Key saved - recognised as ${res.data.detectedProviderName}. Fetching its models…`
+                            : "Key saved. Pick the provider below, since its shape did not identify one.",
+                    "success");
+
+                // Straight on to the provider for its model list, and fill the model in from it.
+                // This is the step that makes a pasted key enough: the provider says what it can
+                // run, so there is no slug left for an editor to find and no stale list to go wrong.
+                if (res.data.detectedProvider || (profile?.rules?.ai?.provider && profile.rules.ai.provider !== 'auto')) {
+                    await this._loadAiModels(true);
+                }
+            } else {
+                this._showToast(res.data?.detail || res.data?.title || "Could not save that key.", "error");
+            }
+        } catch (e) {
+            console.error("Save AI key error:", e);
+            this._showToast("Unexpected error saving the key.", "error");
+        } finally {
+            this._aiBusy = false;
+            this.requestUpdate();
+        }
+    }
+
+    async _removeAiKey() {
+        this._showConfirm("Remove AI Key", "Remove the stored API key? The text tools stop working until a new key is added.", async (confirmed) => {
+            if (!confirmed) return;
+
+            this._aiBusy = true;
+            this.requestUpdate();
+
+            try {
+                const res = await deleteAiKey(this._fetch.bind(this));
+                if (res.ok && res.data) this._aiStatus = res.data;
+
+                // Everything that was settled by that key goes with it. Leaving the provider, model
+                // and base URL behind would point the next key at the old vendor - the exact trap
+                // that made a working key look rejected - and leaving the tools switched on would
+                // have visitors clicking buttons that cannot answer.
+                const profile = this._currentProfile;
+                if (profile) {
+                    if (!profile.rules.ai) profile.rules.ai = {};
+                    profile.rules.ai.enabled = false;
+                    profile.rules.ai.provider = 'auto';
+                    profile.rules.ai.model = '';
+                    profile.rules.ai.baseUrl = '';
+                    await this._saveCurrentProfile();
+                }
+
+                this._aiModels = { loaded: false, ok: false, error: '', models: [], suggested: '' };
+
+                this._showToast("API key removed, and the provider and model reset.", "success");
+            } catch (e) {
+                console.error("Remove AI key error:", e);
+                this._showToast("Could not remove the key.", "error");
+            } finally {
+                this._aiBusy = false;
+                this.requestUpdate();
+            }
+        });
+    }
+
+    /** One real request against the provider - the only way to know the setup actually works. */
+    async _testAi() {
+        this._aiBusy = true;
+        this.requestUpdate();
+
+        try {
+            const res = await testAi(this._fetch.bind(this), this._currentProfile?.alias);
+            const message = res.data?.message || "No response.";
+            this._showToast(message, res.data?.ok ? "success" : "error");
+        } catch (e) {
+            console.error("AI test error:", e);
+            this._showToast("Could not run the test.", "error");
+        } finally {
+            this._aiBusy = false;
+            this.requestUpdate();
+        }
+    }
+
+    // --- TAB: AI ---
+    _renderAiTab(p) {
+        this._ensureProfileStructure(p);
+
+        const ai = p.rules.ai;
+        const status = this._aiStatus || {};
+        const providers = status.providers || [];
+        const current = providers.find(x => x.value.toLowerCase() === String(ai.provider || '').toLowerCase());
+        const models = this._aiModels || { loaded: false, ok: false, error: '', models: [], suggested: '' };
+        const actionNames = { summarise: 'Summarise', shorten: 'Shorten', keyPoints: 'Key points', translate: 'Translate' };
+
+        return html`
+            <div class="source-settings-container">
+                <!-- 1. The key -->
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">AI Provider &amp; Key</div>
+                        <div class="setting-desc">Paste a key from any supported provider - Anthropic, OpenAI, Gemini, Groq, Mistral, DeepSeek, OpenRouter, Azure OpenAI, or anything that speaks the OpenAI API. The key's own shape identifies the provider, so that is usually all you need to enter. Stored encrypted and never sent back to this screen.</div>
+                    </div>
+                    <div class="field-right-box">
+                        <div class="field-box-header">
+                            <span class="field-type-tag">${current ? current.name : 'Provider'}</span>
+                            <span class="field-count-pill">${status.hasKey ? `Key set ${status.hint || ''}` : 'No key yet'}</span>
+                        </div>
+                        <div class="field-box-content">
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label class="sp-label">API Key</label>
+                                <div style="display: flex; gap: 8px;">
+                                    <input type="password"
+                                           id="imobisoft-ai-key"
+                                           class="sp-input"
+                                           style="flex: 1;"
+                                           autocomplete="off"
+                                           placeholder=${status.hasKey ? 'Paste a new key to replace the current one' : 'sk-… / AIza… / gsk_…'}>
+                                    <button class="btn btn-primary" ?disabled=${this._aiBusy} @click=${() => this._saveAiKey()}>
+                                        ${this._aiBusy ? 'Working…' : 'Save Key'}
+                                    </button>
+                                </div>
+                                <small class="sp-hint">
+                                    ${status.hasKey && status.detectedProviderName
+                                        ? `Recognised as ${status.detectedProviderName}.`
+                                        : 'Paste the whole key, with no quotes and no "Bearer " prefix.'}
+                                </small>
+                            </div>
+
+                            <div class="form-row-2col">
+                                <div class="form-group">
+                                    <label class="sp-label">Provider</label>
+                                    <select class="sp-input"
+                                            @change=${e => { ai.provider = e.target.value; this.requestUpdate(); }}>
+                                        <option value="auto" ?selected=${String(ai.provider) === 'auto'}>Detect from the key</option>
+                                        ${providers.map(provider => html`
+                                            <option value=${provider.value.charAt(0).toLowerCase() + provider.value.slice(1)}
+                                                    ?selected=${String(ai.provider).toLowerCase() === provider.value.toLowerCase()}>
+                                                ${provider.name}
+                                            </option>
+                                        `)}
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="sp-label">Model</label>
+                                    ${models.ok && models.models.length > 0 ? html`
+                                        <div style="display: flex; gap: 6px;">
+                                            <select class="sp-input"
+                                                    style="flex: 1;"
+                                                    @change=${e => { ai.model = e.target.value; this.requestUpdate(); }}>
+                                                ${ai.model && !models.models.some(m => m.id === ai.model) ? html`
+                                                    <option value=${ai.model} selected>${ai.model} (not offered by this key)</option>
+                                                ` : nothing}
+                                                ${models.models.map(m => html`
+                                                    <option value=${m.id} ?selected=${m.id === ai.model}>${m.label}</option>
+                                                `)}
+                                            </select>
+                                            <button class="btn btn-secondary"
+                                                    style="flex: 0 0 auto;"
+                                                    ?disabled=${this._aiBusy}
+                                                    title="Ask the provider for its model list again"
+                                                    @click=${() => this._loadAiModels(false)}>↻</button>
+                                        </div>
+                                        <small class="sp-hint">
+                                            ${models.models.length} models this key can run, from ${current ? current.name : 'the provider'}.
+                                            ${models.suggested ? html`Suggested: ${models.suggested}.` : nothing}
+                                        </small>
+                                    ` : html`
+                                        <div style="display: flex; gap: 6px;">
+                                            <input type="text"
+                                                   class="sp-input"
+                                                   style="flex: 1;"
+                                                   placeholder=${current && current.defaultModel ? current.defaultModel : 'e.g. the model name from your provider'}
+                                                   .value=${ai.model ?? ''}
+                                                   @input=${e => { ai.model = e.target.value; this.requestUpdate(); }}>
+                                            ${status.hasKey ? html`
+                                                <button class="btn btn-secondary"
+                                                        style="flex: 0 0 auto;"
+                                                        ?disabled=${this._aiBusy}
+                                                        title="Ask the provider which models this key can run"
+                                                        @click=${() => this._loadAiModels(true)}>
+                                                    ${this._aiBusy ? '…' : 'Fetch'}
+                                                </button>
+                                            ` : nothing}
+                                        </div>
+                                        <small class="sp-hint">
+                                            ${models.loaded && !models.ok
+                                                ? models.error
+                                                : status.hasKey
+                                                    ? 'Press Fetch to list the models this key can run.'
+                                                    : 'Add a key first, then the models can be listed for you.'}
+                                        </small>
+                                    `}
+                                </div>
+                            </div>
+
+                            ${current && current.requiresBaseUrl ? html`
+                                <div class="form-group" style="margin-top: 12px;">
+                                    <label class="sp-label">API Base URL</label>
+                                    <input type="text"
+                                           class="sp-input"
+                                           placeholder="https://your-resource.openai.azure.com/openai/deployments/your-deployment/chat/completions?api-version=…"
+                                           .value=${ai.baseUrl ?? ''}
+                                           @input=${e => { ai.baseUrl = e.target.value; this.requestUpdate(); }}>
+                                    <small class="sp-hint">
+                                        ${current.value === 'AzureOpenAi'
+                                            ? 'Azure hosts differ per resource, so paste the full chat-completions URL including the api-version.'
+                                            : 'The base URL of an OpenAI-compatible API, e.g. http://localhost:11434/v1 for a local Ollama.'}
+                                    </small>
+                                </div>
+                            ` : nothing}
+
+                            ${current && current.modelsDocumentation ? html`
+                                <small class="sp-hint" style="display:block; margin-top: 10px;">
+                                    Model names change often, so the package does not guess one.
+                                    ${current.name}'s current list: ${current.modelsDocumentation}
+                                </small>
+                            ` : nothing}
+
+                            <div style="display: flex; gap: 8px; margin-top: 14px;">
+                                <button class="btn btn-secondary" ?disabled=${this._aiBusy || !status.hasKey} @click=${() => this._testAi()}>
+                                    Test Connection
+                                </button>
+                                ${status.hasKey ? html`
+                                    <button class="btn btn-secondary" ?disabled=${this._aiBusy} @click=${() => this._removeAiKey()}>
+                                        Remove Key
+                                    </button>
+                                ` : nothing}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. What visitors can do -->
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Text Tools On Results</div>
+                        <div class="setting-desc">Buttons that appear under each search result and transform it where the visitor already is. Nothing shows until a key is added and this is switched on.</div>
+                    </div>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editAiActions')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Actions</span>
+                            <div style="display: flex; align-items: center; gap: 8px;" @click=${e => e.stopPropagation()}>
+                                <label class="switch switch-sm" title="${status.hasKey ? '' : 'Add an API key first'}">
+                                    <input type="checkbox"
+                                           .checked=${!!ai.enabled}
+                                           ?disabled=${!status.hasKey}
+                                           @change=${async e => {
+                                               ai.enabled = e.target.checked;
+                                               this.requestUpdate();
+                                               await this._saveCurrentProfile();
+                                           }}>
+                                    <span class="slider round"></span>
+                                </label>
+                                <span class="field-count-pill">${ai.enabled ? `${(ai.actions || []).length} Enabled` : 'Off'}</span>
+                            </div>
+                        </div>
+                        <div class="field-box-content">
+                            <div class="selected-chips-wrap">
+                                ${!status.hasKey ? html`
+                                    <span class="selected-chip chip-muted">✕ Add an API key to switch these on</span>
+                                ` : nothing}
+                                ${(ai.actions || []).map(action => html`
+                                    <span class="selected-chip chip-success">✓ ${actionNames[action] || action}</span>
+                                `)}
+                                ${(ai.actions || []).length === 0 ? html`
+                                    <span class="selected-chip chip-muted">✕ No actions enabled</span>
+                                ` : nothing}
+                                ${(ai.actions || []).includes('translate') ? html`
+                                    <span class="selected-chip"><strong>Languages:</strong> ${(ai.languages || []).join(', ') || 'none'}</span>
+                                ` : nothing}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Cost and abuse limits -->
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Cost &amp; Request Limits</div>
+                        <div class="setting-desc">These buttons spend money at your provider on a visitor's click, from an endpoint that has to be public. Caching and the per-visitor limit are what keep that bounded.</div>
+                    </div>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editAiLimits')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Limits</span>
+                            <span class="field-count-pill">${ai.requestsPerMinutePerVisitor}/min per visitor</span>
+                        </div>
+                        <div class="field-box-content">
+                            <div class="selected-chips-wrap">
+                                <span class="selected-chip"><strong>Text sent:</strong> up to ${ai.maxInputCharacters} characters</span>
+                                <span class="selected-chip"><strong>Reply cap:</strong> ${ai.maxOutputTokens} tokens</span>
+                                <span class="selected-chip ${ai.cacheMinutes > 0 ? 'chip-success' : 'chip-muted'}">
+                                    ${ai.cacheMinutes > 0 ? `✓ Answers reused for ${ai.cacheMinutes} min` : '✕ No caching - every click is billed'}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         `;
@@ -3755,6 +4254,8 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         else if (t === 'editSourceContentTypes') { title = "Include Document Types"; labelTag = "DOC TYPES"; }
         else if (t === 'editSourceRoots') { title = "Search Subtree Roots"; labelTag = "ROOTS"; }
         else if (t === 'editSourceProtection') { title = "Visibility & Protection Rules"; labelTag = "VISIBILITY"; }
+        else if (t === 'editAiActions') { title = "AI Text Tools On Results"; labelTag = "AI ACTIONS"; }
+        else if (t === 'editAiLimits') { title = "AI Cost & Request Limits"; labelTag = "AI LIMITS"; }
         else if (t === 'editSearchBox') { title = "Header Search Box"; labelTag = "SEARCH BOX"; }
         else if (t === 'editSearchBoxPages') { title = "Search Pages It Attaches To"; labelTag = "TARGET PAGES"; }
         else if (t === 'editSearchBoxPlacement') { title = "Placement & Query Parameter"; labelTag = "PLACEMENT"; }
@@ -3780,6 +4281,8 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         ${t === 'editBestBet' ? this._renderBestBetSidePanelBody(d) : nothing}
                         ${t === 'editRecency' ? this._renderRecencySidePanelBody(d) : nothing}
                         ${t === 'editBlockedTerms' ? this._renderBlockedTermsSidePanelBody(d) : nothing}
+                        ${t === 'editAiActions' ? this._renderAiActionsSidePanelBody(d) : nothing}
+                        ${t === 'editAiLimits' ? this._renderAiLimitsSidePanelBody(d) : nothing}
                         ${t === 'editSearchBox' ? this._renderSearchBoxSidePanelBody(d) : nothing}
                         ${t === 'editSearchBoxPages' ? this._renderSearchBoxPagesSidePanelBody(d) : nothing}
                         ${t === 'editSearchBoxPlacement' ? this._renderSearchBoxPlacementSidePanelBody(d) : nothing}
@@ -4650,6 +5153,102 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             this._iconUploading = false;
             this.requestUpdate();
         }
+    }
+
+    _renderAiActionsSidePanelBody(d) {
+        const options = [
+            { value: 'summarise', name: 'Summarise', desc: 'Two or three sentences covering what the page says.' },
+            { value: 'shorten', name: 'Shorten', desc: 'The same text at about half the length, facts kept.' },
+            { value: 'keyPoints', name: 'Key points', desc: 'The main points as a short list.' },
+            { value: 'translate', name: 'Translate', desc: 'The text in one of the languages below.' }
+        ];
+
+        const toggle = (value, on) => {
+            const set = new Set(d.actions || []);
+            if (on) set.add(value); else set.delete(value);
+            // Kept in the listed order so the buttons never reshuffle between saves.
+            d.actions = options.map(o => o.value).filter(v => set.has(v));
+            this.requestUpdate();
+        };
+
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="toggle-list" style="margin-bottom: 20px;">
+                    ${options.map(option => html`
+                        <label class="toggle-item">
+                            <div class="toggle-info">
+                                <strong>${option.name}</strong>
+                                <span>${option.desc}</span>
+                            </div>
+                            <input type="checkbox"
+                                   class="switch-input"
+                                   .checked=${(d.actions || []).includes(option.value)}
+                                   @change=${e => toggle(option.value, e.target.checked)}>
+                        </label>
+                    `)}
+                </div>
+
+                <div class="sp-group">
+                    <label class="sp-label">Translation Languages (one per line)</label>
+                    <textarea class="sp-textarea"
+                              style="min-height: 140px; font-family: monospace; font-size: 13px;"
+                              placeholder="e.g.&#10;English&#10;French&#10;Urdu"
+                              .value=${d._languagesInput ?? ''}
+                              @input=${e => { d._languagesInput = e.target.value; this.requestUpdate(); }}></textarea>
+                    <span class="sp-hint">Offered in the dropdown beside the Translate button. A visitor can only pick from this list - the language is checked against it server-side before it reaches the model, so it cannot be used to smuggle in instructions.</span>
+                </div>
+            </div>
+        `;
+    }
+
+    _renderAiLimitsSidePanelBody(d) {
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-group" style="margin-bottom: 20px;">
+                    <label class="sp-label">Reuse Answers For (minutes, 0 = never)</label>
+                    <input type="number"
+                           class="sp-input"
+                           min="0"
+                           max="20160"
+                           .value=${String(d.cacheMinutes ?? 1440)}
+                           @change=${e => { d.cacheMinutes = parseInt(e.target.value) || 0; this.requestUpdate(); }}>
+                    <span class="sp-hint">The single most effective saving here: summarising a page once serves every later visitor who asks for the same thing, for free. A cached answer also skips the rate limit, because it never reaches the provider.</span>
+                </div>
+
+                <div class="sp-group" style="margin-bottom: 20px;">
+                    <label class="sp-label">Requests Per Minute Per Visitor</label>
+                    <input type="number"
+                           class="sp-input"
+                           min="1"
+                           max="120"
+                           .value=${String(d.requestsPerMinutePerVisitor ?? 8)}
+                           @change=${e => { d.requestsPerMinutePerVisitor = parseInt(e.target.value) || 8; this.requestUpdate(); }}>
+                    <span class="sp-hint">Counted per client address, per server. This is what stops one caller running up the bill on an endpoint that has to be open to the public.</span>
+                </div>
+
+                <div class="sp-group" style="margin-bottom: 20px;">
+                    <label class="sp-label">Characters Of Page Text Sent</label>
+                    <input type="number"
+                           class="sp-input"
+                           min="200"
+                           max="40000"
+                           .value=${String(d.maxInputCharacters ?? 6000)}
+                           @change=${e => { d.maxInputCharacters = parseInt(e.target.value) || 6000; this.requestUpdate(); }}>
+                    <span class="sp-hint">A ceiling on the size of one request, and so on what one click can cost. Longer pages are cut off at this point.</span>
+                </div>
+
+                <div class="sp-group">
+                    <label class="sp-label">Reply Token Limit</label>
+                    <input type="number"
+                           class="sp-input"
+                           min="256"
+                           max="8192"
+                           .value=${String(d.maxOutputTokens ?? 2048)}
+                           @change=${e => { d.maxOutputTokens = parseInt(e.target.value) || 2048; this.requestUpdate(); }}>
+                    <span class="sp-hint">On a model that reasons before answering this budget covers the reasoning as well as the reply, so a tight value shows up as an empty answer rather than a short one. 2048 suits the actions here.</span>
+                </div>
+            </div>
+        `;
     }
 
     _renderSearchBoxSidePanelBody(d) {

@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Imobisoft.Search.Migrations;
 using Imobisoft.Search.Persistence;
 using Imobisoft.Search.Services;
+using Imobisoft.Search.Services.Ai;
 using Imobisoft.Search.Web;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Razor.TagHelpers;
@@ -89,6 +90,29 @@ public sealed class ImobisoftSearchComposer : IComposer
         // link starts opening a box in place instead of leaving for an empty search page. Honours
         // the backoffice toggle on every request.
         builder.Services.AddTransient<ITagHelperComponent, HeaderSearchBoxTagHelperComponent>();
+
+        RegisterAi(builder);
+    }
+
+    /// <summary>
+    /// The live text tools. One client per wire format rather than per vendor, registered together
+    /// so the service can pick by protocol - which is what lets a key from any supported provider
+    /// work without new code.
+    /// </summary>
+    private static void RegisterAi(IUmbracoBuilder builder)
+    {
+        builder.Services.AddHttpClient(
+            HttpCompletionClientBase.HttpClientName,
+            client => client.Timeout = TimeSpan.FromSeconds(60));
+
+        builder.Services.AddSingleton<IAiCredentialStore, AiCredentialStore>();
+        builder.Services.AddSingleton<IAiContentReader, AiContentReader>();
+
+        builder.Services.AddSingleton<IAiCompletionClient, AnthropicCompletionClient>();
+        builder.Services.AddSingleton<IAiCompletionClient, OpenAiCompatibleCompletionClient>();
+        builder.Services.AddSingleton<IAiCompletionClient, GeminiCompletionClient>();
+
+        builder.Services.AddSingleton<IAiTextService, AiTextService>();
     }
 
     private static void RegisterAuthorization(IUmbracoBuilder builder)

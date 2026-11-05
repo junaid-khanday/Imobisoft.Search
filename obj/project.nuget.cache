@@ -1,9 +1,10 @@
 {
   "version": 2,
-  "dgSpecHash": "X5Q/+L6Ytk0=",
+  "dgSpecHash": "2bZcosM8MgI=",
   "success": true,
   "projectFilePath": "D:\\imobisoft\\Imobisoft.Search\\Imobisoft.Search.csproj",
   "expectedPackageFiles": [
+    "C:\\Users\\User\\.nuget\\packages\\anthropic\\13.5.0\\anthropic.13.5.0.nupkg.sha512",
     "C:\\Users\\User\\.nuget\\packages\\asp.versioning.abstractions\\8.1.0\\asp.versioning.abstractions.8.1.0.nupkg.sha512",
     "C:\\Users\\User\\.nuget\\packages\\asp.versioning.http\\8.1.0\\asp.versioning.http.8.1.0.nupkg.sha512",
     "C:\\Users\\User\\.nuget\\packages\\asp.versioning.mvc\\8.1.0\\asp.versioning.mvc.8.1.0.nupkg.sha512",
@@ -43,6 +44,7 @@
     "C:\\Users\\User\\.nuget\\packages\\microsoft.aspnetcore.hosting.server.abstractions\\1.0.2\\microsoft.aspnetcore.hosting.server.abstractions.1.0.2.nupkg.sha512",
     "C:\\Users\\User\\.nuget\\packages\\microsoft.aspnetcore.http.abstractions\\1.0.2\\microsoft.aspnetcore.http.abstractions.1.0.2.nupkg.sha512",
     "C:\\Users\\User\\.nuget\\packages\\microsoft.aspnetcore.http.features\\1.0.2\\microsoft.aspnetcore.http.features.1.0.2.nupkg.sha512",
+    "C:\\Users\\User\\.nuget\\packages\\microsoft.extensions.ai.abstractions\\10.5.1\\microsoft.extensions.ai.abstractions.10.5.1.nupkg.sha512",
     "C:\\Users\\User\\.nuget\\packages\\microsoft.extensions.ambientmetadata.application\\9.9.0\\microsoft.extensions.ambientmetadata.application.9.9.0.nupkg.sha512",
     "C:\\Users\\User\\.nuget\\packages\\microsoft.extensions.apidescription.server\\10.0.0\\microsoft.extensions.apidescription.server.10.0.0.nupkg.sha512",
     "C:\\Users\\User\\.nuget\\packages\\microsoft.extensions.caching.abstractions\\10.0.0\\microsoft.extensions.caching.abstractions.10.0.0.nupkg.sha512",

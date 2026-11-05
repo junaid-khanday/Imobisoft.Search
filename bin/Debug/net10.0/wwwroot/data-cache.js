@@ -221,6 +221,45 @@ export async function updateSettings(fetchFn, settings) {
     return res;
 }
 
+// ----------------- AI API -----------------
+
+/**
+ * Whether an AI key is stored (never the key itself), plus the providers the package can call.
+ */
+export function getAiSettings(fetchFn, { force = false } = {}) {
+    const url = `${getBaseApiUrl()}ai`;
+    if (force) _entries.delete("ai");
+    return _read("ai", SETTINGS_TTL_MS, () => _json(fetchFn, url));
+}
+
+export async function saveAiKey(fetchFn, apiKey) {
+    const res = await _json(fetchFn, `${getBaseApiUrl()}ai/key`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey })
+    });
+    _entries.delete("ai");
+    return res;
+}
+
+export async function deleteAiKey(fetchFn) {
+    const res = await _json(fetchFn, `${getBaseApiUrl()}ai/key`, { method: 'DELETE' });
+    _entries.delete("ai");
+    return res;
+}
+
+/** The models the stored key can run, straight from the provider, plus the one to use. */
+export function getAiModels(fetchFn, profileAlias) {
+    const query = profileAlias ? `?profileAlias=${encodeURIComponent(profileAlias)}` : '';
+    return _json(fetchFn, `${getBaseApiUrl()}ai/models${query}`);
+}
+
+/** Runs one real request against the configured provider to prove the setup works. */
+export function testAi(fetchFn, profileAlias) {
+    const query = profileAlias ? `?profileAlias=${encodeURIComponent(profileAlias)}` : '';
+    return _json(fetchFn, `${getBaseApiUrl()}ai/test${query}`, { method: 'POST' });
+}
+
 // ----------------- SEARCH BOX ICON API -----------------
 
 /**

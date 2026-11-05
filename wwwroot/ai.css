@@ -1,0 +1,130 @@
+/*
+    The live text tools on a search result: summarise, shorten, key points, translate.
+
+    Appearance only - the buttons and the panel are built by ai.js. A site re-themes by overriding
+    these classes in its own stylesheet; nothing here is required for the tools to work.
+*/
+
+.imai {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+}
+
+.imai-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: #94a3b8;
+    margin-right: 2px;
+}
+
+.imai-btn {
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    padding: 5px 11px;
+    color: #1e293b;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background .12s ease, border-color .12s ease;
+}
+
+.imai-btn:hover:not(:disabled) {
+    background: #eef2f7;
+    border-color: #cbd5e1;
+}
+
+.imai-btn:disabled {
+    opacity: .55;
+    cursor: wait;
+}
+
+.imai-btn.is-active {
+    background: #1b264f;
+    border-color: #1b264f;
+    color: #fff;
+}
+
+.imai-select {
+    font: inherit;
+    font-size: 12.5px;
+    height: 28px;
+    padding: 0 6px;
+    color: #1e293b;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+}
+
+/* The answer. Hidden until there is something to show - ai.js owns that, as an inline style, so
+   the panel cannot be caught open while this file is still loading. */
+.imai-panel {
+    width: 100%;
+    margin-top: 10px;
+    padding: 12px 14px;
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: #1e293b;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-left: 3px solid #1b264f;
+    border-radius: 8px;
+}
+
+.imai-panel p { margin: 0 0 8px; }
+
+.imai-panel p:last-child { margin-bottom: 0; }
+
+.imai-panel ul {
+    margin: 0;
+    padding-left: 18px;
+}
+
+.imai-panel.is-error {
+    color: #991b1b;
+    background: #fef2f2;
+    border-color: #fecaca;
+    border-left-color: #dc2626;
+}
+
+.imai-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 10px;
+    font-size: 11px;
+    color: #94a3b8;
+}
+
+.imai-close {
+    font: inherit;
+    font-size: 11px;
+    color: #64748b;
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+/* A plain CSS pulse rather than an animated image, so it needs no extra request. */
+.imai-waiting {
+    color: #64748b;
+    animation: imai-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes imai-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .imai-waiting { animation: none; }
+}

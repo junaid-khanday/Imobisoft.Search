@@ -8,11 +8,23 @@
     ".NETCoreApp,Version=v10.0": {
       "Imobisoft.Search/1.0.0": {
         "dependencies": {
+          "Anthropic": "13.5.0",
           "Umbraco.Cms.Api.Management": "17.0.0",
           "Umbraco.Cms.Web.Common": "17.0.0"
         },
         "runtime": {
           "Imobisoft.Search.dll": {}
+        }
+      },
+      "Anthropic/13.5.0": {
+        "dependencies": {
+          "Microsoft.Extensions.AI.Abstractions": "10.5.1"
+        },
+        "runtime": {
+          "lib/net9.0/Anthropic.dll": {
+            "assemblyVersion": "13.5.0.0",
+            "fileVersion": "13.5.0.0"
+          }
         }
       },
       "Asp.Versioning.Abstractions/8.1.0": {
@@ -321,6 +333,14 @@
           "lib/netstandard2.0/MessagePack.Annotations.dll": {
             "assemblyVersion": "3.1.4.0",
             "fileVersion": "3.1.4.0"
+          }
+        }
+      },
+      "Microsoft.Extensions.AI.Abstractions/10.5.1": {
+        "runtime": {
+          "lib/net10.0/Microsoft.Extensions.AI.Abstractions.dll": {
+            "assemblyVersion": "10.5.0.0",
+            "fileVersion": "10.500.126.25103"
           }
         }
       },
@@ -1202,6 +1222,13 @@
       "serviceable": false,
       "sha512": ""
     },
+    "Anthropic/13.5.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-Chj4tZ3tYFNjJ0A1n8zboAJ7sxhd70HvYG6Ob438PwQztv4bq23CIXBjMcAp0yGJ15j2ES2GM+KWk6ZudFhl/w==",
+      "path": "anthropic/13.5.0",
+      "hashPath": "anthropic.13.5.0.nupkg.sha512"
+    },
     "Asp.Versioning.Abstractions/8.1.0": {
       "type": "package",
       "serviceable": true,
@@ -1411,6 +1438,13 @@
       "sha512": "sha512-aVWrDAkCdqxwQsz/q0ldPh2EFn48M99YUzE9OvZjMq2RNLKz4o2z88iGFvSvbMqOWRweRvKPHBJZe22PRqzslQ==",
       "path": "messagepack.annotations/3.1.4",
       "hashPath": "messagepack.annotations.3.1.4.nupkg.sha512"
+    },
+    "Microsoft.Extensions.AI.Abstractions/10.5.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-nB0l3IlsVbNeUxsE7nZNb9GY8rP1OSeqpj0pseORPejt474HNKEauTWTLdSJPkSvPlRMxowZNMo6nyp7APAiSg==",
+      "path": "microsoft.extensions.ai.abstractions/10.5.1",
+      "hashPath": "microsoft.extensions.ai.abstractions.10.5.1.nupkg.sha512"
     },
     "Microsoft.Extensions.AmbientMetadata.Application/9.9.0": {
       "type": "package",

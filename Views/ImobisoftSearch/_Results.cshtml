@@ -1,13 +1,20 @@
 @model ImobisoftSearchPageViewModel
+@inject Imobisoft.Search.Services.Ai.IAiTextService AiTools
 @{
     SearchResponse? response = Model.Response;
+
+    // Only the key is needed here: the AI settings themselves sit on the <ol> in Index.cshtml. This
+    // partial is also what the Load More endpoint returns on its own, so appended results carry the
+    // key too and the tools attach to them as they arrive.
+    var aiOn = AiTools.IsAvailable(response?.ProfileAlias);
 }
 
 @if (response is not null && response.Results.Count > 0)
 {
     foreach (SearchResultItem item in response.Results)
     {
-        <li class="imobisoft-result-card @(item.IsBestBet ? "is-bestbet" : "")">
+        <li class="imobisoft-result-card @(item.IsBestBet ? "is-bestbet" : "")"
+            data-imobisoft-key="@(aiOn && item.Key.HasValue ? item.Key.Value.ToString() : null)">
             <div class="imobisoft-result-header">
                 @if (item.IsBestBet)
                 {

@@ -61,6 +61,21 @@ public static class ImobisoftSearchConstants
         public const string CacheKey = "Imobisoft.Search.Settings.Cache";
     }
 
+    public static class Ai
+    {
+        /// <summary>
+        /// Key the encrypted AI API key is stored under in Umbraco's key/value table. Deliberately
+        /// not part of the profile's rules JSON, which is served to the browser in full.
+        /// </summary>
+        public const string KeyValueKey = "Imobisoft.Search.Ai.ApiKey";
+
+        /// <summary>Last four characters of the key, stored in clear - this is all the backoffice shows.</summary>
+        public const string HintKeyValueKey = "Imobisoft.Search.Ai.ApiKeyHint";
+
+        /// <summary>Runtime cache key prefix for AI answers, so the same page is not paid for twice.</summary>
+        public const string CacheKeyPrefix = "Imobisoft.Search.Ai.Result";
+    }
+
     public static class Profiles
     {
         public const string DefaultAlias = "default";

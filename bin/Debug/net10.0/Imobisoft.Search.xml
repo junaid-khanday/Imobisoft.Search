@@ -30,6 +30,65 @@
             </para>
             </summary>
         </member>
+        <member name="T:Imobisoft.Search.Api.AiSettingsStatus">
+            <summary>The AI key as the backoffice is allowed to see it: that one exists, and its last four characters.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Api.AiSettingsStatus.DetectedProvider">
+            <summary>Provider read from the key's shape, so the dashboard can show what it recognised.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Api.AiSettingsStatus.Providers">
+            <summary>Every provider the package can call, for the dropdown.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Api.AiProviderOption">
+            <summary>One provider, as the dashboard lists it.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Api.AiKeyRequest">
+            <summary>Body for saving a key.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Api.AiModelOption">
+            <summary>One model the provider says this key can run.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Api.AiModelsResult">
+            <summary>The provider's own model list, plus which one to use.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Api.AiModelsResult.Suggested">
+            <summary>Model the package would pick, chosen from the list below.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Api.AiTestResult">
+            <summary>Outcome of the Test button.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Api.SearchAiController">
+            <summary>
+            Adds and tests the AI key from the backoffice.
+            <para>
+            The key is write-only across this API: it can be set, replaced and cleared, and the only thing
+            ever read back is whether one exists plus its last four characters. That is deliberate - the
+            profile's rules travel to the browser in full, so a key kept alongside them would travel too.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Api.SearchAiController.Get">
+            <summary>Whether a key is in place, and the providers the package can call.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Api.SearchAiController.SaveKey(Imobisoft.Search.Api.AiKeyRequest)">
+            <summary>Saves or replaces the key.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Api.SearchAiController.DeleteKey">
+            <summary>Removes the key, which also stops the text tools answering.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Api.SearchAiController.Test(System.String,System.Threading.CancellationToken)">
+            <summary>
+            Runs the smallest real request against the configured provider. Worth doing before trusting
+            the tools, because a wrong model name or endpoint only shows up on a real call.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Api.SearchAiController.Models(System.String,System.Threading.CancellationToken)">
+            <summary>
+            The models the stored key can actually run, with the one to use. This is what lets adding a
+            key fill the model in by itself instead of leaving an editor to find a slug the provider
+            accepts - the ids come from the provider, so they are never out of date or invented.
+            </summary>
+        </member>
         <member name="T:Imobisoft.Search.Api.SearchBoxIconUploadResult">
             <summary>What the dashboard needs back after an upload: where the icon now lives.</summary>
         </member>
@@ -207,6 +266,13 @@
             </para>
             </summary>
         </member>
+        <member name="M:Imobisoft.Search.Composing.ImobisoftSearchComposer.RegisterAi(Umbraco.Cms.Core.DependencyInjection.IUmbracoBuilder)">
+            <summary>
+            The live text tools. One client per wire format rather than per vendor, registered together
+            so the service can pick by protocol - which is what lets a key from any supported provider
+            work without new code.
+            </summary>
+        </member>
         <member name="T:Imobisoft.Search.Configuration.ImobisoftSearchOptions">
             <summary>
             Package settings read from the consumer's <c>appsettings.json</c>, under <c>Imobisoft:Search</c>.
@@ -274,6 +340,17 @@
             </para>
             </summary>
         </member>
+        <member name="P:Imobisoft.Search.Configuration.ImobisoftSearchOptions.EnableAiTextTools">
+            <summary>
+            Allows the AI text tools - summarise, shorten, key points, translate - to run on the site.
+            <para>
+            This is the deployment-level switch, and it governs a public endpoint that spends money at an
+            AI provider on request. Day to day the tools are controlled in the backoffice (the profile
+            editor's AI tab) and stay off until a key is added; setting this to <c>false</c> takes the
+            endpoint out of the site altogether, whatever the backoffice says.
+            </para>
+            </summary>
+        </member>
         <member name="P:Imobisoft.Search.Configuration.ImobisoftSearchOptions.ReadFiltersFromQueryString">
             <summary>
             Reads filter selections straight off the query string, so a search page needs no code to
@@ -319,6 +396,18 @@
         </member>
         <member name="F:Imobisoft.Search.ImobisoftSearchConstants.Settings.KeyValueKey">
             <summary>Key the site-wide settings JSON is stored under in Umbraco's key/value table.</summary>
+        </member>
+        <member name="F:Imobisoft.Search.ImobisoftSearchConstants.Ai.KeyValueKey">
+            <summary>
+            Key the encrypted AI API key is stored under in Umbraco's key/value table. Deliberately
+            not part of the profile's rules JSON, which is served to the browser in full.
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.ImobisoftSearchConstants.Ai.HintKeyValueKey">
+            <summary>Last four characters of the key, stored in clear - this is all the backoffice shows.</summary>
+        </member>
+        <member name="F:Imobisoft.Search.ImobisoftSearchConstants.Ai.CacheKeyPrefix">
+            <summary>Runtime cache key prefix for AI answers, so the same page is not paid for twice.</summary>
         </member>
         <member name="T:Imobisoft.Search.ImobisoftSearchConstants.IndexFields">
             <summary>
@@ -477,6 +566,112 @@
             Custom sections are hidden until a user group is granted access. Granting it to the
             administrators group on install means the section is simply there after the first run, rather
             than the package appearing to have done nothing. Other groups are still granted by hand.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Models.AiAction">
+            <summary>
+            What a visitor can ask the AI to do to a result's text. The list is closed on purpose: the
+            browser sends an action from this set and never a prompt of its own, so a visitor cannot turn
+            the site's endpoint into a general-purpose chatbot on the site's own API bill.
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Models.AiAction.Summarise">
+            <summary>A short prose summary of the page.</summary>
+        </member>
+        <member name="F:Imobisoft.Search.Models.AiAction.Shorten">
+            <summary>The same meaning in fewer words.</summary>
+        </member>
+        <member name="F:Imobisoft.Search.Models.AiAction.KeyPoints">
+            <summary>The main points as a short list.</summary>
+        </member>
+        <member name="F:Imobisoft.Search.Models.AiAction.Translate">
+            <summary>The text in another language.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Models.AiProvider">
+            <summary>
+            Which service answers. <see cref="F:Imobisoft.Search.Models.AiProvider.Auto"/> works out the provider from the shape of the key that
+            was pasted in, which is what lets an editor add a key and have it work without also knowing
+            which endpoint and header the vendor expects.
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Models.AiProvider.Auto">
+            <summary>Read the provider from the key itself.</summary>
+        </member>
+        <member name="F:Imobisoft.Search.Models.AiProvider.Gemini">
+            <summary>Google Gemini (the Generative Language API).</summary>
+        </member>
+        <member name="F:Imobisoft.Search.Models.AiProvider.AzureOpenAi">
+            <summary>
+            Azure OpenAI. Needs the resource's own URL, because the host is per-subscription and the
+            model is the name of a deployment rather than a published model id.
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Models.AiProvider.Custom">
+            <summary>
+            Anything else that speaks the OpenAI chat API - Together, Fireworks, a local Ollama or
+            LM Studio. Needs a base URL.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Models.AiRules">
+            <summary>
+            The live text tools the package offers on search results: summarise, shorten, pull out the key
+            points, or translate - run on the page the visitor is already on.
+            <para>
+            The model and its key are configured in the backoffice, on the profile editor's AI tab. The key
+            itself is never part of these rules: rules travel to the browser with the rest of the profile,
+            so the key is held separately and encrypted (see <c>IAiCredentialStore</c>).
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.AiRules.Enabled">
+            <summary>
+            Turns the text tools on. Off, nothing is injected into the site and the public endpoint
+            refuses every request - which is also what happens when no key has been added yet.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.AiRules.Provider">
+            <summary>Which service answers. Left on <see cref="F:Imobisoft.Search.Models.AiProvider.Auto"/>, the key decides.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.AiRules.Model">
+            <summary>
+            Model to run. Empty uses the provider's default where the package knows one; providers whose
+            model names change often need this filled in.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.AiRules.BaseUrl">
+            <summary>
+            API base URL. Empty uses the provider's published endpoint. Required for
+            <see cref="F:Imobisoft.Search.Models.AiProvider.AzureOpenAi"/> and <see cref="F:Imobisoft.Search.Models.AiProvider.Custom"/>.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.AiRules.Actions">
+            <summary>Which actions appear on a result. An empty list offers none of them.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.AiRules.Languages">
+            <summary>Languages offered for <see cref="F:Imobisoft.Search.Models.AiAction.Translate"/>.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.AiRules.MaxInputCharacters">
+            <summary>
+            How much of a page's text is sent. A ceiling here is a ceiling on the cost of one request,
+            so it is a cost control as much as a quality one.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.AiRules.MaxOutputTokens">
+            <summary>
+            Ceiling on what the model may generate in reply. On a model that thinks before answering
+            this covers the thinking too, so it needs room above the length of the answer itself.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.AiRules.CacheMinutes">
+            <summary>
+            How long an answer is reused. Summarising the same page for the next visitor costs nothing,
+            so this is the single most effective cost control here. 0 disables caching.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.AiRules.RequestsPerMinutePerVisitor">
+            <summary>
+            Requests a single visitor may make per minute. The endpoint is public - it has to be, the
+            site's visitors call it - so this is what stops one caller running up the bill.
             </summary>
         </member>
         <member name="T:Imobisoft.Search.Models.SearchQueryRecord">
@@ -1113,6 +1308,12 @@
         <member name="P:Imobisoft.Search.Models.SearchRuleSet.Results">
             <summary>The shape of the response.</summary>
         </member>
+        <member name="P:Imobisoft.Search.Models.SearchRuleSet.Ai">
+            <summary>
+            The live text tools offered on a result - summarise, shorten, key points, translate. Off
+            until a key is added in the backoffice.
+            </summary>
+        </member>
         <member name="T:Imobisoft.Search.Models.SearchProfile">
             <summary>
             A named, saveable search configuration. A site can hold several - for example a wide "site
@@ -1579,6 +1780,395 @@
             Column names deliberately avoid <c>key</c> and <c>alias</c>, which are reserved words in some of
             the databases Umbraco supports.
             </para>
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.IAiContentReader">
+            <summary>Reads a page's text out of the search index, by node key.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.IAiContentReader.Read(System.Guid,System.Int32)">
+            <summary>
+            The readable text of one node, or null when no indexed document carries that key.
+            </summary>
+            <param name="key">The node's GUID key, as the search results carry it.</param>
+            <param name="maximumCharacters">Hard ceiling on what is returned, and so on what is sent.</param>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.AiContentText">
+            <summary>A node's name and body text, as held in the index.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.AiContentReader">
+            <inheritdoc />
+        </member>
+        <member name="F:Imobisoft.Search.Services.Ai.AiContentReader.PreferredBodyFields">
+            <summary>
+            Fields worth reading as prose, in the order they are tried. Umbraco's own body fields come
+            first; anything else that looks like text is picked up by the sweep below.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiContentReader.Read(System.Guid,System.Int32)">
+            <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiContentReader.Clean(System.String)">
+            <summary>
+            Indexed values keep the markup that was in the property. It is stripped here so the model is
+            billed for words rather than tags, and so a stray tag cannot look like an instruction.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.AiCredentialStatus">
+            <summary>What the backoffice is allowed to know about the stored key.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiCredentialStatus.Hint">
+            <summary>Last four characters, so an editor can tell which key is in place without seeing it.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiCredentialStatus.DetectedProvider">
+            <summary>Provider read from the key's own shape, or null when its shape says nothing.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.IAiCredentialStore">
+            <summary>
+            Holds the AI key. Kept deliberately separate from the profile rules: rules are returned to the
+            browser whole, and a key must never be.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.IAiCredentialStore.Save(System.String)">
+            <summary>Saves the key, replacing any existing one.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.IAiCredentialStore.Clear">
+            <summary>Removes the key, which also turns the text tools off.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.IAiCredentialStore.Read">
+            <summary>The key, for server-side use only. Null when none is stored or it cannot be read back.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.IAiCredentialStore.Describe">
+            <summary>What the backoffice may display: whether a key exists, and its last four characters.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.AiCredentialStore">
+            <inheritdoc />
+        </member>
+        <member name="F:Imobisoft.Search.Services.Ai.AiCredentialStore.ProtectorPurpose">
+            <summary>
+            Purpose string for the data protector. Changing it makes every stored key unreadable, so it
+            is fixed here rather than derived from anything.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiCredentialStore.Save(System.String)">
+            <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiCredentialStore.Clear">
+            <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiCredentialStore.Read">
+            <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiCredentialStore.Describe">
+            <inheritdoc />
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.AiPrompts">
+            <summary>
+            The instructions behind each action.
+            <para>
+            Every prompt is built here, server-side, from an action in a closed set. Nothing a visitor sends
+            becomes part of the instructions - a visitor supplies which result and which action, and that is
+            all - so the endpoint cannot be steered into answering something else on the site's API bill.
+            </para>
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Ai.AiPrompts.Preamble">
+            <summary>
+            Shared framing. The text being worked on is a page from the site, and it arrives from the
+            search index rather than from the caller, so the model is told to treat it as content to
+            transform and not as instructions to follow.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiPrompts.Language(System.String)">
+            <summary>
+            The target language, which is the one piece of visitor input that reaches a prompt. It is
+            checked against the profile's own list before it gets here; this is the second line of
+            defence, keeping it to something that reads as a language name.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.AiProtocol">
+            <summary>Which wire format a provider speaks. Three shapes cover every provider below.</summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Ai.AiProtocol.Anthropic">
+            <summary>Anthropic's own Messages API, called through the official SDK.</summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Ai.AiProtocol.OpenAiChat">
+            <summary>The OpenAI chat-completions shape, which most vendors have adopted.</summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Ai.AiProtocol.Gemini">
+            <summary>Google's Generative Language API.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.AiProviderProfile">
+            <summary>Everything the package needs to know to call one provider.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiProviderProfile.BaseUrl">
+            <summary>Published API base URL. Empty where the host is per-account and must be supplied.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiProviderProfile.DefaultModel">
+            <summary>
+            Model used when none is configured. Empty where the package has no dependable default - a
+            guessed model id fails at request time with a confusing error, so an empty default and a
+            "model is required" message is the better failure.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiProviderProfile.RequiresBaseUrl">
+            <summary>A base URL must be supplied; there is no published one to fall back on.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiProviderProfile.ModelsDocumentation">
+            <summary>Where to read the model names this provider accepts.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiProviderProfile.PreferredModelHints">
+            <summary>
+            Substrings preferred when picking a model automatically, best first. These are matched
+            against the list the provider actually returns, never used to invent an id - so a stale hint
+            simply does not match and the choice falls through to price or to the first model offered.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.AiProviderCatalog">
+            <summary>
+            What the package knows about each provider, and how it works out which one a key belongs to.
+            <para>
+            This is what makes "paste a key and it works" true rather than aspirational: the key's own
+            prefix identifies the vendor, which supplies the endpoint, the authentication header and the
+            wire format, so an editor does not have to know any of them.
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiProviderCatalog.All">
+            <summary>Every provider the package can call, for the backoffice to list.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiProviderCatalog.Detect(System.String)">
+            <summary>
+            Works out the provider from the key. Prefixes are checked longest-first, because several are
+            prefixes of each other - an OpenRouter key also starts with the OpenAI <c>sk-</c>.
+            <para>
+            Returns null when the key's shape says nothing useful, in which case the provider has to be
+            chosen by hand rather than guessed at.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiProviderCatalog.SuggestModel(Imobisoft.Search.Models.AiProvider,System.Collections.Generic.IReadOnlyList{Imobisoft.Search.Services.Ai.AiModelInfo})">
+            <summary>
+            Picks a model out of the list a provider actually returned, so adding a key is enough to get
+            a working setup instead of leaving an editor to guess a slug.
+            <para>
+            Order: the package's own documented default if the provider offers it; then the provider's
+            preferred shapes; then the cheapest model that costs something; then whatever came first.
+            Nothing is ever invented - every candidate comes from the provider's own list.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiProviderCatalog.Resolve(Imobisoft.Search.Models.AiRules,System.String)">
+            <summary>
+            Settles provider, model and base URL from the rules and the key together, so callers work
+            with resolved values rather than repeating the fallback logic.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.AiResolvedTarget">
+            <summary>Provider, model and endpoint after the rules and the key have both had their say.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiResolvedTarget.KeyLooksLike">
+            <summary>
+            Provider the stored key's own shape points at, or null when its shape says nothing. Used
+            only to catch a key being sent to the wrong provider.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiResolvedTarget.Problem">
+            <summary>
+            Why this target cannot be called yet, or null when it can. Checked before a request is
+            built, so a misconfiguration reads as a sentence rather than a provider's own 404.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.AiTextRequest">
+            <summary>One request from the site: which result, which action, and into which language.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiTextRequest.Key">
+            <summary>The result's node key. The text itself is read server-side from that key.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiTextRequest.Language">
+            <summary>Target language for <see cref="F:Imobisoft.Search.Models.AiAction.Translate"/>; ignored by the other actions.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiTextRequest.Caller">
+            <summary>
+            Identifies the caller for rate limiting - the client IP. Never stored, only hashed into a
+            counter bucket.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiTextRequest.ProfileAlias">
+            <summary>Which profile's AI rules apply. Null uses the default profile.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.AiTextResult">
+            <summary>What the site gets back.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiTextResult.Cached">
+            <summary>True when this answer came from the cache, so the site can show it instantly.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiTextResult.Status">
+            <summary>HTTP status the endpoint should use.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.IAiTextService">
+            <summary>The live text tools, as the site's endpoint calls them.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.IAiTextService.IsAvailable(System.String)">
+            <summary>Whether the tools are configured and switched on for a profile.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.IAiTextService.RulesFor(System.String)">
+            <summary>The rules the frontend needs: which actions to offer, and which languages.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.IAiTextService.TestAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            Runs the smallest possible request to prove the key, model and endpoint work together. Used
+            by the backoffice's Test button, so a misconfiguration is found while an editor is still
+            looking at the screen rather than by a visitor.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.IAiTextService.ListModelsAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            Asks the provider which models the stored key can run, and which of them to use. Called when
+            a key is added, so the model field fills itself in from the provider rather than from a
+            guess an editor has to correct.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.AiTextService">
+            <inheritdoc />
+        </member>
+        <member name="F:Imobisoft.Search.Services.Ai.AiTextService.Windows">
+            <summary>
+            Per-caller request counters. In-process on purpose: it needs no schema and no dependency, and
+            on a load-balanced site each server simply enforces its own share of the limit.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiTextService.IsAvailable(System.String)">
+            <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiTextService.RulesFor(System.String)">
+            <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiTextService.TransformAsync(Imobisoft.Search.Services.Ai.AiTextRequest,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiTextService.TestAsync(System.String,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiTextService.ListModelsAsync(System.String,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiTextService.Compose(Imobisoft.Search.Services.Ai.AiContentText,System.Int32)">
+            <summary>Title first, then the body: the title is the strongest hint about what the page is.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiTextService.WithinRateLimit(System.String,System.Int32)">
+            <summary>
+            A fixed window per caller per minute. Rough by design - it exists to stop one caller running
+            up a bill, not to meter fairly.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiTextService.Sweep(System.DateTime)">
+            <summary>Drops windows nobody has used for a while, so the dictionary cannot grow unbounded.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.AnthropicCompletionClient">
+            <summary>
+            Calls Claude through Anthropic's own .NET SDK rather than over hand-rolled HTTP, so retries,
+            typed errors and the current request shape come from the vendor rather than from this package.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AnthropicCompletionClient.Describe(System.Exception)">
+            <summary>
+            Turns the SDK's exception into something an editor can act on. The message is kept short and
+            free of anything echoed back from the request.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.HttpCompletionClientBase">
+            <summary>Shared plumbing for the providers the package talks to over plain HTTP.</summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Ai.HttpCompletionClientBase.HttpClientName">
+            <summary>Named client, so a site can configure the timeout and handler in one place.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.HttpCompletionClientBase.Host(System.Net.Http.HttpRequestMessage)">
+            <summary>Host the request was aimed at, for an error an editor can act on.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.HttpCompletionClientBase.Describe(System.String,System.Net.HttpStatusCode,System.String)">
+            <summary>
+            Turns a provider's own error into one sentence. The provider's message is included because
+            it usually names the real problem - an unknown model, a disabled key - but it is trimmed, and
+            nothing from the request is echoed back.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.HttpCompletionClientBase.ReadErrorMessage(System.String)">
+            <summary>Both the OpenAI and Gemini shapes nest the message under <c>error.message</c>.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.HttpCompletionClientBase.ListAsync(System.Net.Http.HttpRequestMessage,System.Func{System.Text.Json.JsonElement,System.Collections.Generic.IReadOnlyList{Imobisoft.Search.Services.Ai.AiModelInfo}},System.String,System.Threading.CancellationToken)">
+            <summary>
+            Fetches and parses a provider's model list. The shapes differ, so the caller supplies the
+            reader; everything about getting there and failing cleanly is the same.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.HttpCompletionClientBase.PricePerMillion(System.Text.Json.JsonElement,System.String)">
+            <summary>
+            Price per million tokens from a string the provider gives as price per token. Returns null
+            rather than guessing when it is missing or unparseable.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.OpenAiCompatibleCompletionClient">
+            <summary>
+            The OpenAI chat-completions shape. One implementation covers OpenAI, Groq, Mistral, DeepSeek,
+            OpenRouter, Azure OpenAI and anything self-hosted that speaks the same API - which is why
+            pasting a key from any of them works without new code.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.OpenAiCompatibleCompletionClient.Endpoint(Imobisoft.Search.Services.Ai.AiResolvedTarget)">
+            <summary>
+            Azure's endpoint carries the deployment name and an api-version, and differs per resource, so
+            its base URL is used exactly as entered. Everyone else gets the standard path appended.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.GeminiCompletionClient">
+            <summary>Google's Generative Language API, which has a shape of its own.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.AiCompletionRequest">
+            <summary>One text transform to run.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiCompletionRequest.SystemPrompt">
+            <summary>Instructions. Built by the package from the action; never supplied by a visitor.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiCompletionRequest.UserText">
+            <summary>The text to work on, already capped to the profile's input limit.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.AiCompletionResult">
+            <summary>
+            What came back. A failure is returned rather than thrown: the caller is an endpoint a visitor is
+            waiting on, and a provider being down should read as a message, not a 500.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiCompletionResult.Error">
+            <summary>Message safe to show a visitor. Never carries the key or the raw provider payload.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.AiModelInfo">
+            <summary>One model a provider says it can run.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiModelInfo.Id">
+            <summary>The id to send as the model, exactly as the provider spells it.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiModelInfo.Label">
+            <summary>Name to show, with price where the provider publishes one.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiModelInfo.PromptPricePerMillion">
+            <summary>Input price per million tokens, when the provider reports it.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiModelInfo.IsFree">
+            <summary>True when the provider prices this model at nothing.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.AiModelListResult">
+            <summary>Models a provider offers, or why the list could not be fetched.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.IAiCompletionClient">
+            <summary>
+            Calls one provider. One implementation per wire format rather than per vendor, because most
+            vendors share the OpenAI chat shape.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.IAiCompletionClient.ListModelsAsync(Imobisoft.Search.Services.Ai.AiResolvedTarget,System.String,System.Threading.CancellationToken)">
+            <summary>
+            Asks the provider which models this key can actually run. Used so adding a key is enough to
+            get a working model, instead of leaving an editor to find a slug the provider accepts.
             </summary>
         </member>
         <member name="T:Imobisoft.Search.Services.IImobisoftSearchService">
@@ -2386,6 +2976,38 @@
             The search pages the script should recognise by name. Its own rule already covers a URL
             whose last segment is the word "search", so this is the package's page plus whatever the
             site has named differently.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Web.AiTransformRequest">
+            <summary>What the site's JavaScript posts: which result, which action, and into which language.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Web.AiTransformRequest.Action">
+            <summary>One of <c>summarise</c>, <c>shorten</c>, <c>keyPoints</c>, <c>translate</c>.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Web.AiTransformRequest.Key">
+            <summary>The result's node key. The text is read server-side from this, never sent by the browser.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Web.AiTransformRequest.Profile">
+            <summary>Which profile's AI rules apply. Empty uses the default profile.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Web.ImobisoftSearchAiController">
+            <summary>
+            The endpoint behind the summarise / shorten / key points / translate buttons on a search result.
+            <para>
+            This is reachable by the site's visitors, so it is also a way to spend the site's money at an AI
+            provider. Four things keep that contained, and all four matter: the action comes from a closed
+            set and the instructions are built server-side, so there is no prompt to inject; the body carries
+            a node key rather than text, so the only thing that can be processed is a page this site has
+            published; a per-visitor rate limit caps how often one caller can get through; and answers are
+            cached, so the same page is paid for once however many visitors ask.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Web.ImobisoftSearchAiController.CallerId">
+            <summary>
+            Who to count against the rate limit. The client IP, taking the first hop of a forwarding
+            header when one is present so that a site behind a proxy or CDN does not look like a single
+            caller - without it, one visitor hitting the limit would lock out everyone.
             </summary>
         </member>
         <member name="T:Imobisoft.Search.Web.ImobisoftSearchBoxViewComponent">

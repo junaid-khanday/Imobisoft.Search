@@ -1,6 +1,14 @@
 {
   "Files": [
     {
+      "Id": "D:\\imobisoft\\Imobisoft.Search\\wwwroot\\ai.css",
+      "PackagePath": "staticwebassets\\ai.css"
+    },
+    {
+      "Id": "D:\\imobisoft\\Imobisoft.Search\\wwwroot\\ai.js",
+      "PackagePath": "staticwebassets\\ai.js"
+    },
+    {
       "Id": "D:\\imobisoft\\Imobisoft.Search\\wwwroot\\auth-fetch.js",
       "PackagePath": "staticwebassets\\auth-fetch.js"
     },

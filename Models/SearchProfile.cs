@@ -24,6 +24,12 @@ public sealed class SearchRuleSet
 
     /// <summary>The shape of the response.</summary>
     public ResultRules Results { get; set; } = new();
+
+    /// <summary>
+    /// The live text tools offered on a result - summarise, shorten, key points, translate. Off
+    /// until a key is added in the backoffice.
+    /// </summary>
+    public AiRules Ai { get; set; } = new();
 }
 
 /// <summary>
