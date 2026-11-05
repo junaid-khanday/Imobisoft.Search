@@ -6,6 +6,13 @@ namespace Imobisoft.Search.Models;
 /// </summary>
 public sealed class SearchRuleSet
 {
+    /// <summary>
+    /// How a visitor starts a search: the box the package puts on the site's own search link.
+    /// First in the set because it is first in the journey - and first on the profile editor's
+    /// tabs, ahead of Source.
+    /// </summary>
+    public SearchBoxRules SearchBox { get; set; } = new();
+
     /// <summary>What is searchable.</summary>
     public SourceRules Sources { get; set; } = new();
 

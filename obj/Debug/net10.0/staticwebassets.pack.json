@@ -1,19 +1,27 @@
 {
   "Files": [
     {
-      "Id": "D:\\imobisoft\\Imobisoft.Search\\Imobisoft.Search\\wwwroot\\auth-fetch.js",
+      "Id": "D:\\imobisoft\\Imobisoft.Search\\wwwroot\\auth-fetch.js",
       "PackagePath": "staticwebassets\\auth-fetch.js"
     },
     {
-      "Id": "D:\\imobisoft\\Imobisoft.Search\\Imobisoft.Search\\wwwroot\\data-cache.js",
+      "Id": "D:\\imobisoft\\Imobisoft.Search\\wwwroot\\data-cache.js",
       "PackagePath": "staticwebassets\\data-cache.js"
     },
     {
-      "Id": "D:\\imobisoft\\Imobisoft.Search\\Imobisoft.Search\\wwwroot\\umbraco-package.json",
+      "Id": "D:\\imobisoft\\Imobisoft.Search\\wwwroot\\searchbox.css",
+      "PackagePath": "staticwebassets\\searchbox.css"
+    },
+    {
+      "Id": "D:\\imobisoft\\Imobisoft.Search\\wwwroot\\searchbox.js",
+      "PackagePath": "staticwebassets\\searchbox.js"
+    },
+    {
+      "Id": "D:\\imobisoft\\Imobisoft.Search\\wwwroot\\umbraco-package.json",
       "PackagePath": "staticwebassets\\umbraco-package.json"
     },
     {
-      "Id": "D:\\imobisoft\\Imobisoft.Search\\Imobisoft.Search\\wwwroot\\workspace.js",
+      "Id": "D:\\imobisoft\\Imobisoft.Search\\wwwroot\\workspace.js",
       "PackagePath": "staticwebassets\\workspace.js"
     },
     {

@@ -55,6 +55,19 @@ public sealed class ImobisoftSearchOptions
     public bool EnableSearchPage { get; set; } = true;
 
     /// <summary>
+    /// Adds the header search box to every page, which is what turns a site's existing search link
+    /// into a box that opens in place rather than a link that leaves for an empty search page. No
+    /// markup or code is needed in the site for this.
+    /// <para>
+    /// This is the deployment-level switch. Day to day the box is controlled in the backoffice
+    /// (Search → Settings); setting this to <c>false</c> stops the package injecting anything at
+    /// all, whatever the backoffice says, which is the way to rule it out on a site that never
+    /// wants it.
+    /// </para>
+    /// </summary>
+    public bool EnableHeaderSearchBox { get; set; } = true;
+
+    /// <summary>
     /// Reads filter selections straight off the query string, so a search page needs no code to
     /// support filtering - the links the package generates are enough.
     /// </summary>

@@ -221,6 +221,19 @@ export async function updateSettings(fetchFn, settings) {
     return res;
 }
 
+// ----------------- SEARCH BOX ICON API -----------------
+
+/**
+ * Uploads a search icon chosen from the editor's own machine and resolves with its URL.
+ * No Content-Type header: the browser has to set the multipart boundary itself.
+ */
+export async function uploadSearchBoxIcon(fetchFn, file) {
+    const body = new FormData();
+    body.append('file', file, file.name);
+
+    return _json(fetchFn, `${getBaseApiUrl()}search-box-icon`, { method: 'POST', body });
+}
+
 // ----------------- PREVIEW & AUTOCOMPLETE API -----------------
 
 export async function previewSearch(fetchFn, request) {

@@ -18,6 +18,7 @@ import {
     purgeInsights,
     getSettings,
     updateSettings,
+    uploadSearchBoxIcon,
     previewSearch,
     getAutocomplete,
     getNodeName
@@ -40,6 +41,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         _settings: { state: true },
         _settingsSaving: { state: true },
         _profileSaving: { state: true },
+        _iconUploading: { state: true },
         _profileActiveTab: { state: true },
         _filterProfilesQuery: { state: true },
         _sidePanelOpen: { state: true },
@@ -147,6 +149,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         this._settings = this._createEmptySettings();
         this._settingsSaving = false;
         this._profileSaving = false;
+        this._iconUploading = false;
         this._profileActiveTab = 'sources';
         this._filterProfilesQuery = '';
         this._sidePanelOpen = false;
@@ -333,6 +336,17 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             isDefault: false,
             enabled: true,
             rules: {
+                searchBox: {
+                    enabled: true,
+                    placeholder: 'Search...',
+                    buttonLabel: 'Search',
+                    iconUrl: '',
+                    iconSize: 18,
+                    containers: 'header, nav, [role="banner"], [role="navigation"]',
+                    extraPaths: [],
+                    excludedPaths: [],
+                    queryName: 'q'
+                },
                 sources: {
                     indexes: [],
                     indexTypes: [],
@@ -417,6 +431,14 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
             return v.toString(16);
         });
+    }
+
+    // One path per line, as the stop-word and blocked-term panels take their lists.
+    _toPathList(input, fallback) {
+        const lines = typeof input === 'string' ? input.split('\n') : null;
+        const values = lines ?? (fallback || []);
+
+        return Array.from(new Set(values.map(v => String(v).trim()).filter(Boolean)));
     }
 
     _normalizeProfileJson(p) {
@@ -539,6 +561,20 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
 
     _ensureProfileStructure(p) {
         if (!p.rules) p.rules = {};
+
+        // Booleans are filled only when absent, never with ||, so switching one off survives the
+        // round trip through the API instead of springing back to its default.
+        if (!p.rules.searchBox) p.rules.searchBox = {};
+        if (p.rules.searchBox.enabled === undefined) p.rules.searchBox.enabled = true;
+        if (p.rules.searchBox.placeholder === undefined) p.rules.searchBox.placeholder = 'Search...';
+        if (p.rules.searchBox.buttonLabel === undefined) p.rules.searchBox.buttonLabel = 'Search';
+        if (p.rules.searchBox.iconUrl === undefined) p.rules.searchBox.iconUrl = '';
+        if (p.rules.searchBox.iconSize === undefined) p.rules.searchBox.iconSize = 18;
+        if (p.rules.searchBox.containers === undefined) p.rules.searchBox.containers = 'header, nav, [role="banner"], [role="navigation"]';
+        if (!Array.isArray(p.rules.searchBox.extraPaths)) p.rules.searchBox.extraPaths = [];
+        if (!Array.isArray(p.rules.searchBox.excludedPaths)) p.rules.searchBox.excludedPaths = [];
+        if (p.rules.searchBox.queryName === undefined) p.rules.searchBox.queryName = 'q';
+
         if (!p.rules.sources) p.rules.sources = {};
         if (!p.rules.sources.indexes) p.rules.sources.indexes = [];
         if (!p.rules.sources.indexTypes) p.rules.sources.indexTypes = [];
@@ -970,6 +1006,31 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         } else if (type === 'manageFacets') {
             this._sidePanelData = {
                 facets: JSON.parse(JSON.stringify(this._currentProfile.rules?.results?.facets || []))
+            };
+        } else if (type === 'editSearchBox') {
+            const box = this._currentProfile.rules?.searchBox || {};
+            this._sidePanelData = {
+                enabled: box.enabled !== false,
+                placeholder: box.placeholder ?? 'Search...',
+                buttonLabel: box.buttonLabel ?? 'Search',
+                iconUrl: box.iconUrl ?? '',
+                iconSize: box.iconSize ?? 18
+            };
+        } else if (type === 'editSearchBoxPages') {
+            const box = this._currentProfile.rules?.searchBox || {};
+            const extra = box.extraPaths || [];
+            const excluded = box.excludedPaths || [];
+            this._sidePanelData = {
+                extraPaths: [...extra],
+                excludedPaths: [...excluded],
+                _extraInput: extra.join('\n'),
+                _excludedInput: excluded.join('\n')
+            };
+        } else if (type === 'editSearchBoxPlacement') {
+            const box = this._currentProfile.rules?.searchBox || {};
+            this._sidePanelData = {
+                containers: box.containers ?? 'header, nav, [role="banner"], [role="navigation"]',
+                queryName: box.queryName ?? 'q'
             };
         } else if (type === 'profileMetadata') {
             this._sidePanelData = {
@@ -1546,6 +1607,24 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         } else if (this._sidePanelType === 'manageFacets') {
             if (!this._currentProfile.rules.results) this._currentProfile.rules.results = {};
             this._currentProfile.rules.results.facets = d.facets || [];
+        } else if (this._sidePanelType === 'editSearchBox') {
+            if (!this._currentProfile.rules.searchBox) this._currentProfile.rules.searchBox = {};
+            this._currentProfile.rules.searchBox.enabled = !!d.enabled;
+            this._currentProfile.rules.searchBox.placeholder = (d.placeholder || '').trim() || 'Search...';
+            this._currentProfile.rules.searchBox.buttonLabel = (d.buttonLabel || '').trim() || 'Search';
+            this._currentProfile.rules.searchBox.iconUrl = (d.iconUrl || '').trim();
+            this._currentProfile.rules.searchBox.iconSize = Math.min(64, Math.max(8, parseInt(d.iconSize) || 18));
+        } else if (this._sidePanelType === 'editSearchBoxPages') {
+            if (!this._currentProfile.rules.searchBox) this._currentProfile.rules.searchBox = {};
+            this._currentProfile.rules.searchBox.extraPaths = this._toPathList(d._extraInput, d.extraPaths);
+            this._currentProfile.rules.searchBox.excludedPaths = this._toPathList(d._excludedInput, d.excludedPaths);
+        } else if (this._sidePanelType === 'editSearchBoxPlacement') {
+            if (!this._currentProfile.rules.searchBox) this._currentProfile.rules.searchBox = {};
+            this._currentProfile.rules.searchBox.containers =
+                (d.containers || '').trim() || 'header, nav, [role="banner"], [role="navigation"]';
+            // The term has to arrive under a name the search page reads, and every built-in view
+            // reads q - so an emptied box falls back to it rather than submitting namelessly.
+            this._currentProfile.rules.searchBox.queryName = (d.queryName || '').trim() || 'q';
         } else if (this._sidePanelType === 'profileMetadata') {
             if (!d.name || !d.name.trim()) errs.name = "Profile name is required.";
             if (!d.alias || !d.alias.trim()) errs.alias = "Profile alias is required.";
@@ -1954,6 +2033,16 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                             </div>
                         </div>
                         <div class="header-actions">
+                            <button class="btn ${this._profileActiveTab === 'searchBox' ? 'active' : ''}"
+                                    @click=${() => { this._profileActiveTab = 'searchBox'; this.requestUpdate(); }}
+                                    title="Search Box">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="2" y="5" width="20" height="14" rx="3"></rect>
+                                    <circle cx="10" cy="12" r="2.5"></circle>
+                                    <line x1="12" y1="14" x2="14.5" y2="16.5"></line>
+                                </svg>
+                                <span>Search Box</span>
+                            </button>
                             <button class="btn ${this._profileActiveTab === 'sources' ? 'active' : ''}"
                                     @click=${() => { this._profileActiveTab = 'sources'; this.requestUpdate(); }}
                                     title="Source">
@@ -2194,11 +2283,123 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         return html`
             <div class="profile-editor-view">
                 <div class="editor-tab-body">
+                    ${this._profileActiveTab === 'searchBox' ? this._renderSearchBoxTab(p) : nothing}
                     ${this._profileActiveTab === 'sources' ? this._renderSourcesTab(p) : nothing}
                     ${this._profileActiveTab === 'matching' ? this._renderMatchingTab(p) : nothing}
                     ${this._profileActiveTab === 'ranking' ? this._renderRankingTab(p) : nothing}
                     ${this._profileActiveTab === 'results' ? this._renderResultsTab(p) : nothing}
                     ${this._profileActiveTab === 'facets' ? this._renderFacetsTab(p) : nothing}
+                </div>
+            </div>
+        `;
+    }
+
+    // --- TAB: SEARCH BOX ---
+    _renderSearchBoxTab(p) {
+        // _ensureProfileStructure fills this in on load and after every save; this is the guard for
+        // a profile that reached the editor by some other route.
+        this._ensureProfileStructure(p);
+
+        const box = p.rules.searchBox;
+        const extra = box.extraPaths || [];
+        const excluded = box.excludedPaths || [];
+
+        return html`
+            <div class="source-settings-container">
+                <!-- 1. The box itself -->
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Header Search Box</div>
+                        <div class="setting-desc">Turns the site's existing search link into a box that opens where the visitor already is: the first press opens it, and the next press - with a term typed - goes to the results page. Needs no change to the site.</div>
+                    </div>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editSearchBox')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Open In Place</span>
+                            <div style="display: flex; align-items: center; gap: 8px;" @click=${e => e.stopPropagation()}>
+                                <label class="switch switch-sm" title="${box.enabled ? 'The search link opens a box' : 'The search link goes straight to the search page'}">
+                                    <input type="checkbox"
+                                           .checked=${box.enabled !== false}
+                                           @change=${async e => {
+                                               box.enabled = e.target.checked;
+                                               this.requestUpdate();
+                                               await this._saveCurrentProfile();
+                                           }}>
+                                    <span class="slider round"></span>
+                                </label>
+                                <span class="field-count-pill">${box.enabled !== false ? 'Enabled' : 'Disabled'}</span>
+                            </div>
+                        </div>
+                        <div class="field-box-content">
+                            <div class="selected-chips-wrap">
+                                <span class="selected-chip ${box.enabled !== false ? 'chip-success' : 'chip-muted'}">
+                                    ${box.enabled !== false ? '✓ Opens On The Current Page' : '✕ Goes Straight To The Search Page'}
+                                </span>
+                                <span class="selected-chip">
+                                    <strong>Placeholder:</strong> ${box.placeholder || 'Search...'}
+                                </span>
+                                <span class="selected-chip">
+                                    <strong>Button Label:</strong> ${box.buttonLabel || 'Search'}
+                                </span>
+                                <span class="selected-chip ${(box.iconUrl || '').trim() ? 'chip-success' : 'chip-muted'}">
+                                    ${(box.iconUrl || '').trim()
+                                        ? html`<strong>Icon:</strong> ${box.iconUrl.trim()} (${box.iconSize || 18}px)`
+                                        : html`<strong>Icon:</strong> Built-in magnifier (${box.iconSize || 18}px)`}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. Which pages it attaches to -->
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Search Pages It Attaches To</div>
+                        <div class="setting-desc">A link is recognised when the last part of its URL is the word "search" - alone or hyphenated, as in /search or /imobisoft-search. Name any page it would miss, and any it should leave alone.</div>
+                    </div>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editSearchBoxPages')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Target Pages</span>
+                            <span class="field-count-pill">${extra.length + excluded.length > 0 ? `${extra.length} Added / ${excluded.length} Excluded` : 'Recognised Automatically'}</span>
+                        </div>
+                        <div class="field-box-content">
+                            <div class="selected-chips-wrap">
+                                <span class="selected-chip chip-success">✓ Any URL Ending In "search"</span>
+                                ${extra.map(path => html`
+                                    <span class="selected-chip chip-success"><strong>Also:</strong> ${path}</span>
+                                `)}
+                                ${excluded.map(path => html`
+                                    <span class="selected-chip chip-muted"><strong>Never:</strong> ${path}</span>
+                                `)}
+                                ${extra.length === 0 && excluded.length === 0 ? html`
+                                    <span class="selected-chip chip-muted">✕ No Pages Added Or Excluded</span>
+                                ` : nothing}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Where in the page to look -->
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Where To Look &amp; Query Parameter</div>
+                        <div class="setting-desc">Which part of a page is searched for those links, and the query-string parameter the typed term is submitted as.</div>
+                    </div>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editSearchBoxPlacement')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Placement</span>
+                            <span class="field-count-pill">?${box.queryName || 'q'}=</span>
+                        </div>
+                        <div class="field-box-content">
+                            <div class="selected-chips-wrap">
+                                <span class="selected-chip">
+                                    <strong>Looks In:</strong> ${box.containers || 'header, nav'}
+                                </span>
+                                <span class="selected-chip">
+                                    <strong>Submits As:</strong> ?${box.queryName || 'q'}=term
+                                </span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         `;
@@ -3554,6 +3755,9 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         else if (t === 'editSourceContentTypes') { title = "Include Document Types"; labelTag = "DOC TYPES"; }
         else if (t === 'editSourceRoots') { title = "Search Subtree Roots"; labelTag = "ROOTS"; }
         else if (t === 'editSourceProtection') { title = "Visibility & Protection Rules"; labelTag = "VISIBILITY"; }
+        else if (t === 'editSearchBox') { title = "Header Search Box"; labelTag = "SEARCH BOX"; }
+        else if (t === 'editSearchBoxPages') { title = "Search Pages It Attaches To"; labelTag = "TARGET PAGES"; }
+        else if (t === 'editSearchBoxPlacement') { title = "Placement & Query Parameter"; labelTag = "PLACEMENT"; }
         else if (t === 'profileMetadata') { title = "Profile Metadata & Settings"; labelTag = "PROFILE"; }
 
         const itemName = d.label || d.name || d.alias || d.title || title;
@@ -3576,6 +3780,9 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         ${t === 'editBestBet' ? this._renderBestBetSidePanelBody(d) : nothing}
                         ${t === 'editRecency' ? this._renderRecencySidePanelBody(d) : nothing}
                         ${t === 'editBlockedTerms' ? this._renderBlockedTermsSidePanelBody(d) : nothing}
+                        ${t === 'editSearchBox' ? this._renderSearchBoxSidePanelBody(d) : nothing}
+                        ${t === 'editSearchBoxPages' ? this._renderSearchBoxPagesSidePanelBody(d) : nothing}
+                        ${t === 'editSearchBoxPlacement' ? this._renderSearchBoxPlacementSidePanelBody(d) : nothing}
                         ${t === 'editPaging' ? this._renderPagingSidePanelBody(d) : nothing}
                         ${t === 'editHighlighting' ? this._renderHighlightingSidePanelBody(d) : nothing}
                         ${t === 'editResultShaping' ? this._renderResultShapingSidePanelBody(d) : nothing}
@@ -4404,6 +4611,197 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                               placeholder="e.g.&#10;confidential&#10;internal&#10;draft"
                               .value=${d._termsInput || ''}
                               @input=${e => { d._termsInput = e.target.value; this.requestUpdate(); }}></textarea>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Sends an icon chosen from the editor's own machine to the package, and puts the URL it comes
+     * back with into the open panel. The panel's own Submit is still what writes it to the profile,
+     * so cancelling out leaves the profile untouched - the uploaded file is simply unused.
+     */
+    async _uploadSearchBoxIcon(e) {
+        const input = e.target;
+        const file = input.files && input.files[0];
+        if (!file) return;
+
+        this._iconUploading = true;
+        this.requestUpdate();
+
+        try {
+            const res = await uploadSearchBoxIcon(this._fetch.bind(this), file);
+
+            if (res.ok && res.data?.url) {
+                if (this._sidePanelData) {
+                    this._sidePanelData.iconUrl = res.data.url;
+                }
+                this._showToast(`Icon "${res.data.fileName || file.name}" uploaded.`, "success");
+            } else {
+                const msg = res.data?.detail || res.data?.title || "Could not upload that icon.";
+                this._showToast(msg, "error");
+            }
+        } catch (err) {
+            console.error("Search icon upload error:", err);
+            this._showToast("Unexpected error uploading the icon.", "error");
+        } finally {
+            // Cleared so picking the same file again still raises a change event.
+            input.value = '';
+            this._iconUploading = false;
+            this.requestUpdate();
+        }
+    }
+
+    _renderSearchBoxSidePanelBody(d) {
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-toggle-row" style="margin-bottom: 20px;">
+                    <div class="sp-toggle-info">
+                        <span class="sp-toggle-title">Open A Search Box In Place</span>
+                        <span class="sp-toggle-desc">The site's search link opens a box on the page the visitor is already on; the next press, with a term typed, goes to the results page. Off, the link goes straight to the search page as before.</span>
+                    </div>
+                    <label class="switch switch-sm">
+                        <input type="checkbox"
+                               .checked=${!!d.enabled}
+                               @change=${e => { d.enabled = e.target.checked; this.requestUpdate(); }}>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <div class="sp-group" style="margin-bottom: 20px;">
+                    <label class="sp-label">Placeholder Text</label>
+                    <input type="text"
+                           class="sp-input"
+                           .value=${d.placeholder ?? ''}
+                           ?disabled=${!d.enabled}
+                           @input=${e => { d.placeholder = e.target.value; this.requestUpdate(); }}>
+                    <span class="sp-hint">Shown inside the empty box. Left blank, "Search..." is used.</span>
+                </div>
+
+                <div class="sp-group" style="margin-bottom: 20px;">
+                    <label class="sp-label">Search Button Label</label>
+                    <input type="text"
+                           class="sp-input"
+                           .value=${d.buttonLabel ?? ''}
+                           ?disabled=${!d.enabled}
+                           @input=${e => { d.buttonLabel = e.target.value; this.requestUpdate(); }}>
+                    <span class="sp-hint">The accessible name screen readers announce for the box's own search button.</span>
+                </div>
+
+                <div class="sp-group" style="margin-bottom: 20px;">
+                    <label class="sp-label">Search Icon</label>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div style="display: flex; align-items: center; justify-content: center; width: 42px; height: 42px; flex: 0 0 auto; background: var(--uui-color-surface-alt, #f3f4f6); border: 1px solid var(--uui-color-border, #e2e8f0); border-radius: 6px;"
+                             title="Preview">
+                            ${(d.iconUrl || '').trim() ? html`
+                                <img src=${d.iconUrl.trim()}
+                                     alt=""
+                                     style="max-width: 24px; max-height: 24px; object-fit: contain;">
+                            ` : html`
+                                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                                    <circle cx="11" cy="11" r="7"></circle>
+                                    <line x1="16.5" y1="16.5" x2="21" y2="21"></line>
+                                </svg>
+                            `}
+                        </div>
+
+                        <input type="text"
+                               class="sp-input"
+                               style="flex: 1;"
+                               placeholder="Upload a file, or paste a path such as /images/search.svg"
+                               .value=${d.iconUrl ?? ''}
+                               ?disabled=${!d.enabled}
+                               @input=${e => { d.iconUrl = e.target.value; this.requestUpdate(); }}>
+
+                        <!-- The real input stays hidden: the button beside it opens the picker, so
+                             this looks like the rest of the dashboard rather than a browser default. -->
+                        <input type="file"
+                               id="imobisoft-search-icon-file"
+                               accept=".svg,.png,.webp,.gif,.jpg,.jpeg,.ico,.avif,image/*"
+                               style="display: none;"
+                               @change=${e => this._uploadSearchBoxIcon(e)}>
+
+                        <button class="btn btn-secondary"
+                                style="flex: 0 0 auto;"
+                                ?disabled=${!d.enabled || this._iconUploading}
+                                @click=${() => this.renderRoot.querySelector('#imobisoft-search-icon-file')?.click()}
+                                title="Choose an image from this computer">
+                            ${this._iconUploading ? 'Uploading...' : 'Upload'}
+                        </button>
+
+                        ${(d.iconUrl || '').trim() ? html`
+                            <button class="btn btn-secondary"
+                                    style="flex: 0 0 auto;"
+                                    ?disabled=${!d.enabled || this._iconUploading}
+                                    @click=${() => { d.iconUrl = ''; this.requestUpdate(); }}
+                                    title="Go back to the built-in magnifier">
+                                Clear
+                            </button>
+                        ` : nothing}
+                    </div>
+                    <span class="sp-hint">Upload an image from this computer, or paste a path you already have - .svg, .png, .webp, .gif, .jpg, .ico and .avif all work, up to 512 KB. An uploaded file goes into the media library under /media/imobisoft-search. Leave it empty for the magnifier the package draws itself, which takes the colour of the button it sits on. This is not the icon on the site's own search link: that link is left exactly as the site renders it.</span>
+                </div>
+
+                <div class="sp-group">
+                    <label class="sp-label">Icon Size (px)</label>
+                    <input type="number"
+                           class="sp-input"
+                           min="8"
+                           max="64"
+                           .value=${String(d.iconSize ?? 18)}
+                           ?disabled=${!d.enabled}
+                           @change=${e => { d.iconSize = Math.min(64, Math.max(8, parseInt(e.target.value) || 18)); this.requestUpdate(); }}>
+                    <span class="sp-hint">Width and height of the icon, from 8 to 64 pixels.</span>
+                </div>
+            </div>
+        `;
+    }
+
+    _renderSearchBoxPagesSidePanelBody(d) {
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-group" style="margin-bottom: 20px;">
+                    <label class="sp-label">Also Treat These Paths As Search Pages (one per line)</label>
+                    <textarea class="sp-textarea"
+                              style="min-height: 110px; font-family: monospace; font-size: 13px;"
+                              placeholder="e.g.&#10;/find&#10;/knowledge-base"
+                              .value=${d._extraInput ?? ''}
+                              @input=${e => { d._extraInput = e.target.value; this.requestUpdate(); }}></textarea>
+                    <span class="sp-hint">One path per line. Only needed for a search page named something other than "search" - a path whose last part is the word search, such as /search or /imobisoft-search, is already recognised.</span>
+                </div>
+
+                <div class="sp-group">
+                    <label class="sp-label">Never Attach To These Paths (one per line)</label>
+                    <textarea class="sp-textarea"
+                              style="min-height: 110px; font-family: monospace; font-size: 13px;"
+                              placeholder="e.g.&#10;/search"
+                              .value=${d._excludedInput ?? ''}
+                              @input=${e => { d._excludedInput = e.target.value; this.requestUpdate(); }}></textarea>
+                    <span class="sp-hint">One path per line. These keep a plain link straight to the page - use this on a site with more than one search page to put the box on one of them only.</span>
+                </div>
+            </div>
+        `;
+    }
+
+    _renderSearchBoxPlacementSidePanelBody(d) {
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-group" style="margin-bottom: 20px;">
+                    <label class="sp-label">Where To Look For Search Links</label>
+                    <input type="text"
+                           class="sp-input"
+                           .value=${d.containers ?? ''}
+                           @input=${e => { d.containers = e.target.value; this.requestUpdate(); }}>
+                    <span class="sp-hint">A CSS selector for the parts of a page that are searched for search links. Narrow it to keep the box out of part of the site; a single link can be opted out in the markup with data-imobisoft-search="false", or opted in with data-imobisoft-search.</span>
+                </div>
+
+                <div class="sp-group">
+                    <label class="sp-label">Query String Parameter</label>
+                    <input type="text"
+                           class="sp-input"
+                           .value=${d.queryName ?? ''}
+                           @input=${e => { d.queryName = e.target.value; this.requestUpdate(); }}>
+                    <span class="sp-hint">The term is submitted as ?${d.queryName || 'q'}=. Change this only for a search page that expects something other than q - every view this package ships reads q.</span>
                 </div>
             </div>
         `;

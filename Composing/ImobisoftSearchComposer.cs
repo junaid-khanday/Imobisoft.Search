@@ -7,7 +7,9 @@ using Microsoft.Extensions.Logging;
 using Imobisoft.Search.Migrations;
 using Imobisoft.Search.Persistence;
 using Imobisoft.Search.Services;
+using Imobisoft.Search.Web;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Razor.TagHelpers;
 using Microsoft.Extensions.DependencyInjection;
 using Umbraco.Cms.Core.Composing;
 using Umbraco.Cms.Core.DependencyInjection;
@@ -81,6 +83,12 @@ public sealed class ImobisoftSearchComposer : IComposer
 
         // Scoped, because resolving result URLs reaches for the current request's Umbraco context.
         builder.Services.AddScoped<IImobisoftSearchService, ImobisoftSearchService>();
+
+        // What puts the header search box on a site without the site placing it: a tag helper
+        // component adds its stylesheet and script to every Razor view, so the existing search
+        // link starts opening a box in place instead of leaving for an empty search page. Honours
+        // the backoffice toggle on every request.
+        builder.Services.AddTransient<ITagHelperComponent, HeaderSearchBoxTagHelperComponent>();
     }
 
     private static void RegisterAuthorization(IUmbracoBuilder builder)

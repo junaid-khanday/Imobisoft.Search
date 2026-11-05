@@ -1,0 +1,95 @@
+/*
+    The header search box the package adds to a site's existing search link.
+
+    Appearance only - whether the box is open is set by searchbox.js as an inline style, so the
+    panel can never be left showing while this file is still loading.
+
+    A site re-themes by overriding these classes in its own stylesheet; nothing here is required
+    for the box to work.
+*/
+
+.imsx {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+/*
+    Absolutely positioned on purpose. The package cannot know anything about the header it is
+    dropped into, so the box hangs below the link rather than growing inside the nav, where it
+    would push a site's own layout around.
+*/
+.imsx-form {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    z-index: 1000;
+    gap: 6px;
+    margin: 0;
+    padding: 8px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, .18);
+}
+
+/* A link near the left edge has nowhere to hang a right-aligned panel; the script measures and
+   flips this on when that is the case. */
+.imsx[data-align="left"] .imsx-form {
+    right: auto;
+    left: 0;
+}
+
+/* Colours are stated rather than inherited: the panel is white whatever header it hangs from, so
+   a dark header cannot leave white text on a white box. */
+.imsx-input {
+    width: min(70vw, 280px);
+    height: 40px;
+    padding: 0 14px;
+    font: inherit;
+    font-size: 15px;
+    color: #1e293b;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    outline: none;
+}
+
+.imsx-input:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, .15);
+}
+
+.imsx-go {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    color: #fff;
+    background: #1b264f;
+    border: 0;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.imsx-go:hover {
+    background: #121a38;
+}
+
+.imsx-go:focus-visible {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+}
+
+/* One size for both the built-in magnifier and a site's own file, set from the profile's Search
+   Box tab. The inline magnifier takes the button's colour; an image keeps its own. */
+.imsx-go svg,
+.imsx-go .imsx-go-icon {
+    width: var(--imsx-icon-size, 18px);
+    height: var(--imsx-icon-size, 18px);
+    display: block;
+    object-fit: contain;
+}

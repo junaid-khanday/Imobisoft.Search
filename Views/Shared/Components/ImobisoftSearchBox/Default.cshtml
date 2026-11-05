@@ -1,0 +1,5 @@
+@model Imobisoft.Search.Models.SearchBoxModel
+@* The component is a thin wrapper on purpose: all the markup lives in the overridable partial, so a
+   site that replaces Views/Partials/Search/searchbox.cshtml changes the header button and every
+   other place the box is rendered in one go. *@
+<partial name="~/Views/Partials/Search/searchbox.cshtml" model="Model" />

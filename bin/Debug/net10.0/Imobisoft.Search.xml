@@ -30,6 +30,53 @@
             </para>
             </summary>
         </member>
+        <member name="T:Imobisoft.Search.Api.SearchBoxIconUploadResult">
+            <summary>What the dashboard needs back after an upload: where the icon now lives.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Api.SearchBoxIconUploadResult.Url">
+            <summary>URL to store on the profile's search box rules and render on the site.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Api.SearchBoxIconUploadResult.FileName">
+            <summary>File name as stored, for showing in the dashboard.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Api.SearchBoxIconController">
+            <summary>
+            Takes a search icon uploaded from the editor's own machine, so choosing one is a file picker
+            rather than a path that has to be typed and has to already exist on the server.
+            <para>
+            The file goes into Umbraco's media filesystem, which means it is served like any other media -
+            and keeps working on a site whose media lives in blob storage rather than on disk. The name is
+            the hash of the contents, so uploading the same icon twice reuses one file and a changed icon
+            always gets a URL browsers have not cached.
+            </para>
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Api.SearchBoxIconController.MaximumBytes">
+            <summary>An icon is a few kilobytes; this is generous and still refuses a stray photo.</summary>
+        </member>
+        <member name="F:Imobisoft.Search.Api.SearchBoxIconController.Folder">
+            <summary>Folder inside the media filesystem, so these files are obviously the package's.</summary>
+        </member>
+        <member name="F:Imobisoft.Search.Api.SearchBoxIconController.AllowedExtensions">
+            <summary>
+            What a browser will actually render inside an <c>img</c> element. Anything else would leave
+            an editor with a silently broken icon.
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Api.SearchBoxIconController.ScriptMarkers">
+            <summary>
+            Markup an SVG icon has no business carrying. An SVG is served from the site's own origin, so
+            a visitor who opened the file directly would run whatever script it held - this is a basic
+            check against the obvious cases, not a full sanitiser, and the endpoint is in any case open
+            only to a backoffice user who already holds the Search section.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Api.SearchBoxIconController.Hash(System.Byte[])">
+            <summary>
+            Content-addressed name: the same icon uploaded twice is one file, and a different icon can
+            never be hidden behind a URL a browser has already cached.
+            </summary>
+        </member>
         <member name="T:Imobisoft.Search.Api.SearchCatalogController">
             <summary>
             Read-only discovery endpoints that populate the dashboard's pick-lists. Everything here is read
@@ -212,6 +259,19 @@
             Serves the package's own search page at <c>/imobisoft-search</c>, so a site has working
             search the moment the package is installed. Turn it off once the site has a search page of
             its own.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Configuration.ImobisoftSearchOptions.EnableHeaderSearchBox">
+            <summary>
+            Adds the header search box to every page, which is what turns a site's existing search link
+            into a box that opens in place rather than a link that leaves for an empty search page. No
+            markup or code is needed in the site for this.
+            <para>
+            This is the deployment-level switch. Day to day the box is controlled in the backoffice
+            (Search → Settings); setting this to <c>false</c> stops the package injecting anything at
+            all, whatever the backoffice says, which is the way to rule it out on a site that never
+            wants it.
+            </para>
             </summary>
         </member>
         <member name="P:Imobisoft.Search.Configuration.ImobisoftSearchOptions.ReadFiltersFromQueryString">
@@ -867,10 +927,178 @@
         <member name="P:Imobisoft.Search.Models.SearchBarModel.ButtonText">
             <summary>Submit button label.</summary>
         </member>
+        <member name="T:Imobisoft.Search.Models.SearchBoxModel">
+            <summary>
+            The header search box: one button that opens a search bar in place, on the page the visitor is
+            already on. Nothing navigates until a term has been typed and the button is pressed again - that
+            submit is what takes the visitor to <see cref="P:Imobisoft.Search.Models.SearchBoxModel.Action"/> with the term as <c>?q=</c>.
+            <para>
+            Rendered by <c>Views/Partials/Search/searchbox.cshtml</c>. A consuming site that creates a file
+            at that exact path replaces the markup everywhere, and is free to ignore this model and hard-code
+            its own - the only contract is a GET form containing a text input named <see cref="P:Imobisoft.Search.Models.SearchBoxModel.QueryName"/>
+            and a submit button.
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBoxModel.Action">
+            <summary>
+            Where a submitted search lands. Defaults to the page the package serves itself; point it at
+            the site's own search page when there is one.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBoxModel.QueryName">
+            <summary>
+            Name of the query-string parameter the term is submitted as. The package's own search page
+            (and every built-in view) reads <c>q</c>; change it only to match a search page of the site's
+            own that expects something else.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBoxModel.Term">
+            <summary>The current term, echoed back into the box - so the header still shows what was searched for.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBoxModel.StartOpen">
+            <summary>
+            Renders with the bar already open instead of closed. The view component sets this on its own
+            when the page it is on is already showing results for a term.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBoxModel.Placeholder">
+            <summary>Placeholder text shown inside the empty box.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBoxModel.ButtonLabel">
+            <summary>
+            Accessible name for the button, used as its <c>aria-label</c> and its tooltip. The button
+            itself shows an icon, so this is what a screen reader announces.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBoxModel.ButtonText">
+            <summary>
+            Optional visible text next to the icon. Empty - the default - keeps the button a plain icon,
+            which is what fits a site header.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBoxModel.IconUrl">
+            <summary>
+            Image used for the search icon - any format a browser renders, so <c>.svg</c>, <c>.png</c>,
+            <c>.webp</c> or <c>.gif</c>. Empty uses the magnifier drawn inline, which takes the colour of
+            whatever it sits on. Defaults to the icon configured on the profile's Search Box tab.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBoxModel.IconSize">
+            <summary>Width and height of the icon in pixels.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBoxModel.OpenWidth">
+            <summary>
+            How wide the bar opens to, as any CSS length. Narrow headers can shrink it; on small screens
+            the bar drops below the button at full width regardless.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBoxModel.OpenToTheLeft">
+            <summary>
+            Which way the bar grows. <c>true</c> - the default - grows it leftwards so the button stays
+            put, which is what a button at the right-hand end of a header wants. <c>false</c> grows it
+            rightwards, for a button at the left.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBoxModel.Id">
+            <summary>
+            Id given to the input, so the button's <c>aria-controls</c> can point at it. Left empty, one
+            is generated - set it only when the page needs a predictable id.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBoxModel.RootClass">
+            <summary>CSS class added to the wrapper.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBoxModel.FormClass">
+            <summary>CSS class added to the form element.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBoxModel.InputClass">
+            <summary>CSS class added to the text input.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBoxModel.ButtonClass">
+            <summary>CSS class added to the button.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Models.SearchBoxRules">
+            <summary>
+            The header search box: the package turns a site's existing search link into a box that opens
+            where the visitor already is, rather than a link that leaves for an empty search page.
+            <para>
+            On by default, and needs nothing in the consuming site - the package injects the behaviour on
+            every page. These are the default profile's rules, edited on the Search Box tab of the profile
+            editor, so changing the box is an editor's job rather than a deployment.
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBoxRules.Enabled">
+            <summary>
+            Turns the box off. Search links then behave the way they did before the package was
+            installed: one press, straight to the search page.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBoxRules.Placeholder">
+            <summary>Placeholder text shown inside the empty box.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBoxRules.ButtonLabel">
+            <summary>Accessible name for the box's own submit button.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBoxRules.IconUrl">
+            <summary>
+            Image used for the search icon on the box's own button - any format a browser renders, so
+            <c>.svg</c>, <c>.png</c>, <c>.webp</c> or <c>.gif</c>. Either a path in the site
+            (<c>/images/search.svg</c>), a media item's URL, or an absolute URL.
+            <para>
+            Empty - the default - uses the magnifier the package draws itself, which needs no file and
+            takes the colour of whatever it sits on. A site's own icon is rendered as an image, so it
+            keeps its own colours.
+            </para>
+            <para>
+            This is the icon on the box, not the one on the site's search link: that link is left
+            exactly as the site renders it, icon and all.
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBoxRules.IconSize">
+            <summary>Width and height of the icon in pixels, whether it is a site's own or the built-in one.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBoxRules.Containers">
+            <summary>
+            Where in a page the package looks for search links. Narrow this to stop it reaching a part
+            of the site it should leave alone; widening it to <c>body</c> would catch search links in
+            page content too, which is rarely wanted.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBoxRules.ExtraPaths">
+            <summary>
+            Paths of search pages the package would not recognise on its own. It already treats a URL
+            whose last segment is the word "search" - alone or hyphenated, as in
+            <c>/imobisoft-search</c> or <c>/search-results</c> - as a search page, so this is only for a
+            page named something else entirely, such as <c>/find</c>.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBoxRules.ExcludedPaths">
+            <summary>
+            Paths that never get a box, however well they match. This is how a site with more than one
+            search page keeps the box on one of them and leaves the other a plain link, without needing
+            anything added to its own markup.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchBoxRules.QueryName">
+            <summary>
+            Query-string parameter the term is submitted as. The package's own search page, and every
+            built-in view, reads <c>q</c>.
+            </summary>
+        </member>
         <member name="T:Imobisoft.Search.Models.SearchRuleSet">
             <summary>
             The complete set of rules the search engine obeys. This is what gets serialised into the
             <c>configJson</c> column of a profile row, and what the dashboard edits.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchRuleSet.SearchBox">
+            <summary>
+            How a visitor starts a search: the box the package puts on the site's own search link.
+            First in the set because it is first in the journey - and first on the profile editor's
+            tabs, ahead of Source.
             </summary>
         </member>
         <member name="P:Imobisoft.Search.Models.SearchRuleSet.Sources">
@@ -2129,6 +2357,101 @@
             Settings live in Umbraco's own key/value table rather than a table of ours, because one JSON
             document needs no schema and no migration when a new setting is added.
             </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Web.HeaderSearchBoxTagHelperComponent">
+            <summary>
+            Puts the header search box on every page of the site, without the site doing anything.
+            <para>
+            This is what makes the behaviour the package's own rather than the consuming project's: a tag
+            helper component is how a library adds markup to every Razor view, so the stylesheet and script
+            arrive on their own - no partial to place, no layout to edit, no view component to call. The
+            script then turns the site's existing search link into a box that opens where the visitor
+            already is. Nothing is injected on a site that has turned the box off.
+            </para>
+            <para>
+            Needs only what a default Umbraco or MVC project already has: a layout whose <c>&lt;head&gt;</c>
+            and <c>&lt;body&gt;</c> are written in Razor, and
+            <c>@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers</c> in <c>_ViewImports.cshtml</c>.
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Web.HeaderSearchBoxTagHelperComponent.Order">
+            <summary>
+            Runs late, so the stylesheet lands after a site's own - a site overriding the box's classes
+            should not have to fight specificity to do it.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Web.HeaderSearchBoxTagHelperComponent.BuildPaths(Imobisoft.Search.Models.SearchBoxRules)">
+            <summary>
+            The search pages the script should recognise by name. Its own rule already covers a URL
+            whose last segment is the word "search", so this is the package's page plus whatever the
+            site has named differently.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Web.ImobisoftSearchBoxViewComponent">
+             <summary>
+             The search button for a site header, as a single embeddable component:
+             <para><c>@await Component.InvokeAsync("ImobisoftSearchBox")</c></para>
+             <para>
+             Closed, it is just a button. Pressing it opens the search bar on the page the visitor is already
+             on - nothing navigates, nothing is fetched. Pressing it again, with a term typed, submits to the
+             search page, which is where the results are shown. That is the whole point of it: a header
+             button that asks for the term before it leaves the page, rather than one that jumps straight to
+             an empty search page.
+             </para>
+             <para>
+             It runs no search of its own, so it costs a header nothing - it is a GET form pointed at
+             whichever page shows results. By default that is the page the package serves at
+             <c>/imobisoft-search</c>; pass <c>resultsUrl</c> when the site has a search page of its own
+             (which it will have if <see cref="P:Imobisoft.Search.Configuration.ImobisoftSearchOptions.EnableSearchPage"/> is turned off).
+             </para>
+             <para>
+             The default view lives in this package; a site can take over the markup by creating
+             <c>Views/Partials/Search/searchbox.cshtml</c> in its own project - that copy wins, nothing else
+             changes.
+             </para>
+             </summary>
+             <example>
+             <code>
+             &lt;!-- in the site's header, in place of a link to the search page --&gt;
+             @await Component.InvokeAsync("ImobisoftSearchBox")
+            
+             &lt;!-- pointed at the site's own search page, opening leftwards from a button on the right --&gt;
+             @await Component.InvokeAsync("ImobisoftSearchBox", new { resultsUrl = "/search", placeholder = "Search the site..." })
+             </code>
+             </example>
+        </member>
+        <member name="M:Imobisoft.Search.Web.ImobisoftSearchBoxViewComponent.Invoke(System.String,System.String,System.String,System.String,System.String,System.Boolean,System.Nullable{System.Boolean},System.String,System.String,System.Nullable{System.Int32})">
+            <summary>
+            Renders the button. Every argument is optional - with none of them it points at the package's
+            own search page and echoes back whatever term that page is currently showing.
+            </summary>
+            <param name="resultsUrl">
+            Page a submitted search lands on. Null or empty uses the package's search page.
+            </param>
+            <param name="placeholder">Placeholder text inside the empty box.</param>
+            <param name="buttonText">
+            Visible text beside the icon. Null or empty - the default - keeps the button a plain icon.
+            </param>
+            <param name="buttonLabel">Accessible name for the button, announced by screen readers.</param>
+            <param name="openWidth">How wide the bar opens to, as any CSS length.</param>
+            <param name="openToTheLeft">
+            Grows the bar leftwards so the button stays put, which is what a button at the right-hand end
+            of a header wants. Pass false for a button at the left.
+            </param>
+            <param name="startOpen">
+            Renders with the bar already open. Left null, it opens on its own when the current page is
+            already showing results for a term, so the header keeps showing what was searched for.
+            </param>
+            <param name="queryName">
+            Query-string parameter the term is submitted as. Only worth changing for a search page of the
+            site's own that expects something other than <c>q</c>.
+            </param>
+            <param name="iconUrl">
+            Image for the search icon - <c>.svg</c>, <c>.png</c>, <c>.webp</c> or <c>.gif</c>. Null uses
+            the icon the profile configures; an empty string forces the built-in magnifier.
+            </param>
+            <param name="iconSize">Icon width and height in pixels. Null uses the profile's size.</param>
         </member>
         <member name="T:Imobisoft.Search.Web.ImobisoftSearchListingViewComponent">
             <summary>
