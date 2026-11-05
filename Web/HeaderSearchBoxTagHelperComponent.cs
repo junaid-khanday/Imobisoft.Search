@@ -10,7 +10,8 @@ using Microsoft.Extensions.Options;
 namespace Imobisoft.Search.Web;
 
 /// <summary>
-/// Puts the header search box on every page of the site, without the site doing anything.
+/// Puts the header search box, and type-ahead for whatever search boxes a page has, on every page of
+/// the site without the site doing anything.
 /// <para>
 /// This is what makes the behaviour the package's own rather than the consuming project's: a tag
 /// helper component is how a library adds markup to every Razor view, so the stylesheet and script
@@ -35,15 +36,22 @@ public sealed class HeaderSearchBoxTagHelperComponent : TagHelperComponent
     /// <summary>Where the script fetches the rendered header box from.</summary>
     private const string BoxEndpoint = "/" + ImobisoftSearchConstants.Web.SearchPagePath + "/box";
 
+    private const string SuggestScriptPath = "/App_Plugins/" + ImobisoftSearchConstants.PackageName + "/suggest.js";
+
+    private const string SuggestEndpoint = "/" + ImobisoftSearchConstants.Web.SearchPagePath + "/suggest";
+
     private readonly ImobisoftSearchOptions _options;
     private readonly ISearchProfileService _profiles;
+    private readonly ISearchSettingsService _settings;
 
     public HeaderSearchBoxTagHelperComponent(
         IOptions<ImobisoftSearchOptions> options,
-        ISearchProfileService profiles)
+        ISearchProfileService profiles,
+        ISearchSettingsService settings)
     {
         _options = options.Value;
         _profiles = profiles;
+        _settings = settings;
     }
 
     /// <summary>
@@ -54,7 +62,7 @@ public sealed class HeaderSearchBoxTagHelperComponent : TagHelperComponent
 
     public override void Process(TagHelperContext context, TagHelperOutput output)
     {
-        if (!_options.Enabled || !_options.EnableHeaderSearchBox)
+        if (!_options.Enabled)
         {
             return;
         }
@@ -65,7 +73,14 @@ public sealed class HeaderSearchBoxTagHelperComponent : TagHelperComponent
         // profile yet still gets a working box from the defaults.
         SearchBoxRules box = _profiles.ResolveForSearch(null)?.Rules.SearchBox ?? new SearchBoxRules();
 
-        if (!box.Enabled)
+        var wantsBox = _options.EnableHeaderSearchBox && box.Enabled;
+
+        // Type-ahead is its own feature with its own switch, so it is not tied to the header box:
+        // a site that places its own search box, or has turned the header box off, still gets
+        // suggestions in whatever box it does have.
+        var wantsSuggest = Suggestions();
+
+        if (!wantsBox && !wantsSuggest)
         {
             return;
         }
@@ -73,7 +88,7 @@ public sealed class HeaderSearchBoxTagHelperComponent : TagHelperComponent
         if (string.Equals(context.TagName, "head", StringComparison.OrdinalIgnoreCase))
         {
             // In the head rather than beside the script, so the panel is styled before it can
-            // first be opened.
+            // first be opened. One stylesheet covers both, which is why it goes in for either.
             output.PostContent.AppendHtml(
                 $"<link id=\"{StylesheetElementId}\" rel=\"stylesheet\" href=\"{StylesheetPath}\" />");
 
@@ -82,33 +97,66 @@ public sealed class HeaderSearchBoxTagHelperComponent : TagHelperComponent
 
         if (string.Equals(context.TagName, "body", StringComparison.OrdinalIgnoreCase))
         {
-            output.PostContent.AppendHtml(BuildScriptTag(box));
+            output.PostContent.AppendHtml(BuildScriptTag(box, wantsBox, wantsSuggest));
         }
     }
 
-    private string BuildScriptTag(SearchBoxRules box)
+    /// <summary>
+    /// Whether type-ahead is on, from the site settings rather than the profile - the same switch
+    /// the engine itself honours, so the script is never injected to call an endpoint that is
+    /// already answering nothing.
+    /// </summary>
+    private bool Suggestions()
+    {
+        try
+        {
+            return _settings.Get().Suggestions.Enabled;
+        }
+        catch
+        {
+            // Settings live in the database. A page must still render if that read fails, so the
+            // feature simply stays off rather than taking the request with it.
+            return false;
+        }
+    }
+
+    private string BuildScriptTag(SearchBoxRules box, bool wantsBox, bool wantsSuggest)
     {
         HtmlEncoder encoder = HtmlEncoder.Default;
+        var tag = new StringBuilder();
 
-        var tag = new StringBuilder("<script src=\"")
-            .Append(ScriptPath)
-            .Append("\" defer");
+        if (wantsBox)
+        {
+            tag.Append("<script src=\"").Append(ScriptPath).Append("\" defer");
 
-        Attribute(tag, "data-containers", box.Containers, encoder);
-        Attribute(tag, "data-query", box.QueryName, encoder);
+            Attribute(tag, "data-containers", box.Containers, encoder);
+            Attribute(tag, "data-query", box.QueryName, encoder);
 
-        // Where the script fetches the box markup from. Everything about how the box looks now
-        // comes from the view rendered there, so the placeholder, label and icon no longer travel
-        // as attributes - they are applied server-side when that view is rendered.
-        Attribute(tag, "data-box-endpoint", BoxEndpoint, encoder);
-        Attribute(tag, "data-paths", BuildPaths(box), encoder);
-        Attribute(tag, "data-excluded", Join(box.ExcludedPaths), encoder);
+            // Where the script fetches the box markup from. Everything about how the box looks now
+            // comes from the view rendered there, so the placeholder, label and icon no longer
+            // travel as attributes - they are applied server-side when that view is rendered.
+            Attribute(tag, "data-box-endpoint", BoxEndpoint, encoder);
+            Attribute(tag, "data-paths", BuildPaths(box), encoder);
+            Attribute(tag, "data-excluded", Join(box.ExcludedPaths), encoder);
 
-        // Handed to the script so it can add the stylesheet itself, for a layout that has no
-        // <head> for the link above to have been written into.
-        Attribute(tag, "data-stylesheet", StylesheetPath, encoder);
+            // Handed to the script so it can add the stylesheet itself, for a layout that has no
+            // <head> for the link above to have been written into.
+            Attribute(tag, "data-stylesheet", StylesheetPath, encoder);
 
-        return tag.Append("></script>").ToString();
+            tag.Append("></script>");
+        }
+
+        if (wantsSuggest)
+        {
+            // Attaches to the package's own boxes and to any input a site marks with
+            // data-imobisoft-suggest, so a site needs nothing placed for it either.
+            tag.Append("<script src=\"").Append(SuggestScriptPath).Append("\" defer");
+            Attribute(tag, "data-suggest-endpoint", SuggestEndpoint, encoder);
+            Attribute(tag, "data-stylesheet", StylesheetPath, encoder);
+            tag.Append("></script>");
+        }
+
+        return tag.ToString();
     }
 
     /// <summary>

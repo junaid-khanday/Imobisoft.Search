@@ -406,7 +406,8 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     minimumScore: 0,
                     stopWords: [],
                     synonyms: {},
-                    allTermsMustMatch: false
+                    allTermsMustMatch: false,
+                    keepSearchTerm: true
                 },
                 ranking: {
                     sortBy: [],
@@ -653,6 +654,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         if (!p.rules.matching.stopWords) p.rules.matching.stopWords = [];
         if (!p.rules.matching.synonyms) p.rules.matching.synonyms = {};
         if (p.rules.matching.allTermsMustMatch === undefined) p.rules.matching.allTermsMustMatch = false;
+        if (p.rules.matching.keepSearchTerm === undefined) p.rules.matching.keepSearchTerm = true;
 
         if (!p.rules.ranking) p.rules.ranking = {};
         if (!p.rules.ranking.sortBy) p.rules.ranking.sortBy = [];
@@ -992,7 +994,8 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 defaultOperator: this._currentProfile.rules?.matching?.defaultOperator || 'or',
                 fuzziness: this._currentProfile.rules?.matching?.fuzziness ?? 0.8,
                 minimumQueryLength: this._currentProfile.rules?.matching?.minimumQueryLength ?? 2,
-                allTermsMustMatch: this._currentProfile.rules?.matching?.allTermsMustMatch || false
+                allTermsMustMatch: this._currentProfile.rules?.matching?.allTermsMustMatch || false,
+                keepSearchTerm: this._currentProfile.rules?.matching?.keepSearchTerm !== false
             };
         } else if (type === 'editStopWords') {
             const words = this._currentProfile.rules?.matching?.stopWords || [];
@@ -1635,6 +1638,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             this._currentProfile.rules.matching.fuzziness = parseFloat(d.fuzziness) || 0.8;
             this._currentProfile.rules.matching.minimumQueryLength = parseInt(d.minimumQueryLength) || 2;
             this._currentProfile.rules.matching.allTermsMustMatch = !!d.allTermsMustMatch;
+            this._currentProfile.rules.matching.keepSearchTerm = d.keepSearchTerm !== false;
         } else if (this._sidePanelType === 'editStopWords') {
             let words = d._wordsInput ? d._wordsInput.split('\n').map(s => s.trim().toLowerCase()).filter(Boolean) : (d.stopWords || []);
             this._currentProfile.rules.matching.stopWords = Array.from(new Set(words));
@@ -3439,6 +3443,9 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                 <span class="selected-chip ${matching.allTermsMustMatch ? 'chip-success' : 'chip-muted'}">
                                     ${matching.allTermsMustMatch ? '✓ All Terms Required' : '✕ Any Term Matches'}
                                 </span>
+                                <span class="selected-chip ${matching.keepSearchTerm !== false ? 'chip-success' : 'chip-muted'}">
+                                    ${matching.keepSearchTerm !== false ? '✓ Term Kept In Box' : '✕ Box Cleared'}
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -5158,16 +5165,32 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     <span class="sp-hint">Queries shorter than this threshold will return empty results immediately.</span>
                 </div>
 
-                <div class="sp-group" style="margin-top: 10px;">
-                    <label class="toggle-item">
-                        <div class="toggle-info">
-                            <strong>All Terms Must Match</strong>
-                            <span>Require every single word in multi-word queries to appear in matching documents.</span>
-                        </div>
+                <div class="sp-toggle-row" style="margin-top: 14px; margin-bottom: 14px;">
+                    <div class="sp-toggle-info">
+                        <span class="sp-toggle-title">All Terms Must Match</span>
+                        <span class="sp-toggle-desc">Require every single word in multi-word queries to appear in matching documents.</span>
+                    </div>
+                    <label class="switch switch-sm">
                         <input type="checkbox"
-                               class="switch-input"
                                .checked=${!!d.allTermsMustMatch}
                                @change=${e => { d.allTermsMustMatch = e.target.checked; this.requestUpdate(); }}>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <div class="sp-toggle-row">
+                    <div class="sp-toggle-info">
+                        <span class="sp-toggle-title">Keep The Searched Term</span>
+                        <span class="sp-toggle-desc">Leaves what the visitor searched for in the search box on the results page,
+                              so it can be refined rather than retyped. Off, the box is cleared after every search.
+                              Applies to the search page and the header box; a search box in your own template
+                              shows whatever that template tells it to.</span>
+                    </div>
+                    <label class="switch switch-sm">
+                        <input type="checkbox"
+                               .checked=${d.keepSearchTerm !== false}
+                               @change=${e => { d.keepSearchTerm = e.target.checked; this.requestUpdate(); }}>
+                        <span class="slider round"></span>
                     </label>
                 </div>
             </div>

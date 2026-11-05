@@ -31,4 +31,10 @@ public sealed class ImobisoftSearchPageViewModel
 
     /// <summary>The currently selected sort alias, echoed so the right option renders selected.</summary>
     public string? SelectedSort { get; set; }
+
+    /// <summary>
+    /// Whether the search box still holds what was searched for, from the profile's matching rules.
+    /// Off, the box is cleared after a search.
+    /// </summary>
+    public bool KeepSearchTerm { get; set; } = true;
 }

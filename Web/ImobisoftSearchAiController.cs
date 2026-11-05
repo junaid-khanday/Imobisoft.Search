@@ -50,15 +50,18 @@ public sealed class ImobisoftSearchAiController : Controller
 {
     private readonly IAiTextService _ai;
     private readonly ISearchProfileService _profiles;
+    private readonly IImobisoftSearchService _search;
     private readonly ImobisoftSearchOptions _options;
 
     public ImobisoftSearchAiController(
         IAiTextService ai,
         ISearchProfileService profiles,
+        IImobisoftSearchService search,
         IOptions<ImobisoftSearchOptions> options)
     {
         _ai = ai;
         _profiles = profiles;
+        _search = search;
         _options = options.Value;
     }
 
@@ -131,6 +134,10 @@ public sealed class ImobisoftSearchAiController : Controller
 
         var parameter = string.IsNullOrWhiteSpace(rules.QueryName) ? "q" : rules.QueryName;
 
+        // Whether the term stays in the box after a search is a profile rule, so a site can have
+        // every search start from an empty box if it prefers.
+        var keepTerm = _profiles.ResolveForSearch(null)?.Rules.Matching.KeepSearchTerm ?? true;
+
         return PartialView("~/Views/Partials/Search/HeaderSearchBox.cshtml", new SearchBoxModel
         {
             // The link the script found decides where a search lands; the package's own page is the
@@ -139,7 +146,7 @@ public sealed class ImobisoftSearchAiController : Controller
                 ? "/" + ImobisoftSearchConstants.Web.SearchPagePath
                 : resultsUrl.Trim(),
             QueryName = parameter,
-            Term = (term ?? string.Empty).Trim(),
+            Term = keepTerm ? (term ?? string.Empty).Trim() : string.Empty,
             StartOpen = false,
             Placeholder = rules.Placeholder,
             ButtonLabel = rules.ButtonLabel,
@@ -147,6 +154,65 @@ public sealed class ImobisoftSearchAiController : Controller
             IconSize = rules.IconSize > 0 ? rules.IconSize : 18,
             OpenWidth = "100%",
         });
+    }
+
+    /// <summary>
+    /// Type-ahead suggestions for a partly typed term - type "ap" and get the words the site
+    /// actually has.
+    /// <para>
+    /// The engine and its settings already existed for the backoffice test panel; this is the same
+    /// thing reachable by the site's visitors. It is cheap and safe to leave open: suggestions come
+    /// from what the profile can already see in the index, so it reveals nothing a search would not,
+    /// and it reaches no paid service. Switched off with "Enable Spelling Suggestions &amp;
+    /// Type-Ahead" in Search → Settings.
+    /// </para>
+    /// </summary>
+    [HttpGet("~/" + ImobisoftSearchConstants.Web.SearchPagePath + "/suggest")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> Suggest(
+        [FromQuery] string? term,
+        [FromQuery] int take = 0,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_options.Enabled)
+        {
+            return NotFound();
+        }
+
+        var typed = (term ?? string.Empty).Trim();
+
+        // A single character matches most of the index, so it is not worth a round trip.
+        if (typed.Length < 2)
+        {
+            return Ok(Array.Empty<object>());
+        }
+
+        if (typed.Length > 100)
+        {
+            typed = typed[..100];
+        }
+
+        try
+        {
+            IReadOnlyList<SearchSuggestion> suggestions = await _search.AutocompleteAsync(
+                typed,
+                profileAlias: null,
+                take: Math.Clamp(take, 0, 20),
+                cancellationToken);
+
+            return Ok(suggestions.Select(s => new { term = s.Text, url = s.Url }));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The visitor typed another letter before this answer came back, so the browser dropped
+            // the request. Type-ahead does that on every keystroke, which makes a cancelled search
+            // the normal course of events here rather than a fault - and one that must not be logged
+            // as an error or surface as a 500. The token is still passed in, because abandoning the
+            // Lucene work is the whole point of it being cancelled.
+            //
+            // Nothing is listening for this response.
+            return Ok(Array.Empty<object>());
+        }
     }
 
     /// <summary>

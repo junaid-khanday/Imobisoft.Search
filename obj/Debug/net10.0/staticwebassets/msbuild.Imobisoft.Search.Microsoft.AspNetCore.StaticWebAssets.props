@@ -92,12 +92,12 @@
       <RelatedAsset></RelatedAsset>
       <AssetTraitName></AssetTraitName>
       <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>dxyfvih6db</Fingerprint>
-      <Integrity>bwr8s/0ynYmBRx6qqwuaMUmZYd6sMAx1t9cZpqz/Y0A=</Integrity>
+      <Fingerprint>3m2gtx9cfn</Fingerprint>
+      <Integrity>O2Kfetgrb+FHcXPbCd14L9mJohl2XdlVg09DqaaxR14=</Integrity>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-      <FileLength>2500</FileLength>
-      <LastWriteTime>Thu, 05 Nov 2026 10:01:21 GMT</LastWriteTime>
+      <FileLength>3285</FileLength>
+      <LastWriteTime>Thu, 05 Nov 2026 10:13:54 GMT</LastWriteTime>
       <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\searchbox.css'))</OriginalItemSpec>
     </StaticWebAsset>
     <StaticWebAsset Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\searchbox.js'))">
@@ -112,13 +112,33 @@
       <RelatedAsset></RelatedAsset>
       <AssetTraitName></AssetTraitName>
       <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>4sizvaoutd</Fingerprint>
-      <Integrity>LM+LZ+zJYWv5XguKVhZgVOG1x89MJ+QQcsLxYnXFgzQ=</Integrity>
+      <Fingerprint>29oxgizj8x</Fingerprint>
+      <Integrity>BoG7Qghxoy0OSBeX+AZXmKEVSQDyxCnL+M6OGgMTGUw=</Integrity>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-      <FileLength>13512</FileLength>
-      <LastWriteTime>Thu, 05 Nov 2026 09:56:58 GMT</LastWriteTime>
+      <FileLength>14820</FileLength>
+      <LastWriteTime>Thu, 05 Nov 2026 10:36:21 GMT</LastWriteTime>
       <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\searchbox.js'))</OriginalItemSpec>
+    </StaticWebAsset>
+    <StaticWebAsset Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\suggest.js'))">
+      <SourceType>Package</SourceType>
+      <SourceId>Imobisoft.Search</SourceId>
+      <ContentRoot>$(MSBuildThisFileDirectory)..\staticwebassets\</ContentRoot>
+      <BasePath>App_Plugins/Imobisoft.Search</BasePath>
+      <RelativePath>suggest.js</RelativePath>
+      <AssetKind>All</AssetKind>
+      <AssetMode>All</AssetMode>
+      <AssetRole>Primary</AssetRole>
+      <RelatedAsset></RelatedAsset>
+      <AssetTraitName></AssetTraitName>
+      <AssetTraitValue></AssetTraitValue>
+      <Fingerprint>0z728gle1r</Fingerprint>
+      <Integrity>3KzpDecaljxZFbnc9tHh7M9zgGnYCdvJClXzZkRpVGI=</Integrity>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+      <FileLength>8177</FileLength>
+      <LastWriteTime>Thu, 05 Nov 2026 10:29:08 GMT</LastWriteTime>
+      <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\suggest.js'))</OriginalItemSpec>
     </StaticWebAsset>
     <StaticWebAsset Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\umbraco-package.json'))">
       <SourceType>Package</SourceType>
@@ -152,12 +172,12 @@
       <RelatedAsset></RelatedAsset>
       <AssetTraitName></AssetTraitName>
       <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>nw7qnckna4</Fingerprint>
-      <Integrity>eS4hMCcrUemliUm0iy/XHMGK+qOSYbiBYePC/9EDqUc=</Integrity>
+      <Fingerprint>joe5ibnxls</Fingerprint>
+      <Integrity>k+fbF3c6FtNjRiB4APzUCdN2i/fDl1pwWfZiXfSdB2s=</Integrity>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-      <FileLength>439976</FileLength>
-      <LastWriteTime>Thu, 05 Nov 2026 09:24:38 GMT</LastWriteTime>
+      <FileLength>441694</FileLength>
+      <LastWriteTime>Thu, 05 Nov 2026 10:19:19 GMT</LastWriteTime>
       <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\workspace.js'))</OriginalItemSpec>
     </StaticWebAsset>
   </ItemGroup>

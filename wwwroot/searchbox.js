@@ -268,6 +268,11 @@
         });
 
         bind(link, root);
+
+        // The box arrives after load, so the type-ahead has to be told there is a new input.
+        if (window.imobisoftSearchSuggest && typeof window.imobisoftSearchSuggest.refresh === 'function') {
+            window.imobisoftSearchSuggest.refresh();
+        }
     }
 
     /*
@@ -283,16 +288,20 @@
             return root.getAttribute('data-open') === 'true';
         }
 
-        function setOpen(open) {
-            root.setAttribute('data-open', open ? 'true' : 'false');
-            link.setAttribute('aria-expanded', open ? 'true' : 'false');
-
-            // Mirrored onto the wrapper as well: the wrapper is the overlay, so left showing it
-            // would keep covering the header and swallowing clicks even with the bar hidden.
+        // The wrapper is the overlay, so left showing it would keep covering the header and
+        // swallowing clicks even with the bar itself hidden.
+        function mirror(open) {
             if (root.parentNode && root.parentNode.classList
                 && root.parentNode.classList.contains('imsx-holder')) {
                 root.parentNode.setAttribute('data-open', open ? 'true' : 'false');
             }
+
+            link.setAttribute('aria-expanded', open ? 'true' : 'false');
+        }
+
+        function setOpen(open) {
+            root.setAttribute('data-open', open ? 'true' : 'false');
+            mirror(open);
         }
 
         link.setAttribute('aria-expanded', isOpen() ? 'true' : 'false');
@@ -333,6 +342,24 @@
                 setOpen(false);
             }
         });
+
+        /*
+            Mirrors data-open from the view onto the overlay, whoever set it.
+
+            This is what keeps the contract for a view down to one thing: toggle data-open on your
+            own root. Without it a view would also have to know about the package's overlay and
+            close that too - and a view saved before the overlay existed would leave it covering the
+            header, hiding the site's nav and swallowing clicks even with the bar itself hidden.
+
+            It mirrors only, and never writes data-open back onto the root it is watching: setting an
+            attribute counts as a change even when the value is the same, so writing back would
+            re-trigger this observer forever and take the page's main thread with it.
+        */
+        if (typeof MutationObserver === 'function') {
+            new MutationObserver(function () {
+                mirror(isOpen());
+            }).observe(root, { attributes: true, attributeFilter: ['data-open'] });
+        }
 
         // On the results page the box opens showing the term that produced it.
         if (input && input.value.trim()) {

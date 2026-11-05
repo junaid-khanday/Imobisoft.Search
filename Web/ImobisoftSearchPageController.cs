@@ -83,6 +83,10 @@ public sealed class ImobisoftSearchController : Controller
                 .ToList() ?? new List<FacetDefinition>(),
             ConfiguredSortOptions = configuredSorts,
             SelectedSort = selectedSort,
+
+            // "Keep the searched term" lives on the profile's matching rules, so the box on this
+            // page behaves the same way as the header box.
+            KeepSearchTerm = profile?.Rules.Matching.KeepSearchTerm ?? true,
         };
 
         // With Load More disabled the profile serves exactly one page of PageSize items: later

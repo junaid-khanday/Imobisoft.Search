@@ -6,6 +6,11 @@
     var activeFilters = Context.GetActiveFilters();
     var hasActiveFilters = Context.HasActiveFilters();
     var facetCounts = Context.GetSearchFilters();
+
+    // "Keep the searched term" on the profile's Matching tab decides whether the box still holds
+    // what was searched for, so it can be refined rather than retyped.
+    var keepTerm = Model.KeepSearchTerm;
+    var boxTerm = keepTerm ? Model.Term : string.Empty;
 }
 <!DOCTYPE html>
 <html lang="en">
@@ -512,14 +517,18 @@
                    GET form, which the form above already is. *@
                 <div class="imobisoft-search-form">
                     <div class="imobisoft-input-wrap">
+                        @* data-imobisoft-suggest opts this box into type-ahead. Remove it to turn
+                           suggestions off for this page only; the site-wide switch is in
+                           Search > Settings. *@
                         <input type="search"
-                               id="q"
+                               id="imobisoft-search-page-input"
                                name="q"
                                class="imobisoft-input"
-                               value="@Model.Term"
+                               value="@boxTerm"
                                placeholder="Type a word or phrase to search..."
                                autocomplete="off"
-                               aria-label="Search" />
+                               aria-label="Search"
+                               data-imobisoft-suggest />
                     </div>
                     <button type="submit" class="imobisoft-btn imobisoft-btn-primary">Search</button>
                 </div>

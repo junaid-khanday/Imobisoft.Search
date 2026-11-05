@@ -60,17 +60,44 @@ internal static class SuggestionEngine
     }
 
     /// <summary>
-    /// Collapses a set of matches into type-ahead suggestions: one per distinct page name, most
-    /// relevant first.
+    /// Collapses a set of matches into type-ahead suggestions, most relevant first.
+    /// <para>
+    /// Words the typing completes come first, then the whole page names they came from. Someone
+    /// typing "ap" is part way through a word, so "apartments" is what they are reaching for;
+    /// offering only "Apartments To Rent In Didsbury" makes them read a sentence to find out whether
+    /// their word is in it. The page names still follow, because sometimes the page is the answer.
+    /// </para>
+    /// <para>
+    /// Both come from the names of documents this search already matched, so every suggestion is
+    /// something the site can answer.
+    /// </para>
     /// </summary>
     public static IReadOnlyList<SearchSuggestion> BuildAutocomplete(
         IReadOnlyList<SearchResultItem> matches,
-        int take)
+        int take,
+        string? typed = null)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var suggestions = new List<SearchSuggestion>();
 
-        foreach (SearchResultItem match in matches.OrderByDescending(m => m.Score))
+        List<SearchResultItem> ranked = matches.OrderByDescending(m => m.Score).ToList();
+
+        foreach (SearchSuggestion word in CompletedWords(ranked, typed))
+        {
+            if (!seen.Add(word.Text))
+            {
+                continue;
+            }
+
+            suggestions.Add(word);
+
+            if (suggestions.Count >= take)
+            {
+                return suggestions;
+            }
+        }
+
+        foreach (SearchResultItem match in ranked)
         {
             if (string.IsNullOrWhiteSpace(match.Name) || !seen.Add(match.Name))
             {
@@ -93,6 +120,56 @@ internal static class SuggestionEngine
         }
 
         return suggestions;
+    }
+
+    /// <summary>
+    /// The words in the matched names that finish the word being typed, each offered as the whole
+    /// query it would make - type "rent ap" and the suggestion is "rent apartments", not "apartments",
+    /// so accepting one does not throw away what was already typed.
+    /// </summary>
+    private static IEnumerable<SearchSuggestion> CompletedWords(
+        IReadOnlyList<SearchResultItem> ranked,
+        string? typed)
+    {
+        if (string.IsNullOrWhiteSpace(typed))
+        {
+            yield break;
+        }
+
+        var trimmed = typed.TrimStart();
+
+        // A trailing space means the word is finished, so there is nothing to complete.
+        if (char.IsWhiteSpace(trimmed[^1]))
+        {
+            yield break;
+        }
+
+        var lastSpace = trimmed.LastIndexOf(' ');
+        var prefix = trimmed[(lastSpace + 1)..];
+        var alreadyTyped = trimmed[..(lastSpace + 1)];
+
+        foreach (SearchResultItem match in ranked)
+        {
+            foreach (var token in Tokenize(match.Name))
+            {
+                // Only forwards: a word the typing is inside the middle of is a different word, and
+                // offering it would move the cursor backwards.
+                if (token.Length <= prefix.Length
+                    || !token.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                yield return new SearchSuggestion
+                {
+                    Text = alreadyTyped + token,
+                    NodeKey = match.Key,
+                    Url = match.Url,
+                    ContentTypeAlias = match.ContentTypeAlias,
+                    Score = match.Score,
+                };
+            }
+        }
     }
 
     private static IEnumerable<string> Tokenize(string? text)

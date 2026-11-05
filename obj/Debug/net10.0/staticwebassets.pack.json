@@ -25,6 +25,10 @@
       "PackagePath": "staticwebassets\\searchbox.js"
     },
     {
+      "Id": "D:\\imobisoft\\Imobisoft.Search\\wwwroot\\suggest.js",
+      "PackagePath": "staticwebassets\\suggest.js"
+    },
+    {
       "Id": "D:\\imobisoft\\Imobisoft.Search\\wwwroot\\umbraco-package.json",
       "PackagePath": "staticwebassets\\umbraco-package.json"
     },

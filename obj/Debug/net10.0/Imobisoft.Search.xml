@@ -1013,6 +1013,20 @@
             rather than just one of them.
             </summary>
         </member>
+        <member name="P:Imobisoft.Search.Models.MatchingRules.KeepSearchTerm">
+            <summary>
+            Puts the term the visitor searched for back into the search box on the results page, so it is
+            still there to refine rather than having to be retyped.
+            <para>
+            On by default. Turning it off clears the box after a search, which suits a site that wants
+            every search started from scratch.
+            </para>
+            <para>
+            This governs the boxes the package renders - the search page and the header box. A search box
+            in a site's own template echoes back whatever that template tells it to.
+            </para>
+            </summary>
+        </member>
         <member name="T:Imobisoft.Search.Models.SortRule">
             <summary>One level of sorting. Several can be stacked in <see cref="P:Imobisoft.Search.Models.RankingRules.SortBy"/>.</summary>
         </member>
@@ -2880,10 +2894,26 @@
             Returns null when nothing is close enough to be worth offering.
             </summary>
         </member>
-        <member name="M:Imobisoft.Search.Services.Querying.SuggestionEngine.BuildAutocomplete(System.Collections.Generic.IReadOnlyList{Imobisoft.Search.Models.SearchResultItem},System.Int32)">
+        <member name="M:Imobisoft.Search.Services.Querying.SuggestionEngine.BuildAutocomplete(System.Collections.Generic.IReadOnlyList{Imobisoft.Search.Models.SearchResultItem},System.Int32,System.String)">
             <summary>
-            Collapses a set of matches into type-ahead suggestions: one per distinct page name, most
-            relevant first.
+            Collapses a set of matches into type-ahead suggestions, most relevant first.
+            <para>
+            Words the typing completes come first, then the whole page names they came from. Someone
+            typing "ap" is part way through a word, so "apartments" is what they are reaching for;
+            offering only "Apartments To Rent In Didsbury" makes them read a sentence to find out whether
+            their word is in it. The page names still follow, because sometimes the page is the answer.
+            </para>
+            <para>
+            Both come from the names of documents this search already matched, so every suggestion is
+            something the site can answer.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Querying.SuggestionEngine.CompletedWords(System.Collections.Generic.IReadOnlyList{Imobisoft.Search.Models.SearchResultItem},System.String)">
+            <summary>
+            The words in the matched names that finish the word being typed, each offered as the whole
+            query it would make - type "rent ap" and the suggestion is "rent apartments", not "apartments",
+            so accepting one does not throw away what was already typed.
             </summary>
         </member>
         <member name="M:Imobisoft.Search.Services.Querying.SuggestionEngine.BestMatch(System.String,System.Collections.Generic.IReadOnlyList{System.String},System.Int32)">
@@ -3155,7 +3185,8 @@
         </member>
         <member name="T:Imobisoft.Search.Web.HeaderSearchBoxTagHelperComponent">
             <summary>
-            Puts the header search box on every page of the site, without the site doing anything.
+            Puts the header search box, and type-ahead for whatever search boxes a page has, on every page of
+            the site without the site doing anything.
             <para>
             This is what makes the behaviour the package's own rather than the consuming project's: a tag
             helper component is how a library adds markup to every Razor view, so the stylesheet and script
@@ -3177,6 +3208,13 @@
             <summary>
             Runs late, so the stylesheet lands after a site's own - a site overriding the box's classes
             should not have to fight specificity to do it.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Web.HeaderSearchBoxTagHelperComponent.Suggestions">
+            <summary>
+            Whether type-ahead is on, from the site settings rather than the profile - the same switch
+            the engine itself honours, so the script is never injected to call an endpoint that is
+            already answering nothing.
             </summary>
         </member>
         <member name="M:Imobisoft.Search.Web.HeaderSearchBoxTagHelperComponent.BuildPaths(Imobisoft.Search.Models.SearchBoxRules)">
@@ -3228,6 +3266,19 @@
             makes that one file the thing that designs the header box. Before this existed the script
             built the box in JavaScript, so editing the view changed nothing unless a site happened to
             place the view component by hand.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Web.ImobisoftSearchAiController.Suggest(System.String,System.Int32,System.Threading.CancellationToken)">
+            <summary>
+            Type-ahead suggestions for a partly typed term - type "ap" and get the words the site
+            actually has.
+            <para>
+            The engine and its settings already existed for the backoffice test panel; this is the same
+            thing reachable by the site's visitors. It is cheap and safe to leave open: suggestions come
+            from what the profile can already see in the index, so it reveals nothing a search would not,
+            and it reaches no paid service. Switched off with "Enable Spelling Suggestions &amp;
+            Type-Ahead" in Search → Settings.
             </para>
             </summary>
         </member>
@@ -3348,6 +3399,12 @@
         </member>
         <member name="P:Imobisoft.Search.Web.ImobisoftSearchPageViewModel.SelectedSort">
             <summary>The currently selected sort alias, echoed so the right option renders selected.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Web.ImobisoftSearchPageViewModel.KeepSearchTerm">
+            <summary>
+            Whether the search box still holds what was searched for, from the profile's matching rules.
+            Off, the box is cleared after a search.
+            </summary>
         </member>
         <member name="T:Imobisoft.Search.Web.SearchContextExtensions">
             <summary>

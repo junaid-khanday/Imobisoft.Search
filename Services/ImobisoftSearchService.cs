@@ -325,7 +325,9 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
         SearchResponse response = Execute(rules, request, profile.Alias, size * 3, stopwatch, cancellationToken);
         ResolveUrls(response);
 
-        return Task.FromResult(SuggestionEngine.BuildAutocomplete(response.Results.ToList(), size));
+        // The term goes in too, so what comes back can complete the word being typed rather than
+        // only name the pages it was found in.
+        return Task.FromResult(SuggestionEngine.BuildAutocomplete(response.Results.ToList(), size, term));
     }
 
     /// <inheritdoc />

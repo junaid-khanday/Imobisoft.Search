@@ -72,5 +72,17 @@ public sealed class SearchAutocompleteController : ImobisoftSearchControllerBase
         [FromQuery] string? profileAlias = null,
         [FromQuery] int take = 0,
         CancellationToken cancellationToken = default)
-        => Ok(await _search.AutocompleteAsync(term, profileAlias, take, cancellationToken));
+    {
+        try
+        {
+            return Ok(await _search.AutocompleteAsync(term, profileAlias, take, cancellationToken));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Type-ahead drops its request as soon as the next letter is typed, so a cancelled
+            // search is routine here and must not be reported as a fault. Nothing is waiting for
+            // this response.
+            return Ok(Array.Empty<SearchSuggestion>());
+        }
+    }
 }
