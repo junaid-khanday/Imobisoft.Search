@@ -3170,6 +3170,9 @@
             </para>
             </summary>
         </member>
+        <member name="F:Imobisoft.Search.Web.HeaderSearchBoxTagHelperComponent.BoxEndpoint">
+            <summary>Where the script fetches the rendered header box from.</summary>
+        </member>
         <member name="P:Imobisoft.Search.Web.HeaderSearchBoxTagHelperComponent.Order">
             <summary>
             Runs late, so the stylesheet lands after a site's own - a site overriding the box's classes
@@ -3214,6 +3217,17 @@
             a node key rather than text, so the only thing that can be processed is a page this site has
             published; a per-visitor rate limit caps how often one caller can get through; and answers are
             cached, so the same page is paid for once however many visitors ask.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Web.ImobisoftSearchAiController.Box(System.String,System.String)">
+            <summary>
+            The header search box, rendered from <c>Views/Partials/Search/HeaderSearchBox.cshtml</c>.
+            <para>
+            The injected script fetches this and drops the markup into the site's header, which is what
+            makes that one file the thing that designs the header box. Before this existed the script
+            built the box in JavaScript, so editing the view changed nothing unless a site happened to
+            place the view component by hand.
             </para>
             </summary>
         </member>

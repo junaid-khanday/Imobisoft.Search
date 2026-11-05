@@ -32,6 +32,9 @@ public sealed class HeaderSearchBoxTagHelperComponent : TagHelperComponent
 
     private const string ScriptPath = "/App_Plugins/" + ImobisoftSearchConstants.PackageName + "/searchbox.js";
 
+    /// <summary>Where the script fetches the rendered header box from.</summary>
+    private const string BoxEndpoint = "/" + ImobisoftSearchConstants.Web.SearchPagePath + "/box";
+
     private readonly ImobisoftSearchOptions _options;
     private readonly ISearchProfileService _profiles;
 
@@ -92,11 +95,12 @@ public sealed class HeaderSearchBoxTagHelperComponent : TagHelperComponent
             .Append("\" defer");
 
         Attribute(tag, "data-containers", box.Containers, encoder);
-        Attribute(tag, "data-placeholder", box.Placeholder, encoder);
-        Attribute(tag, "data-label", box.ButtonLabel, encoder);
-        Attribute(tag, "data-icon", box.IconUrl, encoder);
-        Attribute(tag, "data-icon-size", box.IconSize > 0 ? box.IconSize.ToString() : null, encoder);
         Attribute(tag, "data-query", box.QueryName, encoder);
+
+        // Where the script fetches the box markup from. Everything about how the box looks now
+        // comes from the view rendered there, so the placeholder, label and icon no longer travel
+        // as attributes - they are applied server-side when that view is rendered.
+        Attribute(tag, "data-box-endpoint", BoxEndpoint, encoder);
         Attribute(tag, "data-paths", BuildPaths(box), encoder);
         Attribute(tag, "data-excluded", Join(box.ExcludedPaths), encoder);
 

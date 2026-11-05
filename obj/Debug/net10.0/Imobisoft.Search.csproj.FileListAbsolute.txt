@@ -105,8 +105,6 @@ D:\imobisoft\Imobisoft.Search\bin\Debug\net10.0\wwwroot\searchbox.css
 D:\imobisoft\Imobisoft.Search\bin\Debug\net10.0\wwwroot\searchbox.js
 D:\imobisoft\Imobisoft.Search\bin\Debug\net10.0\wwwroot\searchbox.css.gz
 D:\imobisoft\Imobisoft.Search\bin\Debug\net10.0\wwwroot\searchbox.js.gz
-D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\3csu7xp2fv-{0}-qqhswdpn16-qqhswdpn16.gz
-D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\2o3xyinrf9-{0}-mysa4q7tq4-mysa4q7tq4.gz
 D:\imobisoft\Imobisoft.Search\bin\Debug\net10.0\wwwroot\ai.css
 D:\imobisoft\Imobisoft.Search\bin\Debug\net10.0\wwwroot\ai.js
 D:\imobisoft\Imobisoft.Search\bin\Debug\net10.0\wwwroot\ai.css.gz
@@ -115,5 +113,5 @@ D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\d3wrj8pbx3-{0}-yv03g4
 D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\dffy4krckw-{0}-740uqfwtdp-740uqfwtdp.gz
 D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\ee9apxmh1x-{0}-s9cip73zfn-s9cip73zfn.gz
 D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\yngxw0rsot-{0}-nw7qnckna4-nw7qnckna4.gz
-D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\staticwebassets.upToDateCheck.txt
-D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\Imobisof.5574A79A.Up2Date
+D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\2o3xyinrf9-{0}-4sizvaoutd-4sizvaoutd.gz
+D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\3csu7xp2fv-{0}-dxyfvih6db-dxyfvih6db.gz

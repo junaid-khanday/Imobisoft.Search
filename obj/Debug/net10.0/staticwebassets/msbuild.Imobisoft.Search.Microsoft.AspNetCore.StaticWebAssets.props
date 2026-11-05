@@ -92,12 +92,12 @@
       <RelatedAsset></RelatedAsset>
       <AssetTraitName></AssetTraitName>
       <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>qqhswdpn16</Fingerprint>
-      <Integrity>LvOTafUNeXqFSZV3HaC1F9VcDmHYZtIcNNSz5mjocK4=</Integrity>
+      <Fingerprint>dxyfvih6db</Fingerprint>
+      <Integrity>bwr8s/0ynYmBRx6qqwuaMUmZYd6sMAx1t9cZpqz/Y0A=</Integrity>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-      <FileLength>2433</FileLength>
-      <LastWriteTime>Thu, 05 Nov 2026 05:46:06 GMT</LastWriteTime>
+      <FileLength>2500</FileLength>
+      <LastWriteTime>Thu, 05 Nov 2026 10:01:21 GMT</LastWriteTime>
       <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\searchbox.css'))</OriginalItemSpec>
     </StaticWebAsset>
     <StaticWebAsset Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\searchbox.js'))">
@@ -112,12 +112,12 @@
       <RelatedAsset></RelatedAsset>
       <AssetTraitName></AssetTraitName>
       <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>mysa4q7tq4</Fingerprint>
-      <Integrity>Ho0zV8iTfSow7yRV++nc6cEhFpV/3GSMbq2BuX148ic=</Integrity>
+      <Fingerprint>4sizvaoutd</Fingerprint>
+      <Integrity>LM+LZ+zJYWv5XguKVhZgVOG1x89MJ+QQcsLxYnXFgzQ=</Integrity>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-      <FileLength>13273</FileLength>
-      <LastWriteTime>Thu, 05 Nov 2026 05:45:55 GMT</LastWriteTime>
+      <FileLength>13512</FileLength>
+      <LastWriteTime>Thu, 05 Nov 2026 09:56:58 GMT</LastWriteTime>
       <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\searchbox.js'))</OriginalItemSpec>
     </StaticWebAsset>
     <StaticWebAsset Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\umbraco-package.json'))">

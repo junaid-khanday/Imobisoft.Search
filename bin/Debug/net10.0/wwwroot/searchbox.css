@@ -1,95 +1,73 @@
 /*
     The header search box the package adds to a site's existing search link.
 
-    Appearance only - whether the box is open is set by searchbox.js as an inline style, so the
-    panel can never be left showing while this file is still loading.
+    Two layers, deliberately:
 
-    A site re-themes by overriding these classes in its own stylesheet; nothing here is required
-    for the box to work.
+      .imsx-holder is the overlay, and belongs to the package. It covers the site's header so the
+      bar can be the full width of it and hide what is underneath. Its rules stay here rather than
+      in the view, because an overridden view would otherwise have to re-create the positioning
+      correctly for the bar to work at all.
+
+      Everything inside it comes from Views/Partials/Search/HeaderSearchBox.cshtml and is that
+      view's business - markup, colours, spacing, behaviour.
 */
 
-.imsx {
-    position: relative;
-    display: inline-flex;
+/* Closed, the overlay must not exist as far as the page is concerned: left displayed it would keep
+   covering the header and swallowing clicks on the site's own nav. */
+.imsx-holder[data-open="false"] {
+    display: none;
+}
+
+.imsx-holder[data-open="true"] {
+    position: absolute;
+    inset: 0;
+    z-index: 60;
+    display: flex;
     align-items: center;
+    width: 100%;
+
+    /* Opaque by default so the header beneath is hidden rather than showing through. A view can
+       change it by setting --imsx-overlay-bg, or paint its own background over the whole width. */
+    background: var(--imsx-overlay-bg, #fff);
+    padding: 0 clamp(12px, 3vw, 48px);
+}
+
+/* Whatever the view renders fills the overlay, so the bar is as wide as the header. */
+.imsx-holder[data-open="true"] > * {
+    width: 100%;
 }
 
 /*
-    Absolutely positioned on purpose. The package cannot know anything about the header it is
-    dropped into, so the box hangs below the link rather than growing inside the nav, where it
-    would push a site's own layout around.
+    Browsers draw their own clear button inside a search input as soon as it has text. The view
+    already provides a close button, so left alone there are two crosses - most visibly on the
+    results page, where the box opens with the term already in it.
+
+    Suppressed here rather than only in the view, so a site's own copy of the view does not have to
+    know about it.
 */
-.imsx-form {
-    position: absolute;
-    top: calc(100% + 10px);
-    right: 0;
-    z-index: 1000;
-    gap: 6px;
-    margin: 0;
-    padding: 8px;
-    background: #fff;
-    border: 1px solid #e2e8f0;
-    border-radius: 12px;
-    box-shadow: 0 12px 30px rgba(15, 23, 42, .18);
+.imsx-holder input[type="search"]::-webkit-search-cancel-button,
+.imsx-holder input[type="search"]::-webkit-search-decoration,
+.imsx-holder input[type="search"]::-webkit-search-results-button,
+.imsx-holder input[type="search"]::-webkit-search-results-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+    display: none;
 }
 
-/* A link near the left edge has nowhere to hang a right-aligned panel; the script measures and
-   flips this on when that is the case. */
-.imsx[data-align="left"] .imsx-form {
-    right: auto;
-    left: 0;
+.imsx-holder input[type="search"]::-ms-clear,
+.imsx-holder input[type="search"]::-ms-reveal {
+    display: none;
+    width: 0;
+    height: 0;
 }
 
-/* Colours are stated rather than inherited: the panel is white whatever header it hangs from, so
-   a dark header cannot leave white text on a white box. */
-.imsx-input {
-    width: min(70vw, 280px);
-    height: 40px;
-    padding: 0 14px;
-    font: inherit;
-    font-size: 15px;
-    color: #1e293b;
-    background: #fff;
-    border: 1px solid #cbd5e1;
-    border-radius: 8px;
-    outline: none;
+@media (prefers-reduced-motion: no-preference) {
+    .imsx-holder[data-open="true"] {
+        animation: imsx-reveal .14s ease-out;
+    }
 }
 
-.imsx-input:focus {
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, .15);
-}
-
-.imsx-go {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-    width: 40px;
-    height: 40px;
-    padding: 0;
-    color: #fff;
-    background: #1b264f;
-    border: 0;
-    border-radius: 8px;
-    cursor: pointer;
-}
-
-.imsx-go:hover {
-    background: #121a38;
-}
-
-.imsx-go:focus-visible {
-    outline: 2px solid #3b82f6;
-    outline-offset: 2px;
-}
-
-/* One size for both the built-in magnifier and a site's own file, set from the profile's Search
-   Box tab. The inline magnifier takes the button's colour; an image keeps its own. */
-.imsx-go svg,
-.imsx-go .imsx-go-icon {
-    width: var(--imsx-icon-size, 18px);
-    height: var(--imsx-icon-size, 18px);
-    display: block;
-    object-fit: contain;
+@keyframes imsx-reveal {
+    from { opacity: 0; }
+    to { opacity: 1; }
 }

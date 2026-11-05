@@ -1,5 +1,8 @@
+using Imobisoft.Search.Configuration;
 using Imobisoft.Search.Models;
+using Imobisoft.Search.Services;
 using Imobisoft.Search.Services.Ai;
+using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -46,8 +49,18 @@ public sealed class AiTransformRequest
 public sealed class ImobisoftSearchAiController : Controller
 {
     private readonly IAiTextService _ai;
+    private readonly ISearchProfileService _profiles;
+    private readonly ImobisoftSearchOptions _options;
 
-    public ImobisoftSearchAiController(IAiTextService ai) => _ai = ai;
+    public ImobisoftSearchAiController(
+        IAiTextService ai,
+        ISearchProfileService profiles,
+        IOptions<ImobisoftSearchOptions> options)
+    {
+        _ai = ai;
+        _profiles = profiles;
+        _options = options.Value;
+    }
 
     [HttpPost("")]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -93,6 +106,46 @@ public sealed class ImobisoftSearchAiController : Controller
             // Which pages the answer was drawn from, so the site can link them. This is the list the
             // server sent to the model, not one parsed back out of the answer.
             sources = result.Sources.Select(s => new { title = s.Title, url = s.Url }),
+        });
+    }
+
+    /// <summary>
+    /// The header search box, rendered from <c>Views/Partials/Search/HeaderSearchBox.cshtml</c>.
+    /// <para>
+    /// The injected script fetches this and drops the markup into the site's header, which is what
+    /// makes that one file the thing that designs the header box. Before this existed the script
+    /// built the box in JavaScript, so editing the view changed nothing unless a site happened to
+    /// place the view component by hand.
+    /// </para>
+    /// </summary>
+    [HttpGet("~/" + ImobisoftSearchConstants.Web.SearchPagePath + "/box")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public IActionResult Box([FromQuery] string? resultsUrl, [FromQuery] string? term)
+    {
+        SearchBoxRules rules = _profiles.ResolveForSearch(null)?.Rules.SearchBox ?? new SearchBoxRules();
+
+        if (!_options.Enabled || !_options.EnableHeaderSearchBox || !rules.Enabled)
+        {
+            return NotFound();
+        }
+
+        var parameter = string.IsNullOrWhiteSpace(rules.QueryName) ? "q" : rules.QueryName;
+
+        return PartialView("~/Views/Partials/Search/HeaderSearchBox.cshtml", new SearchBoxModel
+        {
+            // The link the script found decides where a search lands; the package's own page is the
+            // fallback when it could not be read.
+            Action = string.IsNullOrWhiteSpace(resultsUrl)
+                ? "/" + ImobisoftSearchConstants.Web.SearchPagePath
+                : resultsUrl.Trim(),
+            QueryName = parameter,
+            Term = (term ?? string.Empty).Trim(),
+            StartOpen = false,
+            Placeholder = rules.Placeholder,
+            ButtonLabel = rules.ButtonLabel,
+            IconUrl = rules.IconUrl,
+            IconSize = rules.IconSize > 0 ? rules.IconSize : 18,
+            OpenWidth = "100%",
         });
     }
 

@@ -1,196 +1,192 @@
 @using Imobisoft.Search.Models
 @model SearchBoxModel
 @{
-    // The button needs something to point aria-controls at, and a page may hold more than one box.
     var inputId = string.IsNullOrWhiteSpace(Model.Id)
         ? "isb-" + Guid.NewGuid().ToString("N")[..8]
         : Model.Id;
     var formId = inputId + "-form";
     var open = Model.StartOpen || !string.IsNullOrWhiteSpace(Model.Term);
-    var grow = Model.OpenToTheLeft ? "left" : "right";
+    var placeholder = string.IsNullOrWhiteSpace(Model.Placeholder) ? "Search our site" : Model.Placeholder;
 }
-@* The header search box. Closed, it is just a button - clicking it opens the search bar on the page
-   the visitor is already on, and nothing navigates. Clicking the button again, with a term typed,
-   submits and lands on the results page.
+@*
+    The header search bar. This one file is the whole thing - markup, styling and behaviour - and it
+    is what the package renders into a site's header when the search link is pressed. Edit it here or
+    from the Search section; a copy saved into the site wins over this one.
 
-   A consuming site can take over this exact spot by creating its own file at
-   Views/Partials/Search/searchbox.cshtml - the site's file wins over this one automatically, with no
-   configuration. The only contract: a GET form containing a text input named "q", and a submit
-   button for it. Keep the data-* hooks to keep the open/close behaviour. *@
+    Two things the package relies on, and the bar stops working without them:
+
+      - a root element carrying data-imobisoft-searchbox, which the package toggles data-open on,
+      - a GET form containing a text input, so a submitted term reaches the search page as ?q=.
+
+    Everything else - the layout, the icons, the colours - is free to change. The bar is placed
+    inside an overlay the package positions over the header, so it already spans the full width of
+    it; there is no need to position anything here.
+*@
 <div class="isb @Model.RootClass"
-     style="--isb-open-width: @Model.OpenWidth; --isb-icon-size: @(Model.IconSize)px"
      data-imobisoft-searchbox
-     data-isb-grow="@grow"
      data-open="@(open ? "true" : "false")">
     <style>
         .isb {
-            position: relative;
-            display: inline-flex;
+            display: flex;
             align-items: center;
-            gap: 6px;
-            vertical-align: middle;
+            gap: 10px;
+            width: 100%;
+            font-family: inherit;
+            background: transparent;
         }
-
-        .isb[data-isb-grow="right"] { flex-direction: row-reverse; }
 
         .isb *,
         .isb *::before,
-        .isb *::after { box-sizing: border-box; }
-
-        .isb-form { display: flex; margin: 0; }
-
-        /* Closed, the input is zero-width and out of the tab order; opening it is a width change,
-           so the bar slides out of the button rather than appearing from nowhere. */
-        .isb-input {
-            width: 0;
-            height: 40px;
-            padding: 0;
-            font: inherit;
-            font-size: 15px;
-            color: #1e293b;
-            background: #fff;
-            border: 1px solid transparent;
-            border-radius: 999px;
-            outline: none;
-            opacity: 0;
-            visibility: hidden;
-            transition: width .22s ease, padding .22s ease, opacity .18s ease, visibility .22s;
+        .isb *::after {
+            box-sizing: border-box;
         }
 
-        .isb[data-open="true"] .isb-input {
-            width: var(--isb-open-width, 260px);
-            padding: 0 16px;
-            border-color: #cbd5e1;
-            opacity: 1;
-            visibility: visible;
+        .isb-form {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            margin: 0;
         }
 
-        .isb-input:focus {
-            border-color: #3b82f6;
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, .15);
-        }
-
-        /* Transparent and colour-inheriting, so the button takes on whatever header it is dropped
-           into without the site styling it. */
-        .isb-btn {
+        /* Submit, on the left, so the bar reads as a search field rather than a form. */
+        .isb-search-btn {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 8px;
-            height: 40px;
-            min-width: 40px;
-            padding: 0 11px;
-            font: inherit;
-            font-size: 14px;
-            font-weight: 600;
-            color: inherit;
-            background: transparent;
-            border: 0;
-            border-radius: 999px;
+            flex-shrink: 0;
+            padding: 8px;
+            background: none;
+            border: none;
             cursor: pointer;
-            transition: background .15s ease;
+            color: #1e5180;
         }
 
-        .isb-btn:hover { background: rgba(15, 23, 42, .07); }
+        .isb-search-btn:focus-visible,
+        .isb-close-btn:focus-visible {
+            outline: 2px solid #2563eb;
+            outline-offset: 2px;
+            border-radius: 4px;
+        }
 
-        .isb-btn:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }
+        /* Takes all the room the overlay gives it, which is the width of the header. */
+        .isb-input {
+            flex: 1 1 auto;
+            min-width: 0;
+            height: 52px;
+            padding: 0;
+            font: inherit;
+            font-size: clamp(16px, 2.2vw, 22px);
+            color: #2c3e50;
+            background: transparent;
+            border: none;
+            outline: none;
+            box-shadow: none;
+        }
+
+        .isb-input::placeholder {
+            color: #5c6b73;
+            opacity: 1;
+        }
+
+        /* Browsers add their own clear button inside a search input once it has text. There is a
+           close button below, so without this there are two crosses side by side. */
+        .isb-input::-webkit-search-cancel-button,
+        .isb-input::-webkit-search-decoration,
+        .isb-input::-webkit-search-results-button,
+        .isb-input::-webkit-search-results-decoration {
+            -webkit-appearance: none;
+            appearance: none;
+            display: none;
+        }
+
+        .isb-input::-ms-clear,
+        .isb-input::-ms-reveal {
+            display: none;
+            width: 0;
+            height: 0;
+        }
+
+        /* Clears the box, and closes the bar once it is already empty. */
+        .isb-close-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            padding: 8px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: #1e5180;
+        }
+
+        .isb-close-btn:hover {
+            color: #0f172a;
+        }
 
         .isb-icon {
-            width: var(--isb-icon-size, 18px);
-            height: var(--isb-icon-size, 18px);
-            flex: 0 0 auto;
-            display: block;
+            width: 22px;
+            height: 22px;
+            stroke-width: 2.2;
+        }
+
+        .isb-icon-img {
+            width: 22px;
+            height: 22px;
             object-fit: contain;
-        }
-
-        /* Narrow screens have no room beside the button, so the bar drops underneath it instead. */
-        @@media (max-width: 560px) {
-            .isb[data-open="true"] .isb-form {
-                position: absolute;
-                top: calc(100% + 10px);
-                right: 0;
-                z-index: 60;
-                padding: 8px;
-                background: #fff;
-                border-radius: 12px;
-                box-shadow: 0 10px 25px rgba(15, 23, 42, .18);
-            }
-
-            .isb[data-isb-grow="right"][data-open="true"] .isb-form {
-                right: auto;
-                left: 0;
-            }
-
-            .isb[data-open="true"] .isb-input { width: min(72vw, 320px); }
-        }
-
-        @@media (prefers-reduced-motion: reduce) {
-            .isb-input { transition: none; }
+            display: block;
         }
     </style>
 
-    @* The form holds the input only. The button submits it from outside via its form attribute,
-       which is what keeps the button sitting still in the header while the bar moves and, on small
-       screens, drops into a panel of its own. *@
     <form id="@formId"
           class="isb-form @Model.FormClass"
           role="search"
           method="get"
           action="@Model.Action"
           data-isb-form>
+
+        <button type="submit"
+                class="isb-search-btn @Model.ButtonClass"
+                title="@Model.ButtonLabel"
+                aria-label="@Model.ButtonLabel">
+            @if (!string.IsNullOrWhiteSpace(Model.IconUrl))
+            {
+                @* A site's own icon file, rendered as an image so it keeps its own colours. *@
+                <img class="isb-icon-img" src="@Model.IconUrl" alt="" aria-hidden="true"
+                     width="@Model.IconSize" height="@Model.IconSize" />
+            }
+            else
+            {
+                <svg class="isb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                    <circle cx="11" cy="11" r="7" />
+                    <line x1="16.5" y1="16.5" x2="21" y2="21" />
+                </svg>
+            }
+        </button>
+
         <input type="search"
                id="@inputId"
                name="@Model.QueryName"
                class="isb-input @Model.InputClass"
                value="@Model.Term"
-               placeholder="@Model.Placeholder"
+               placeholder="@placeholder"
                autocomplete="off"
-               aria-label="@Model.ButtonLabel"
+               aria-label="@placeholder"
                data-isb-input />
-    </form>
 
-    <button type="submit"
-            form="@formId"
-            class="isb-btn @Model.ButtonClass"
-            title="@Model.ButtonLabel"
-            aria-label="@Model.ButtonLabel"
-            aria-expanded="@(open ? "true" : "false")"
-            aria-controls="@inputId"
-            data-isb-btn>
-        @* A site's own file is rendered as an image, so it keeps its own colours; the inline
-           magnifier is the default and takes the colour of the button it sits on. *@
-        @if (!string.IsNullOrWhiteSpace(Model.IconUrl))
-        {
-            <img class="isb-icon" src="@Model.IconUrl" alt="" aria-hidden="true"
-                 width="@Model.IconSize" height="@Model.IconSize" />
-        }
-        else
-        {
-            <svg class="isb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                 stroke-linecap="round" aria-hidden="true" focusable="false">
-                <circle cx="11" cy="11" r="7" />
-                <line x1="16.5" y1="16.5" x2="21" y2="21" />
+        <button type="button"
+                class="isb-close-btn"
+                aria-label="Close search"
+                title="Close"
+                data-isb-close>
+            <svg class="isb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
-        }
-        @if (!string.IsNullOrWhiteSpace(Model.ButtonText))
-        {
-            <span class="isb-btn-text">@Model.ButtonText</span>
-        }
-    </button>
-
-    @* Without JavaScript nothing can open the bar, so leave it open: the button then behaves the way
-       it did before - one press, straight to the results page. *@
-    <noscript>
-        <style>
-            .isb .isb-input {
-                width: var(--isb-open-width, 260px);
-                padding: 0 16px;
-                border-color: #cbd5e1;
-                opacity: 1;
-                visibility: visible;
-            }
-        </style>
-    </noscript>
+        </button>
+    </form>
 </div>
 
 <script>
@@ -201,38 +197,32 @@
 
             var form = root.querySelector('[data-isb-form]');
             var input = root.querySelector('[data-isb-input]');
-            var btn = root.querySelector('[data-isb-btn]');
-            if (!form || !input || !btn) return;
+            var closeBtn = root.querySelector('[data-isb-close]');
+            if (!form || !input) return;
 
-            function isOpen() {
-                return root.getAttribute('data-open') === 'true';
+            // Closing has to reach the package's overlay as well as this element, or the overlay
+            // keeps covering the header after the bar has gone.
+            function close() {
+                root.setAttribute('data-open', 'false');
+
+                var holder = root.parentNode;
+                if (holder && holder.classList && holder.classList.contains('imsx-holder')) {
+                    holder.setAttribute('data-open', 'false');
+                }
             }
 
-            function setOpen(open) {
-                root.setAttribute('data-open', open ? 'true' : 'false');
-                btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+            // Clears a typed term first, and closes once there is nothing left to clear.
+            if (closeBtn) {
+                closeBtn.addEventListener('click', function () {
+                    if (input.value.trim() !== '') {
+                        input.value = '';
+                        input.focus();
+                    } else {
+                        close();
+                    }
+                });
             }
 
-            btn.addEventListener('click', function (e) {
-                // First press only opens the bar: the visitor stays on the page they are on.
-                if (!isOpen()) {
-                    e.preventDefault();
-                    setOpen(true);
-                    input.focus();
-                    return;
-                }
-
-                // Open with nothing typed - a second press is a dismiss, not a search for "".
-                if (!input.value.trim()) {
-                    e.preventDefault();
-                    setOpen(false);
-                    return;
-                }
-
-                // Open with a term: let the form submit and take the visitor to the results page.
-            });
-
-            // Enter inside the box is the same submit, so guard the empty case there too.
             form.addEventListener('submit', function (e) {
                 if (!input.value.trim()) {
                     e.preventDefault();
@@ -242,16 +232,8 @@
 
             input.addEventListener('keydown', function (e) {
                 if (e.key === 'Escape' || e.key === 'Esc') {
-                    setOpen(false);
-                    btn.focus();
+                    close();
                 }
-            });
-
-            // An empty bar left open is just clutter, so clicking away closes it. A typed term is
-            // kept, in case the click was somewhere harmless.
-            document.addEventListener('click', function (e) {
-                if (!isOpen() || root.contains(e.target) || input.value.trim()) return;
-                setOpen(false);
             });
         });
     })();

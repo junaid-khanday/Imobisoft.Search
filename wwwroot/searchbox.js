@@ -5,10 +5,13 @@
     consuming site needs no markup, no view change and no code. What it does on load:
 
       1. finds the links in a site's header or nav that point at a search page,
-      2. leaves each link exactly as it is - the site's own styling, text and icon stay - and hangs
-         a search box off it,
-      3. the first click opens that box instead of navigating,
-      4. the next click, with a term typed, submits to the link's own URL as ?q=<term>.
+      2. leaves each link exactly as it is - the site's own styling, text and icon stay - and fetches
+         the search box from the package, rendered from Views/Partials/Search/HeaderSearchBox.cshtml,
+      3. drops that markup in beside the link and runs whatever script it brought with it,
+      4. the first click opens the box instead of navigating; the next, with a term typed, submits.
+
+    The box's markup, styling and behaviour all live in that one view, so editing it - in the project
+    or from the Search section - is what changes the header box.
 
     Without this file the link still works: it goes straight to the search page, as it always did.
 
@@ -24,15 +27,10 @@
         return;
     }
 
-    var counter = 0;
-
     var config = {
         containers: script.getAttribute('data-containers') || 'header, nav, [role="banner"], [role="navigation"]',
-        placeholder: script.getAttribute('data-placeholder') || 'Search...',
         queryName: script.getAttribute('data-query') || 'q',
-        label: script.getAttribute('data-label') || 'Search',
-        icon: script.getAttribute('data-icon') || '',
-        iconSize: parseInt(script.getAttribute('data-icon-size'), 10) || 18,
+        boxEndpoint: script.getAttribute('data-box-endpoint') || '',
         stylesheet: script.getAttribute('data-stylesheet') || '',
         paths: pathList('data-paths'),
         excluded: pathList('data-excluded')
@@ -96,53 +94,6 @@
         link.rel = 'stylesheet';
         link.href = config.stylesheet;
         document.head.appendChild(link);
-    }
-
-    /*
-        The icon on the box's own button. A site that named a file of its own gets an <img>, which
-        renders a .svg, .png, .webp or .gif alike and keeps the file's own colours. With nothing
-        named, the magnifier below is drawn inline so it needs no request and inherits the button's
-        colour through currentColor.
-
-        The file is always rendered as an image, never as markup, so a path entered in the
-        backoffice cannot put script into the page.
-    */
-    function buildIcon() {
-        if (config.icon) {
-            var img = document.createElement('img');
-            img.className = 'imsx-go-icon';
-            img.src = config.icon;
-            img.alt = '';
-            img.setAttribute('aria-hidden', 'true');
-            img.width = config.iconSize;
-            img.height = config.iconSize;
-            return img;
-        }
-
-        var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('viewBox', '0 0 24 24');
-        svg.setAttribute('fill', 'none');
-        svg.setAttribute('stroke', 'currentColor');
-        svg.setAttribute('stroke-width', '2');
-        svg.setAttribute('stroke-linecap', 'round');
-        svg.setAttribute('aria-hidden', 'true');
-        svg.setAttribute('focusable', 'false');
-
-        var circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        circle.setAttribute('cx', '11');
-        circle.setAttribute('cy', '11');
-        circle.setAttribute('r', '7');
-
-        var handle = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        handle.setAttribute('x1', '16.5');
-        handle.setAttribute('y1', '16.5');
-        handle.setAttribute('x2', '21');
-        handle.setAttribute('y2', '21');
-
-        svg.appendChild(circle);
-        svg.appendChild(handle);
-
-        return svg;
     }
 
     function collect() {
@@ -212,82 +163,142 @@
         return looksLikeSearchPage(target.pathname);
     }
 
+    /*
+        Inserts the header box next to the site's search link.
+
+        The markup comes from the server, rendered from Views/Partials/Search/HeaderSearchBox.cshtml
+        - that is what makes editing that one file change the header box. This script used to build
+        the box in the DOM, which meant the view only mattered to a site that placed the view
+        component by hand.
+
+        The view owns its own markup, styling and behaviour. All this does is fetch it, put it in
+        place, run whatever script it brought with it, and point the site's own link at it.
+    */
     function enhance(link, target) {
         link.dataset.imobisoftSearchBound = 'true';
 
-        var inputId = 'imsx-' + (++counter);
+        var url = config.boxEndpoint
+            + '?resultsUrl=' + encodeURIComponent(target.pathname + (target.search || ''))
+            + '&term=' + encodeURIComponent(currentTerm());
 
-        var wrap = document.createElement('span');
-        wrap.className = 'imsx';
-        wrap.setAttribute('data-imobisoft-searchbox', '');
-        wrap.setAttribute('data-open', 'false');
-        wrap.style.setProperty('--imsx-icon-size', config.iconSize + 'px');
+        fetch(url, { headers: { 'Accept': 'text/html' } })
+            .then(function (response) {
+                if (!response.ok) {
+                    throw new Error('HTTP ' + response.status);
+                }
+                return response.text();
+            })
+            .then(function (html) { insert(link, html); })
+            .catch(function (err) {
+                // The link is left exactly as it was, so search still works the old way.
+                console.error('Imobisoft.Search: could not load the header search box.', err);
+            });
+    }
 
-        var form = document.createElement('form');
-        form.className = 'imsx-form';
-        form.setAttribute('role', 'search');
-        form.method = 'get';
-        form.action = target.pathname;
+    function currentTerm() {
+        try {
+            return new URLSearchParams(window.location.search).get(config.queryName) || '';
+        } catch (e) {
+            return '';
+        }
+    }
 
-        // Visibility is owned here rather than in the stylesheet, so the panel cannot be caught
-        // showing while searchbox.css is still on its way.
-        form.style.display = 'none';
-
-        // A GET submit replaces the whole query string, so anything already on the link is put
-        // back as hidden fields instead of being silently dropped.
-        target.searchParams.forEach(function (value, key) {
-            if (key === config.queryName) {
-                return;
+    /*
+        The element the bar covers. The nearest ancestor matching the configured containers - the
+        site's own header or nav - so the bar is exactly as wide as the header is. Falls back to the
+        link's parent when the link was opted in from outside any of them.
+    */
+    function hostFor(link) {
+        if (typeof link.closest === 'function' && config.containers) {
+            try {
+                var match = link.closest(config.containers);
+                if (match) {
+                    return match;
+                }
+            } catch (e) {
+                // A selector list the browser dislikes is not worth failing over.
             }
+        }
 
-            var hidden = document.createElement('input');
-            hidden.type = 'hidden';
-            hidden.name = key;
-            hidden.value = value;
-            form.appendChild(hidden);
+        return link.parentNode;
+    }
+
+    function insert(link, html) {
+        var holder = document.createElement('span');
+        holder.className = 'imsx-holder';
+        holder.innerHTML = html;
+
+        var root = holder.querySelector('[data-imobisoft-searchbox]');
+
+        if (!root) {
+            console.error('Imobisoft.Search: the header search box view rendered no '
+                + '[data-imobisoft-searchbox] element, so there is nothing to show or toggle.');
+            return;
+        }
+
+        // Mounted into the header itself rather than beside the link, so the bar can span the full
+        // width of it and cover what is there. Inline beside the link it could only ever be as wide
+        // as the gap next to the link, and would push the nav around.
+        var host = hostFor(link);
+
+        // The overlay is positioned against the header, so the header has to be a positioning
+        // context. Most are not, and setting it is harmless - it changes nothing on its own.
+        try {
+            if (window.getComputedStyle && window.getComputedStyle(host).position === 'static') {
+                host.style.position = 'relative';
+            }
+        } catch (e) {
+            host.style.position = 'relative';
+        }
+
+        holder.setAttribute('data-open', 'false');
+        host.appendChild(holder);
+
+        // Scripts set through innerHTML never execute, so each one is re-created. The view carries
+        // its own behaviour, so without this the box would render and then do nothing.
+        holder.querySelectorAll('script').forEach(function (original) {
+            var copy = document.createElement('script');
+
+            Array.prototype.forEach.call(original.attributes, function (attr) {
+                copy.setAttribute(attr.name, attr.value);
+            });
+
+            copy.text = original.textContent;
+            original.parentNode.replaceChild(copy, original);
         });
 
-        var input = document.createElement('input');
-        input.type = 'search';
-        input.id = inputId;
-        input.name = config.queryName;
-        input.className = 'imsx-input';
-        input.placeholder = config.placeholder;
-        input.autocomplete = 'off';
-        input.setAttribute('aria-label', (link.textContent || '').trim() || config.label);
+        bind(link, root);
+    }
 
-        var go = document.createElement('button');
-        go.type = 'submit';
-        go.className = 'imsx-go';
-        go.setAttribute('aria-label', config.label);
-        go.appendChild(buildIcon());
-
-        form.appendChild(input);
-        form.appendChild(go);
-
-        // The link stays put and keeps every class, icon and label the site gave it: it is still
-        // the control the visitor presses, it just no longer leaves the page on the first press.
-        link.parentNode.insertBefore(wrap, link);
-        wrap.appendChild(link);
-        wrap.appendChild(form);
-
-        link.setAttribute('aria-expanded', 'false');
-        link.setAttribute('aria-controls', inputId);
+    /*
+        Points the site's existing link at the box: first press opens it, a second press with a term
+        typed submits, and a second press on an empty box closes it again. The view is expected to
+        hide itself while data-open is "false" - the one shipped does, in its own stylesheet.
+    */
+    function bind(link, root) {
+        var form = root.querySelector('[data-isb-form]') || root.querySelector('form');
+        var input = root.querySelector('[data-isb-input]') || root.querySelector('input[type="search"], input[type="text"]');
 
         function isOpen() {
-            return wrap.getAttribute('data-open') === 'true';
+            return root.getAttribute('data-open') === 'true';
         }
 
         function setOpen(open) {
-            wrap.setAttribute('data-open', open ? 'true' : 'false');
+            root.setAttribute('data-open', open ? 'true' : 'false');
             link.setAttribute('aria-expanded', open ? 'true' : 'false');
-            form.style.display = open ? 'flex' : 'none';
 
-            // A link in the left half of the window has no room for a right-aligned panel.
-            if (open) {
-                var box = wrap.getBoundingClientRect();
-                wrap.setAttribute('data-align', box.left < window.innerWidth / 2 ? 'left' : 'right');
+            // Mirrored onto the wrapper as well: the wrapper is the overlay, so left showing it
+            // would keep covering the header and swallowing clicks even with the bar hidden.
+            if (root.parentNode && root.parentNode.classList
+                && root.parentNode.classList.contains('imsx-holder')) {
+                root.parentNode.setAttribute('data-open', open ? 'true' : 'false');
             }
+        }
+
+        link.setAttribute('aria-expanded', isOpen() ? 'true' : 'false');
+
+        if (input && input.id) {
+            link.setAttribute('aria-controls', input.id);
         }
 
         link.addEventListener('click', function (e) {
@@ -298,60 +309,44 @@
 
             e.preventDefault();
 
-            // First press opens the box: the visitor stays on the page they are on.
             if (!isOpen()) {
                 setOpen(true);
-                input.focus();
+                if (input) { input.focus(); }
                 return;
             }
 
-            // Open with nothing typed - a second press is a dismiss, not a search for "".
-            if (!input.value.trim()) {
+            if (input && !input.value.trim()) {
                 setOpen(false);
                 return;
             }
 
-            // Open with a term: this press is the search, and it lands on the results page.
-            form.submit();
+            if (form) { form.submit(); }
         });
 
-        // Enter inside the box submits natively, so the empty case is guarded here too.
-        form.addEventListener('submit', function (e) {
-            if (!input.value.trim()) {
-                e.preventDefault();
-                input.focus();
-            }
-        });
-
-        input.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape' || e.key === 'Esc') {
-                setOpen(false);
-                link.focus();
-            }
-        });
-
-        // An empty box left open is just clutter. A typed term is kept, in case the click was
-        // somewhere harmless.
+        // An empty box left open is clutter, so clicking away closes it. A typed term is kept.
         document.addEventListener('click', function (e) {
-            if (!isOpen() || wrap.contains(e.target) || input.value.trim()) {
+            if (!isOpen() || root.contains(e.target) || link.contains(e.target)) {
                 return;
             }
 
-            setOpen(false);
+            if (!input || !input.value.trim()) {
+                setOpen(false);
+            }
         });
 
-        // On the results page itself the box opens showing the term that produced it, ready to be
-        // changed rather than retyped.
-        if (normalisePath(window.location.pathname) === normalisePath(target.pathname)) {
-            var current = new URLSearchParams(window.location.search).get(config.queryName);
-            if (current) {
-                input.value = current;
-                setOpen(true);
-            }
+        // On the results page the box opens showing the term that produced it.
+        if (input && input.value.trim()) {
+            setOpen(true);
         }
     }
 
     function run() {
+        if (!config.boxEndpoint) {
+            // Without the endpoint there is nothing to render the box from, and building one here
+            // would put the look of it back in JavaScript where a view cannot reach it.
+            return;
+        }
+
         ensureStylesheet();
 
         collect().forEach(function (link) {
