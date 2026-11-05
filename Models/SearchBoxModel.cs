@@ -5,7 +5,7 @@ namespace Imobisoft.Search.Models;
 /// already on. Nothing navigates until a term has been typed and the button is pressed again - that
 /// submit is what takes the visitor to <see cref="Action"/> with the term as <c>?q=</c>.
 /// <para>
-/// Rendered by <c>Views/Partials/Search/searchbox.cshtml</c>. A consuming site that creates a file
+/// Rendered by <c>Views/Partials/Search/HeaderSearchBox.cshtml</c>. A consuming site that creates a file
 /// at that exact path replaces the markup everywhere, and is free to ignore this model and hard-code
 /// its own - the only contract is a GET form containing a text input named <see cref="QueryName"/>
 /// and a submit button.

@@ -50,27 +50,7 @@ public sealed class ImobisoftSearchController : Controller
 
         ImobisoftSearchPageViewModel model = await BuildModel(q, page, cancellationToken);
 
-        return View(model);
-    }
-
-    /// <summary>
-    /// Just the results, for the "load more" button to append. Rendering the same partial the page
-    /// uses means the appended results can never drift from the first page's.
-    /// </summary>
-    [HttpGet("results")]
-    public async Task<IActionResult> Results(
-        [FromQuery] string? q,
-        [FromQuery] int page = 1,
-        CancellationToken cancellationToken = default)
-    {
-        if (!_options.EnableSearchPage)
-        {
-            return NotFound();
-        }
-
-        ImobisoftSearchPageViewModel model = await BuildModel(q, page, cancellationToken);
-
-        return PartialView("_Results", model);
+        return View("SearchPage", model);
     }
 
     private async Task<ImobisoftSearchPageViewModel> BuildModel(string? q, int page, CancellationToken cancellationToken)

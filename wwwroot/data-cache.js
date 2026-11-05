@@ -221,6 +221,38 @@ export async function updateSettings(fetchFn, settings) {
     return res;
 }
 
+// ----------------- TEMPLATES API -----------------
+
+/** The views a site may take over, and which ones it already has. */
+export function getTemplates(fetchFn, { force = false } = {}) {
+    const url = `${getBaseApiUrl()}templates`;
+    if (force) _entries.delete("templates");
+    return _read("templates", SETTINGS_TTL_MS, () => _json(fetchFn, url));
+}
+
+/** The package's own source for one view, plus the site's copy if it has one. */
+export function getTemplate(fetchFn, id) {
+    return _json(fetchFn, `${getBaseApiUrl()}templates/${encodeURIComponent(id)}`);
+}
+
+export async function saveTemplate(fetchFn, id, content) {
+    const res = await _json(fetchFn, `${getBaseApiUrl()}templates/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content })
+    });
+    _entries.delete("templates");
+    return res;
+}
+
+export async function resetTemplate(fetchFn, id) {
+    const res = await _json(fetchFn, `${getBaseApiUrl()}templates/${encodeURIComponent(id)}`, {
+        method: 'DELETE'
+    });
+    _entries.delete("templates");
+    return res;
+}
+
 // ----------------- AI API -----------------
 
 /**

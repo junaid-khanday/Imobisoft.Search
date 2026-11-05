@@ -235,6 +235,38 @@
         <member name="M:Imobisoft.Search.Api.SearchProfileController.Problem(Imobisoft.Search.Services.SearchProfileOperationStatus)">
             <summary>Turns a failed operation into a response the dashboard can show verbatim.</summary>
         </member>
+        <member name="T:Imobisoft.Search.Api.SearchTemplateSaveRequest">
+            <summary>Body for saving a view.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Api.SearchTemplateListResult">
+            <summary>The view list, plus whether an edit needs a rebuild to show up.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Api.SearchTemplateListResult.EditsApplyImmediately">
+            <summary>False on a site without Razor runtime compilation, where a save needs a rebuild.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Api.SearchTemplateController">
+            <summary>
+            Shows the source of the views the package ships, and writes an editable copy into the site.
+            <para>
+            A Razor view is executable C#, so editing one is editing code that runs on the server - the same
+            capability Umbraco's own template editor carries. It is gated the same way as every other
+            endpoint here: a signed-in backoffice user who holds the Search section. Only the views the
+            package owns can be written, from a fixed list, so there is no path for a caller to supply.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Api.SearchTemplateController.List">
+            <summary>Every view a site may take over, and which ones it already has.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Api.SearchTemplateController.Get(System.String)">
+            <summary>The package's own source for one view, and the site's copy if it has one.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Api.SearchTemplateController.Save(System.String,Imobisoft.Search.Api.SearchTemplateSaveRequest)">
+            <summary>Writes the site's own copy, which then wins over the package's.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Api.SearchTemplateController.Reset(System.String)">
+            <summary>Removes the site's copy, putting the package's own view back in use.</summary>
+        </member>
         <member name="T:Imobisoft.Search.Api.Security.ImobisoftSearchSectionRequirement">
             <summary>Requires the current backoffice user to have been granted the Search section.</summary>
         </member>
@@ -1136,45 +1168,13 @@
             profile's ranking order for that request; otherwise <see cref="P:Imobisoft.Search.Models.RankingRules.SortBy"/> rules.
             </summary>
         </member>
-        <member name="T:Imobisoft.Search.Models.SearchBarModel">
-            <summary>
-            Everything the overridable search-bar partial needs. The package renders its own copy of
-            <c>Views/Partials/Search/searchbar.cshtml</c>; a consuming site that creates a file at that
-            exact path replaces it everywhere, and is free to ignore this model and hard-code its own
-            markup - the only contract is a text input named "q" inside a GET form.
-            </summary>
-        </member>
-        <member name="P:Imobisoft.Search.Models.SearchBarModel.Action">
-            <summary>Form action URL. Empty submits to the current page, which is what both built-in views want.</summary>
-        </member>
-        <member name="P:Imobisoft.Search.Models.SearchBarModel.Term">
-            <summary>The current query text, echoed back into the box.</summary>
-        </member>
-        <member name="P:Imobisoft.Search.Models.SearchBarModel.Placeholder">
-            <summary>Placeholder text shown inside an empty box.</summary>
-        </member>
-        <member name="P:Imobisoft.Search.Models.SearchBarModel.FormClass">
-            <summary>CSS class for the form element.</summary>
-        </member>
-        <member name="P:Imobisoft.Search.Models.SearchBarModel.WrapClass">
-            <summary>CSS class for the wrapper around the input.</summary>
-        </member>
-        <member name="P:Imobisoft.Search.Models.SearchBarModel.InputClass">
-            <summary>CSS class for the text input itself.</summary>
-        </member>
-        <member name="P:Imobisoft.Search.Models.SearchBarModel.ButtonClass">
-            <summary>CSS class for the submit button.</summary>
-        </member>
-        <member name="P:Imobisoft.Search.Models.SearchBarModel.ButtonText">
-            <summary>Submit button label.</summary>
-        </member>
         <member name="T:Imobisoft.Search.Models.SearchBoxModel">
             <summary>
             The header search box: one button that opens a search bar in place, on the page the visitor is
             already on. Nothing navigates until a term has been typed and the button is pressed again - that
             submit is what takes the visitor to <see cref="P:Imobisoft.Search.Models.SearchBoxModel.Action"/> with the term as <c>?q=</c>.
             <para>
-            Rendered by <c>Views/Partials/Search/searchbox.cshtml</c>. A consuming site that creates a file
+            Rendered by <c>Views/Partials/Search/HeaderSearchBox.cshtml</c>. A consuming site that creates a file
             at that exact path replaces the markup everywhere, and is free to ignore this model and hard-code
             its own - the only contract is a GET form containing a text input named <see cref="P:Imobisoft.Search.Models.SearchBoxModel.QueryName"/>
             and a submit button.
@@ -3066,6 +3066,93 @@
             document needs no schema and no migration when a new setting is added.
             </summary>
         </member>
+        <member name="T:Imobisoft.Search.Services.Templates.SearchTemplateInfo">
+            <summary>One view a site may take over, as the backoffice lists it.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Templates.SearchTemplateInfo.Id">
+            <summary>Stable id used in the API, so a path never travels in a URL.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Templates.SearchTemplateInfo.Path">
+            <summary>Where a site's own copy lives, relative to the project root.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Templates.SearchTemplateInfo.Overridden">
+            <summary>True when this site has its own copy, so the package's is no longer in use.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Templates.SearchTemplateInfo.PreviewPath">
+            <summary>
+            A page on this site where this view is actually rendered, so it can be previewed as a visitor
+            sees it rather than only read as source. Empty where the package cannot know - a view a site
+            placed itself could be on any page.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Templates.SearchTemplateContent">
+            <summary>The source of one view: what the package ships, and what the site has made of it.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Templates.SearchTemplateContent.Default">
+            <summary>The markup the package ships, read from the assembly. Always available, never written to.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Templates.SearchTemplateContent.Override">
+            <summary>The site's own copy, or null when it has none and the package's is in use.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Templates.ISearchTemplateService">
+            <summary>
+            Lets the backoffice show the source of the views the package ships, and write an editable copy
+            into the site so it can be changed without opening the project.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Templates.ISearchTemplateService.Save(System.String,System.String)">
+            <summary>Writes the site's own copy. Returns the problem, or null when it saved.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Templates.ISearchTemplateService.Reset(System.String)">
+            <summary>Deletes the site's copy, putting the package's own view back in use.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Templates.ISearchTemplateService.EditsApplyImmediately">
+            <summary>
+            Whether an edit takes effect without rebuilding. False on a site without Razor runtime
+            compilation, where a saved view is only picked up on the next build - worth saying plainly
+            rather than leaving someone wondering why nothing changed.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Templates.SearchTemplateService">
+            <inheritdoc />
+        </member>
+        <member name="F:Imobisoft.Search.Services.Templates.SearchTemplateService.Definitions">
+            <summary>
+            The views a site may take over, and the only paths this service will ever write to. An
+            allowlist rather than a path from the caller: nothing here can be pointed at a file the
+            package does not own.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Templates.SearchTemplateService.EditsApplyImmediately">
+            <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.Templates.SearchTemplateService.List">
+            <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.Templates.SearchTemplateService.Get(System.String)">
+            <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.Templates.SearchTemplateService.Save(System.String,System.String)">
+            <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.Templates.SearchTemplateService.Reset(System.String)">
+            <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.Templates.SearchTemplateService.FullPath(Imobisoft.Search.Services.Templates.SearchTemplateService.SearchTemplateDefinition)">
+            <summary>
+            Resolves to a path under the site's own root, built from the allowlist entry rather than
+            from anything a caller sent - so there is no input to traverse out of.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Templates.SearchTemplateService.ReadShipped(Imobisoft.Search.Services.Templates.SearchTemplateService.SearchTemplateDefinition)">
+            <summary>The markup the package ships, read from the assembly it is embedded in.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Templates.SearchTemplateService.SearchTemplateDefinition">
+            <summary>One allowlisted view.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Templates.SearchTemplateService.SearchTemplateDefinition.#ctor(System.String,System.String,System.String,System.String,System.String)">
+            <summary>One allowlisted view.</summary>
+        </member>
         <member name="T:Imobisoft.Search.Web.HeaderSearchBoxTagHelperComponent">
             <summary>
             Puts the header search box on every page of the site, without the site doing anything.
@@ -3156,8 +3243,8 @@
              </para>
              <para>
              The default view lives in this package; a site can take over the markup by creating
-             <c>Views/Partials/Search/searchbox.cshtml</c> in its own project - that copy wins, nothing else
-             changes.
+             <c>Views/Partials/Search/HeaderSearchBox.cshtml</c> in its own project, or by editing it from
+             the Search section - that copy wins, nothing else changes.
              </para>
              </summary>
              <example>
@@ -3202,77 +3289,6 @@
             </param>
             <param name="iconSize">Icon width and height in pixels. Null uses the profile's size.</param>
         </member>
-        <member name="T:Imobisoft.Search.Web.ImobisoftSearchListingViewComponent">
-            <summary>
-            The whole search experience as a single embeddable component, so any site - not just the
-            package's own page - gets it by writing one line:
-            <para><c>@await Component.InvokeAsync("ImobisoftSearchListing")</c></para>
-            <para>
-            Filter dropdowns render above the search box from the moment the page opens (with live
-            counts across everything the profile can see), picking one searches on its own without a
-            term, and Load More only ever appears when the profile enables it. Everything is driven by
-            the profile configured in the backoffice; sites customise styling only.
-            </para>
-            <para>
-            The default view lives in this package; a site can take over the markup by creating
-            <c>Views/Shared/Components/ImobisosoftSearchListing/Default.cshtml</c> in its own project -
-            that copy wins, nothing else changes.
-            </para>
-            </summary>
-        </member>
-        <member name="M:Imobisoft.Search.Web.ImobisoftSearchListingViewComponent.InvokeAsync(System.String,System.Nullable{System.Int32},System.Nullable{System.Int32},System.String)">
-            <summary>
-            Renders the listing. Every argument is optional: anything left null is read from the
-            query string, which keeps the page bookmarkable and means "Load more" works by fetching
-            the same URL at the next page.
-            </summary>
-            <param name="searchTerm">Overrides the q query parameter when given.</param>
-            <param name="pageNumber">Overrides the page query parameter when given.</param>
-            <param name="pageSize">Overrides the profile's results-per-page rule when set.</param>
-            <param name="profileAlias">
-            Which saved profile to run. Null or empty uses the default profile - the same one the
-            dashboard toggles apply to.
-            </param>
-        </member>
-        <member name="T:Imobisoft.Search.Web.ImobisoftSearchListingViewModel">
-            <summary>
-            What the embeddable search listing component renders. A site drops
-            <c>@await Component.InvokeAsync("ImobisoftSearchListing")</c> into any template and gets the
-            whole experience - filter dropdowns above the search box from the moment the page opens,
-            results, spelling suggestions and Load More - driven entirely by the profile configured in
-            the backoffice.
-            </summary>
-        </member>
-        <member name="P:Imobisoft.Search.Web.ImobisoftSearchListingViewModel.Term">
-            <summary>What the visitor typed.</summary>
-        </member>
-        <member name="P:Imobisoft.Search.Web.ImobisoftSearchListingViewModel.Page">
-            <summary>1-based page number this listing shows.</summary>
-        </member>
-        <member name="P:Imobisoft.Search.Web.ImobisoftSearchListingViewModel.Response">
-            <summary>Null before a search has run, which is how the view knows to show the welcome box.</summary>
-        </member>
-        <member name="P:Imobisoft.Search.Web.ImobisoftSearchListingViewModel.HasSearched">
-            <summary>True once the visitor searched or picked a filter - controls results vs welcome box.</summary>
-        </member>
-        <member name="P:Imobisoft.Search.Web.ImobisoftSearchListingViewModel.ConfiguredFacets">
-            <summary>
-            The facet dimensions the profile defines. These drive the filter bar rather than the
-            response's facet results do alone, which is what guarantees the dropdowns exist above the
-            search box from the moment the page opens - even before any search has run to fill in
-            their counts.
-            </summary>
-        </member>
-        <member name="P:Imobisoft.Search.Web.ImobisoftSearchListingViewModel.ConfiguredSortOptions">
-            <summary>
-            The sort choices the profile defines (A-Z, Z-A, price low-to-high, ...). These drive the
-            "Sort by" dropdown the same way <see cref="P:Imobisoft.Search.Web.ImobisoftSearchListingViewModel.ConfiguredFacets"/> drives the filter bar: from
-            definitions, so the dropdown exists before any search has run.
-            </summary>
-        </member>
-        <member name="P:Imobisoft.Search.Web.ImobisoftSearchListingViewModel.SelectedSort">
-            <summary>The currently selected sort alias, echoed so the right option renders selected.</summary>
-        </member>
         <member name="T:Imobisoft.Search.Web.ImobisoftSearchController">
             <summary>
             A working search page, served by the package.
@@ -3290,12 +3306,6 @@
         </member>
         <member name="M:Imobisoft.Search.Web.ImobisoftSearchController.Index(System.String,System.Int32,System.Threading.CancellationToken)">
             <summary>The search page. A request with no term renders the form on its own.</summary>
-        </member>
-        <member name="M:Imobisoft.Search.Web.ImobisoftSearchController.Results(System.String,System.Int32,System.Threading.CancellationToken)">
-            <summary>
-            Just the results, for the "load more" button to append. Rendering the same partial the page
-            uses means the appended results can never drift from the first page's.
-            </summary>
         </member>
         <member name="T:Imobisoft.Search.Web.ImobisoftSearchPageViewModel">
             <summary>What the package's built-in search page renders.</summary>

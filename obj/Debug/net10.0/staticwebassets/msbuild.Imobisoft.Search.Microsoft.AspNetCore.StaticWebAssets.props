@@ -72,12 +72,12 @@
       <RelatedAsset></RelatedAsset>
       <AssetTraitName></AssetTraitName>
       <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>4l614l5yxk</Fingerprint>
-      <Integrity>mJ9HayVFihVILJGc2TqvdOYnF+peRu3JlIUYoCqfVXg=</Integrity>
+      <Fingerprint>s9cip73zfn</Fingerprint>
+      <Integrity>YMwchWOIpBXZjTyTq9t53c6AoQXmQrw31JzOdDTxpZY=</Integrity>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-      <FileLength>10403</FileLength>
-      <LastWriteTime>Thu, 05 Nov 2026 07:28:26 GMT</LastWriteTime>
+      <FileLength>11576</FileLength>
+      <LastWriteTime>Thu, 05 Nov 2026 09:15:43 GMT</LastWriteTime>
       <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\data-cache.js'))</OriginalItemSpec>
     </StaticWebAsset>
     <StaticWebAsset Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\searchbox.css'))">
@@ -152,12 +152,12 @@
       <RelatedAsset></RelatedAsset>
       <AssetTraitName></AssetTraitName>
       <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>rm4ptwp8zb</Fingerprint>
-      <Integrity>Tc+Iho58gH3srA16rd2e0Y6lmnDqckYPydwi6eamk90=</Integrity>
+      <Fingerprint>nw7qnckna4</Fingerprint>
+      <Integrity>eS4hMCcrUemliUm0iy/XHMGK+qOSYbiBYePC/9EDqUc=</Integrity>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-      <FileLength>424552</FileLength>
-      <LastWriteTime>Thu, 05 Nov 2026 08:14:56 GMT</LastWriteTime>
+      <FileLength>439976</FileLength>
+      <LastWriteTime>Thu, 05 Nov 2026 09:24:38 GMT</LastWriteTime>
       <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\workspace.js'))</OriginalItemSpec>
     </StaticWebAsset>
   </ItemGroup>

@@ -45,6 +45,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The views are compiled into the assembly as MVC views, and also embedded as text so the
+         backoffice can show a site its shipped source and write an editable copy of it. Embedding
+         does not affect the compiled copies; it just keeps the original markup available at runtime. -->
+    <EmbeddedResource Include="Views\**\*.cshtml" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Content Remove="wwwroot\**\*" />
     <Content Include="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Always" />
   </ItemGroup>

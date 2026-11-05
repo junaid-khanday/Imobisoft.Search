@@ -506,8 +506,23 @@
 
             <header class="imobisoft-header">
                 <h1>Search</h1>
-                <partial name="~/Views/Partials/Search/searchbar.cshtml"
-                         model="new Imobisoft.Search.Models.SearchBarModel { Term = Model.Term }" />
+
+                @* The search bar. Inlined rather than a partial so this one file is the whole page -
+                   restyle it here. The only contract is a text input named "q" inside this page's
+                   GET form, which the form above already is. *@
+                <div class="imobisoft-search-form">
+                    <div class="imobisoft-input-wrap">
+                        <input type="search"
+                               id="q"
+                               name="q"
+                               class="imobisoft-input"
+                               value="@Model.Term"
+                               placeholder="Type a word or phrase to search..."
+                               autocomplete="off"
+                               aria-label="Search" />
+                    </div>
+                    <button type="submit" class="imobisoft-btn imobisoft-btn-primary">Search</button>
+                </div>
             </header>
 
             @if (response is null)
@@ -602,7 +617,57 @@
                         data-imobisoft-ai-term="@(ai is null ? null : response.Term)"
                         data-imobisoft-ai-question-limit="@(ai is null ? null : ai.MaxQuestionCharacters.ToString())"
                         data-imobisoft-ai-profile="@(ai is null ? null : response.ProfileAlias)">
-                        <partial name="_Results" model="Model" />
+                        @* The result cards. Inlined for the same reason as the search bar: this file
+                           is the whole page. Keep one <li> per result - Load More below copies them
+                           out of the next page's markup. *@
+                        @foreach (SearchResultItem item in response.Results)
+                        {
+                            <li class="imobisoft-result-card @(item.IsBestBet ? "is-bestbet" : "")">
+                                <div class="imobisoft-result-header">
+                                    @if (item.IsBestBet)
+                                    {
+                                        <span class="imobisoft-badge imobisoft-badge-bestbet">★ Pinned Best Bet</span>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(item.ContentTypeAlias) || !string.IsNullOrWhiteSpace(item.IndexType))
+                                    {
+                                        <span class="imobisoft-badge imobisoft-badge-type">@(item.ContentTypeAlias ?? item.IndexType)</span>
+                                    }
+                                </div>
+
+                                <h3 class="imobisoft-result-title">
+                                    @if (!string.IsNullOrWhiteSpace(item.Url))
+                                    {
+                                        <a href="@item.Url">@item.Name</a>
+                                    }
+                                    else
+                                    {
+                                        <span>@item.Name</span>
+                                    }
+                                </h3>
+
+                                @if (!string.IsNullOrWhiteSpace(item.Highlight))
+                                {
+                                    @* The engine HTML-encodes the snippet and leaves only the
+                                       configured highlight tag intact, so this is safe as markup. *@
+                                    <div class="imobisoft-result-snippet">@Html.Raw(item.Highlight)</div>
+                                }
+
+                                <div class="imobisoft-result-meta">
+                                    @if (!string.IsNullOrWhiteSpace(item.Url))
+                                    {
+                                        <span class="imobisoft-result-url">@item.Url</span>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(item.Culture))
+                                    {
+                                        <span class="imobisoft-result-culture">Culture: @item.Culture</span>
+                                    }
+                                    @if (item.Fields.TryGetValue("updateDate", out var updateDate) && !string.IsNullOrWhiteSpace(updateDate))
+                                    {
+                                        <span class="imobisoft-result-date">Updated: @updateDate</span>
+                                    }
+                                </div>
+                            </li>
+                        }
                     </ol>
                     @if (ai is not null)
                     {
@@ -643,12 +708,18 @@
                                     params.set('page', next);
 
                                     try {
-                                        var fetchUrl = '@(Model.PagePath.TrimEnd('/'))/results?' + params.toString();
-                                        var res = await fetch(fetchUrl);
+                                        // The next page is this same page at the next page number,
+                                        // and its result cards are lifted out of the response. That
+                                        // keeps everything in this one file - there is no separate
+                                        // partial or endpoint serving fragments of it.
+                                        var res = await fetch(window.location.pathname + '?' + params.toString());
                                         if (!res.ok) throw new Error('Failed to fetch results');
 
                                         var html = await res.text();
-                                        list.insertAdjacentHTML('beforeend', html);
+                                        var doc = new DOMParser().parseFromString(html, 'text/html');
+                                        var added = doc.querySelectorAll('#imobisoft-search-results > li');
+
+                                        added.forEach(function (item) { list.appendChild(item); });
 
                                         if (next >= total) {
                                             var wrap = document.getElementById('imobisoft-load-more-wrap');

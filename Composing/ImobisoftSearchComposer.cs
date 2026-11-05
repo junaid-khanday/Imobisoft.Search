@@ -8,6 +8,7 @@ using Imobisoft.Search.Migrations;
 using Imobisoft.Search.Persistence;
 using Imobisoft.Search.Services;
 using Imobisoft.Search.Services.Ai;
+using Imobisoft.Search.Services.Templates;
 using Imobisoft.Search.Web;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Razor.TagHelpers;
@@ -92,6 +93,10 @@ public sealed class ImobisoftSearchComposer : IComposer
         builder.Services.AddTransient<ITagHelperComponent, HeaderSearchBoxTagHelperComponent>();
 
         RegisterAi(builder);
+
+        // Lets the backoffice show the shipped source of the package's views and write an editable
+        // copy of one into the site.
+        builder.Services.AddSingleton<ISearchTemplateService, SearchTemplateService>();
     }
 
     /// <summary>

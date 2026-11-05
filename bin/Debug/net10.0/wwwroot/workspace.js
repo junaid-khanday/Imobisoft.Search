@@ -19,6 +19,10 @@ import {
     getSettings,
     updateSettings,
     uploadSearchBoxIcon,
+    getTemplates,
+    getTemplate,
+    saveTemplate,
+    resetTemplate,
     getAiSettings,
     saveAiKey,
     deleteAiKey,
@@ -50,6 +54,9 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         _aiStatus: { state: true },
         _aiBusy: { state: true },
         _aiModels: { state: true },
+        _templates: { state: true },
+        _template: { state: true },
+        _templateBusy: { state: true },
         _profileActiveTab: { state: true },
         _filterProfilesQuery: { state: true },
         _sidePanelOpen: { state: true },
@@ -161,6 +168,9 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         this._aiStatus = { hasKey: false, hint: '', detectedProvider: '', detectedProviderName: '', providers: [] };
         this._aiBusy = false;
         this._aiModels = { loaded: false, ok: false, error: '', models: [], suggested: '' };
+        this._templates = { loaded: false, templates: [], editsApplyImmediately: false };
+        this._template = null;
+        this._templateBusy = false;
         this._profileActiveTab = 'sources';
         this._filterProfilesQuery = '';
         this._sidePanelOpen = false;
@@ -1050,6 +1060,9 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             this._sidePanelData = {
                 facets: JSON.parse(JSON.stringify(this._currentProfile.rules?.results?.facets || []))
             };
+        } else if (type === 'editTemplate') {
+            // The content lives on _template; this only has to be non-null for the panel to render.
+            this._sidePanelData = { template: true };
         } else if (type === 'editAiActions') {
             const ai = this._currentProfile.rules?.ai || {};
             const languages = ai.languages || [];
@@ -1367,6 +1380,13 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     async _saveSidePanel() {
         const d = this._sidePanelData;
         const errs = {};
+
+        // The template editor has its own Save and Reset, and writes a file rather than a profile
+        // field - so the panel's generic Submit just closes it.
+        if (this._sidePanelType === 'editTemplate') {
+            this._closeSidePanel();
+            return;
+        }
 
         if (this._sidePanelType === 'editField') {
             if (!d.name || !d.name.trim()) errs.name = "Field name is required.";
@@ -2109,7 +2129,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         </div>
                         <div class="header-actions">
                             <button class="btn ${this._profileActiveTab === 'searchBox' ? 'active' : ''}"
-                                    @click=${() => { this._profileActiveTab = 'searchBox'; this.requestUpdate(); }}
+                                    @click=${() => { this._profileActiveTab = 'searchBox'; this._loadTemplates(); }}
                                     title="Search Box">
                                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <rect x="2" y="5" width="20" height="14" rx="3"></rect>
@@ -2819,6 +2839,249 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         `;
     }
 
+    // --- TEMPLATES: VIEW SOURCE AND OVERRIDE -----------------
+
+    async _loadTemplates(force = false) {
+        try {
+            const res = await getTemplates(this._fetch.bind(this), { force });
+            if (res.ok && res.data) {
+                this._templates = {
+                    loaded: true,
+                    templates: res.data.templates || [],
+                    editsApplyImmediately: !!res.data.editsApplyImmediately
+                };
+            }
+        } catch (e) {
+            console.error("Failed to load templates:", e);
+        } finally {
+            this.requestUpdate();
+        }
+    }
+
+    /** Opens one view in the editor, showing the site's copy if it has one and the package's if not. */
+    async _openTemplate(id) {
+        this._templateBusy = true;
+        this._template = { id, loading: true };
+        this.requestUpdate();
+
+        try {
+            const res = await getTemplate(this._fetch.bind(this), id);
+
+            if (res.ok && res.data) {
+                this._template = {
+                    id,
+                    info: res.data.info,
+                    default: res.data.default || '',
+                    // Editing starts from whatever is in use, so saving without changing anything
+                    // cannot silently replace a site's own view with the package's.
+                    draft: res.data.override ?? res.data.default ?? '',
+                    hasOverride: res.data.override !== null && res.data.override !== undefined,
+                    mode: 'edit',
+                    previewNonce: 1
+                };
+                this._openSidePanel('editTemplate');
+            } else {
+                this._showToast(res.data?.detail || "Could not open that view.", "error");
+                this._template = null;
+            }
+        } catch (e) {
+            console.error("Open template error:", e);
+            this._showToast("Unexpected error opening that view.", "error");
+            this._template = null;
+        } finally {
+            this._templateBusy = false;
+            this.requestUpdate();
+        }
+    }
+
+    async _saveTemplate() {
+        const t = this._template;
+        if (!t) return;
+
+        this._templateBusy = true;
+        this.requestUpdate();
+
+        try {
+            const res = await saveTemplate(this._fetch.bind(this), t.id, t.draft);
+
+            if (res.ok && res.data) {
+                t.hasOverride = true;
+                t.info = res.data.info;
+                t.previewNonce = (t.previewNonce || 1) + 1;
+                await this._loadTemplates(true);
+
+                this._showToast(
+                    this._templates.editsApplyImmediately
+                        ? `Saved to ${res.data.info.path}.`
+                        : `Saved to ${res.data.info.path}. This site compiles its views at build time, so rebuild and restart to see the change.`,
+                    "success");
+            } else {
+                this._showToast(res.data?.detail || "Could not save that view.", "error");
+            }
+        } catch (e) {
+            console.error("Save template error:", e);
+            this._showToast("Unexpected error saving that view.", "error");
+        } finally {
+            this._templateBusy = false;
+            this.requestUpdate();
+        }
+    }
+
+    async _resetTemplate() {
+        const t = this._template;
+        if (!t) return;
+
+        this._showConfirm(
+            "Reset To Package Version",
+            `Remove this site's copy of ${t.info?.name || 'this view'}? The package's own version goes back into use. Your copy is kept alongside it as a .bak file.`,
+            async (confirmed) => {
+                if (!confirmed) return;
+
+                this._templateBusy = true;
+                this.requestUpdate();
+
+                try {
+                    const res = await resetTemplate(this._fetch.bind(this), t.id);
+
+                    if (res.ok && res.data) {
+                        t.hasOverride = false;
+                        t.draft = res.data.default || '';
+                        t.info = res.data.info;
+                        t.previewNonce = (t.previewNonce || 1) + 1;
+                        await this._loadTemplates(true);
+                        this._showToast("Reset to the package's own version.", "success");
+                    } else {
+                        this._showToast(res.data?.detail || "Could not reset that view.", "error");
+                    }
+                } catch (e) {
+                    console.error("Reset template error:", e);
+                    this._showToast("Unexpected error resetting that view.", "error");
+                } finally {
+                    this._templateBusy = false;
+                    this.requestUpdate();
+                }
+            });
+    }
+
+    _renderTemplateSidePanelBody() {
+        const t = this._template;
+
+        if (!t || t.loading) {
+            return html`<div class="sp-multi-choice-layout"><p class="sp-hint">Loading…</p></div>`;
+        }
+
+        // Three modes: the editable copy, the package's source read-only, and the view actually
+        // rendered on the site. "Preview" has to mean the last of those - showing source twice and
+        // calling one of them a preview is not a preview.
+        const mode = t.mode || 'edit';
+
+        if (t.previewUrl === undefined) {
+            t.previewUrl = t.info?.previewPath || '';
+        }
+
+        const previewSrc = t.previewUrl
+            ? t.previewUrl + (t.previewUrl.indexOf('?') > -1 ? '&' : '?') + 'imobisoftPreview=' + (t.previewNonce || 1)
+            : '';
+
+        const tab = (value, label) => html`
+            <button class="btn ${mode === value ? 'btn-primary' : 'btn-secondary'}"
+                    @click=${() => { t.mode = value; this.requestUpdate(); }}>
+                ${label}
+            </button>
+        `;
+
+        return html`
+            <div class="sp-multi-choice-layout" style="display: flex; flex-direction: column; height: 100%;">
+                <div class="sp-group" style="margin-bottom: 12px;">
+                    <span class="sp-hint">${t.info?.description || ''}</span>
+                    <span class="sp-hint" style="display: block; margin-top: 6px;">
+                        <strong>${t.hasOverride ? 'This site has its own copy' : "Using the package's version"}</strong>
+                        — ${t.info?.path}
+                    </span>
+                    ${!this._templates.editsApplyImmediately ? html`
+                        <span class="sp-hint" style="display: block; margin-top: 6px; color: #92400e;">
+                            This site compiles its views at build time, so a saved change only appears in the
+                            preview after a rebuild and restart. Adding <code>AddRazorRuntimeCompilation()</code>
+                            in the site makes edits take effect straight away.
+                        </span>
+                    ` : nothing}
+                </div>
+
+                <div style="display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap;">
+                    ${tab('edit', t.hasOverride ? "Edit This Site's Copy" : 'Edit')}
+                    ${tab('source', "Package Source")}
+                    ${tab('preview', 'Preview')}
+
+                    ${mode === 'source' ? html`
+                        <button class="btn btn-secondary"
+                                title="Replace what you are editing with the package's version"
+                                @click=${() => { t.draft = t.default; t.mode = 'edit'; this.requestUpdate(); }}>
+                            Copy Into Editor
+                        </button>
+                    ` : nothing}
+                </div>
+
+                ${mode === 'preview' ? html`
+                    <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+                        <input type="text"
+                               class="sp-input"
+                               style="flex: 1;"
+                               placeholder="/imobisoft-search?q=test"
+                               .value=${t.previewUrl}
+                               @input=${e => { t.previewUrl = e.target.value; }}>
+                        <button class="btn btn-secondary"
+                                @click=${() => { t.previewNonce = (t.previewNonce || 1) + 1; this.requestUpdate(); }}>
+                            Reload
+                        </button>
+                        ${previewSrc ? html`
+                            <a class="btn btn-secondary" href=${previewSrc} target="_blank" rel="noopener">Open In New Tab</a>
+                        ` : nothing}
+                    </div>
+
+                    ${previewSrc ? html`
+                        <iframe src=${previewSrc}
+                                title="Preview"
+                                style="flex: 1; min-height: 420px; width: 100%; border: 1px solid var(--uui-color-border, #e2e8f0); border-radius: 6px; background: #fff;"></iframe>
+                    ` : html`
+                        <p class="sp-hint">
+                            This view is placed by the site rather than by the package, so there is no page it is
+                            known to appear on. Type the URL of a page that uses it and press Reload.
+                        </p>
+                    `}
+
+                    <span class="sp-hint" style="margin-top: 8px;">
+                        The live page as a visitor sees it, rendered by whichever copy of the view is in use.
+                    </span>
+                ` : html`
+                    <textarea class="sp-textarea"
+                              spellcheck="false"
+                              ?readonly=${mode === 'source'}
+                              style="flex: 1; min-height: 420px; font-family: monospace; font-size: 12.5px; line-height: 1.5; white-space: pre; overflow-wrap: normal; overflow-x: auto;"
+                              .value=${mode === 'source' ? t.default : t.draft}
+                              @input=${e => { if (mode === 'edit') t.draft = e.target.value; }}></textarea>
+                `}
+
+                <div style="display: flex; gap: 8px; margin-top: 10px; align-items: center;">
+                    <button class="btn btn-primary" ?disabled=${this._templateBusy || mode !== 'edit'} @click=${() => this._saveTemplate()}>
+                        ${this._templateBusy ? 'Working…' : 'Save To Site'}
+                    </button>
+                    ${t.hasOverride ? html`
+                        <button class="btn btn-secondary" ?disabled=${this._templateBusy} @click=${() => this._resetTemplate()}>
+                            Reset To Package Version
+                        </button>
+                    ` : nothing}
+                    <span class="sp-hint" style="margin-left: auto;">
+                        ${mode === 'source'
+                            ? 'Read-only — this is what the package ships.'
+                            : mode === 'preview'
+                                ? 'Rendered live.'
+                                : `${(t.draft || '').length} characters`}
+                    </span>
+                </div>
+            </div>
+        `;
+    }
+
     // --- TAB: SEARCH BOX ---
     _renderSearchBoxTab(p) {
         // _ensureProfileStructure fills this in on load and after every save; this is the guard for
@@ -2903,7 +3166,51 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     </div>
                 </div>
 
-                <!-- 3. Where in the page to look -->
+                <!-- 3. The views themselves -->
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Templates &amp; Source Code</div>
+                        <div class="setting-desc">The Razor views behind the search bar, the search page and the result cards. Read the source the package ships, or save an editable copy into this site to change the markup.</div>
+                    </div>
+                    <div class="field-right-box">
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Views</span>
+                            <span class="field-count-pill">
+                                ${this._templates.templates.filter(t => t.overridden).length} of ${this._templates.templates.length} customised
+                            </span>
+                        </div>
+                        <div class="field-box-content">
+                            ${!this._templates.loaded ? html`
+                                <button class="btn btn-secondary" @click=${() => this._loadTemplates(true)}>Load Views</button>
+                            ` : html`
+                                <div class="selected-chips-wrap" style="flex-direction: column; align-items: stretch; gap: 6px;">
+                                    ${this._templates.templates.map(t => html`
+                                        <div style="display: flex; align-items: center; gap: 10px;">
+                                            <button class="btn btn-secondary"
+                                                    style="flex: 0 0 auto; min-width: 180px; justify-content: flex-start;"
+                                                    ?disabled=${this._templateBusy}
+                                                    @click=${() => this._openTemplate(t.id)}>
+                                                ${t.name}
+                                            </button>
+                                            <span class="selected-chip ${t.overridden ? 'chip-success' : 'chip-muted'}">
+                                                ${t.overridden ? '✓ This site has its own copy' : "Package version"}
+                                            </span>
+                                            <span class="sp-hint" style="margin-left: auto;">${t.path}</span>
+                                        </div>
+                                    `)}
+                                </div>
+                                ${!this._templates.editsApplyImmediately ? html`
+                                    <small class="sp-hint" style="display: block; margin-top: 10px;">
+                                        This site compiles its views at build time, so a saved change appears after a
+                                        rebuild and restart rather than straight away.
+                                    </small>
+                                ` : nothing}
+                            `}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4. Where in the page to look -->
                 <div class="mf-field">
                     <div class="field-left-info">
                         <div class="setting-title">Where To Look &amp; Query Parameter</div>
@@ -4282,6 +4589,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         else if (t === 'editSourceProtection') { title = "Visibility & Protection Rules"; labelTag = "VISIBILITY"; }
         else if (t === 'editAiActions') { title = "AI Text Tools On Results"; labelTag = "AI ACTIONS"; }
         else if (t === 'editAiLimits') { title = "AI Cost & Request Limits"; labelTag = "AI LIMITS"; }
+        else if (t === 'editTemplate') { title = this._template?.info?.name ? `Template: ${this._template.info.name}` : 'Template Source'; labelTag = 'TEMPLATE'; }
         else if (t === 'editSearchBox') { title = "Header Search Box"; labelTag = "SEARCH BOX"; }
         else if (t === 'editSearchBoxPages') { title = "Search Pages It Attaches To"; labelTag = "TARGET PAGES"; }
         else if (t === 'editSearchBoxPlacement') { title = "Placement & Query Parameter"; labelTag = "PLACEMENT"; }
@@ -4309,6 +4617,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         ${t === 'editBlockedTerms' ? this._renderBlockedTermsSidePanelBody(d) : nothing}
                         ${t === 'editAiActions' ? this._renderAiActionsSidePanelBody(d) : nothing}
                         ${t === 'editAiLimits' ? this._renderAiLimitsSidePanelBody(d) : nothing}
+                        ${t === 'editTemplate' ? this._renderTemplateSidePanelBody() : nothing}
                         ${t === 'editSearchBox' ? this._renderSearchBoxSidePanelBody(d) : nothing}
                         ${t === 'editSearchBoxPages' ? this._renderSearchBoxPagesSidePanelBody(d) : nothing}
                         ${t === 'editSearchBoxPlacement' ? this._renderSearchBoxPlacementSidePanelBody(d) : nothing}

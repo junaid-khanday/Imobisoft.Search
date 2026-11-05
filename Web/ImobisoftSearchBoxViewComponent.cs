@@ -24,8 +24,8 @@ namespace Imobisoft.Search.Web;
 /// </para>
 /// <para>
 /// The default view lives in this package; a site can take over the markup by creating
-/// <c>Views/Partials/Search/searchbox.cshtml</c> in its own project - that copy wins, nothing else
-/// changes.
+/// <c>Views/Partials/Search/HeaderSearchBox.cshtml</c> in its own project, or by editing it from
+/// the Search section - that copy wins, nothing else changes.
 /// </para>
 /// </summary>
 /// <example>
@@ -142,6 +142,8 @@ public sealed class ImobisoftSearchBoxViewComponent : ViewComponent
             model.OpenWidth = openWidth;
         }
 
-        return View(model);
+        // Rendered straight from the overridable partial, so one file designs the header box with
+        // no component view in between for a site to have to find.
+        return View("~/Views/Partials/Search/HeaderSearchBox.cshtml", model);
     }
 }

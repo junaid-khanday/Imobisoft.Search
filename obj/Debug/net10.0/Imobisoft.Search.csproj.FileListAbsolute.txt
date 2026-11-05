@@ -111,9 +111,9 @@ D:\imobisoft\Imobisoft.Search\bin\Debug\net10.0\wwwroot\ai.css
 D:\imobisoft\Imobisoft.Search\bin\Debug\net10.0\wwwroot\ai.js
 D:\imobisoft\Imobisoft.Search\bin\Debug\net10.0\wwwroot\ai.css.gz
 D:\imobisoft\Imobisoft.Search\bin\Debug\net10.0\wwwroot\ai.js.gz
-D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\ee9apxmh1x-{0}-4l614l5yxk-4l614l5yxk.gz
-D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\yngxw0rsot-{0}-rm4ptwp8zb-rm4ptwp8zb.gz
 D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\d3wrj8pbx3-{0}-yv03g4rovo-yv03g4rovo.gz
 D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\dffy4krckw-{0}-740uqfwtdp-740uqfwtdp.gz
+D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\ee9apxmh1x-{0}-s9cip73zfn-s9cip73zfn.gz
+D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\yngxw0rsot-{0}-nw7qnckna4-nw7qnckna4.gz
 D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\staticwebassets.upToDateCheck.txt
 D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\Imobisof.5574A79A.Up2Date
