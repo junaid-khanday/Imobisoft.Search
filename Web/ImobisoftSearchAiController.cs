@@ -9,11 +9,20 @@ namespace Imobisoft.Search.Web;
 /// <summary>What the site's JavaScript posts: which result, which action, and into which language.</summary>
 public sealed class AiTransformRequest
 {
-    /// <summary>One of <c>summarise</c>, <c>shorten</c>, <c>keyPoints</c>, <c>translate</c>.</summary>
+    /// <summary>One of <c>summarise</c>, <c>shorten</c>, <c>keyPoints</c>, <c>translate</c>, <c>ask</c>.</summary>
     public string Action { get; set; } = string.Empty;
 
-    /// <summary>The result's node key. The text is read server-side from this, never sent by the browser.</summary>
-    public Guid Key { get; set; }
+    /// <summary>
+    /// The visitor's question, for the <c>ask</c> action. Length-capped by the profile and framed
+    /// as data rather than instructions; ignored by every other action.
+    /// </summary>
+    public string? Question { get; set; }
+
+    /// <summary>
+    /// What the visitor searched for. The server searches the site with this and reads the matching
+    /// pages itself, so no page text is ever sent by the browser.
+    /// </summary>
+    public string? Term { get; set; }
 
     public string? Language { get; set; }
 
@@ -49,9 +58,9 @@ public sealed class ImobisoftSearchAiController : Controller
         [FromBody] AiTransformRequest request,
         CancellationToken cancellationToken = default)
     {
-        if (request is null || request.Key == Guid.Empty)
+        if (request is null)
         {
-            return BadRequest(new { error = "A result key is required." });
+            return BadRequest(new { error = "Nothing to do." });
         }
 
         if (!Enum.TryParse(request.Action, ignoreCase: true, out AiAction action))
@@ -63,8 +72,9 @@ public sealed class ImobisoftSearchAiController : Controller
             new AiTextRequest
             {
                 Action = action,
-                Key = request.Key,
+                Term = request.Term,
                 Language = request.Language,
+                Question = request.Question,
                 Caller = CallerId(),
                 ProfileAlias = string.IsNullOrWhiteSpace(request.Profile) ? null : request.Profile,
             },
@@ -75,7 +85,15 @@ public sealed class ImobisoftSearchAiController : Controller
             return StatusCode(result.Status, new { error = result.Error });
         }
 
-        return Ok(new { text = result.Text, cached = result.Cached });
+        return Ok(new
+        {
+            text = result.Text,
+            cached = result.Cached,
+
+            // Which pages the answer was drawn from, so the site can link them. This is the list the
+            // server sent to the model, not one parsed back out of the answer.
+            sources = result.Sources.Select(s => new { title = s.Title, url = s.Url }),
+        });
     }
 
     /// <summary>

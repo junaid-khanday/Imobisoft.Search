@@ -15,11 +15,21 @@ public sealed class AiTextRequest
 {
     public required AiAction Action { get; init; }
 
-    /// <summary>The result's node key. The text itself is read server-side from that key.</summary>
-    public required Guid Key { get; init; }
+    /// <summary>
+    /// What the visitor searched for. Every action works from this: the package searches the site
+    /// with it and works on the pages that match, so the answer is about the search rather than
+    /// about one result.
+    /// </summary>
+    public string? Term { get; init; }
 
     /// <summary>Target language for <see cref="AiAction.Translate"/>; ignored by the other actions.</summary>
     public string? Language { get; init; }
+
+    /// <summary>
+    /// The visitor's question, for <see cref="AiAction.Ask"/>. The only free text that reaches the
+    /// model, so it is length-capped and framed as data rather than instructions.
+    /// </summary>
+    public string? Question { get; init; }
 
     /// <summary>
     /// Identifies the caller for rate limiting - the client IP. Never stored, only hashed into a
@@ -29,6 +39,14 @@ public sealed class AiTextRequest
 
     /// <summary>Which profile's AI rules apply. Null uses the default profile.</summary>
     public string? ProfileAlias { get; init; }
+}
+
+/// <summary>A page an answer drew on.</summary>
+public sealed class AiSource
+{
+    public string Title { get; init; } = string.Empty;
+
+    public string? Url { get; init; }
 }
 
 /// <summary>What the site gets back.</summary>
@@ -43,11 +61,24 @@ public sealed class AiTextResult
     /// <summary>True when this answer came from the cache, so the site can show it instantly.</summary>
     public bool Cached { get; init; }
 
+    /// <summary>
+    /// Pages a question was answered from, so the site can show where the answer came from. The
+    /// list is what the server actually sent to the model, not something parsed back out of the
+    /// answer - a model asked to cite its sources will sometimes invent one.
+    /// </summary>
+    public IReadOnlyList<AiSource> Sources { get; init; } = Array.Empty<AiSource>();
+
     /// <summary>HTTP status the endpoint should use.</summary>
     public int Status { get; init; } = 200;
 
-    public static AiTextResult Success(string text, bool cached = false)
-        => new() { Ok = true, Text = text, Cached = cached };
+    public static AiTextResult Success(string text, bool cached = false, IReadOnlyList<AiSource>? sources = null)
+        => new()
+        {
+            Ok = true,
+            Text = text,
+            Cached = cached,
+            Sources = sources ?? Array.Empty<AiSource>(),
+        };
 
     public static AiTextResult Failure(string error, int status = 400)
         => new() { Ok = false, Error = error, Status = status };
@@ -93,6 +124,7 @@ public sealed class AiTextService : IAiTextService
     private readonly ISearchProfileService _profiles;
     private readonly IAiCredentialStore _credentials;
     private readonly IAiContentReader _contentReader;
+    private readonly IImobisoftSearchService _search;
     private readonly IEnumerable<IAiCompletionClient> _clients;
     private readonly AppCaches _appCaches;
     private readonly ImobisoftSearchOptions _options;
@@ -102,6 +134,7 @@ public sealed class AiTextService : IAiTextService
         ISearchProfileService profiles,
         IAiCredentialStore credentials,
         IAiContentReader contentReader,
+        IImobisoftSearchService search,
         IEnumerable<IAiCompletionClient> clients,
         AppCaches appCaches,
         IOptions<ImobisoftSearchOptions> options,
@@ -110,6 +143,7 @@ public sealed class AiTextService : IAiTextService
         _profiles = profiles;
         _credentials = credentials;
         _contentReader = contentReader;
+        _search = search;
         _clients = clients;
         _appCaches = appCaches;
         _options = options.Value;
@@ -153,12 +187,30 @@ public sealed class AiTextService : IAiTextService
         }
 
         // Checked against the profile's own list, so the language reaching the prompt is one an
-        // editor chose rather than one a caller invented.
-        var language = ResolveLanguage(rules, request.Language);
+        // editor chose rather than one a caller invented. Null means none was asked for, which is
+        // different from "the first one" - it tells the prompt to stay in the page's own language.
+        var supplied = (request.Language ?? string.Empty).Trim();
+        string? language = null;
 
-        if (request.Action == AiAction.Translate && language is null)
+        if (supplied.Length > 0)
         {
-            return AiTextResult.Failure("That language is not enabled.", 400);
+            language = rules.Languages.FirstOrDefault(l => l.InvariantEquals(supplied));
+
+            if (language is null)
+            {
+                return AiTextResult.Failure("That language is not enabled.", 400);
+            }
+        }
+
+        if (request.Action == AiAction.Translate)
+        {
+            // Translating needs a target; the first configured language is the default.
+            language ??= rules.Languages.FirstOrDefault();
+
+            if (language is null)
+            {
+                return AiTextResult.Failure("No translation languages are configured.", 400);
+            }
         }
 
         var apiKey = _credentials.Read();
@@ -176,9 +228,48 @@ public sealed class AiTextService : IAiTextService
             return AiTextResult.Failure("The AI tools are not configured correctly.", 503);
         }
 
+        var question = (request.Question ?? string.Empty).Trim();
+
+        // The search term reaches the prompt too, so it gets the same treatment as a question: a
+        // length cap here, and its angle brackets replaced when the content is built.
+        var term = (request.Term ?? string.Empty).Trim();
+        var termLimit = Math.Clamp(rules.MaxQuestionCharacters, 20, 1000);
+
+        if (term.Length > termLimit)
+        {
+            term = term[..termLimit];
+        }
+
+        if (request.Action != AiAction.Ask && term.Length == 0)
+        {
+            return AiTextResult.Failure("Search for something first.", 400);
+        }
+
+        if (request.Action == AiAction.Ask)
+        {
+            if (question.Length == 0)
+            {
+                return AiTextResult.Failure("Type a question first.", 400);
+            }
+
+            var limit = Math.Clamp(rules.MaxQuestionCharacters, 20, 1000);
+
+            if (question.Length > limit)
+            {
+                return AiTextResult.Failure($"Questions are limited to {limit} characters.", 400);
+            }
+        }
+        else
+        {
+            // A question on any other action is ignored rather than quietly folded into the prompt.
+            question = string.Empty;
+        }
+
         // Cache first: the same page summarised for the next visitor costs nothing, and a cache hit
-        // is also exempt from the rate limit because it never reaches the provider.
-        var cacheKey = CacheKey(target, request.Action, request.Key, language);
+        // is also exempt from the rate limit because it never reaches the provider. Identical
+        // questions hit too - though distinct ones never will, which is why Ask costs more than the
+        // fixed actions.
+        var cacheKey = CacheKey(target, request.Action, term, language, question);
 
         if (rules.CacheMinutes > 0
             && _appCaches.RuntimeCache.GetCacheItem<string>(cacheKey) is { } cached
@@ -192,16 +283,52 @@ public sealed class AiTextService : IAiTextService
             return AiTextResult.Failure("Too many requests. Try again in a minute.", 429);
         }
 
-        AiContentText? content = _contentReader.Read(request.Key, rules.MaxInputCharacters);
+        // Every action works from the whole site: the search engine finds the pages, and the best
+        // matches are read. A question searches on itself; the rest search on the term the visitor
+        // typed, so the answer is about what they were looking for rather than about whichever
+        // result the button happened to sit under.
+        var retrievalTerm = request.Action == AiAction.Ask ? question : term;
 
-        if (content is null)
+        SearchResponse found = await _search.SearchAsync(
+            new SearchRequest
+            {
+                Term = retrievalTerm,
+                Page = 1,
+                PageSize = Math.Clamp(rules.MaxPagesConsulted, 1, 10),
+                ProfileAlias = request.ProfileAlias,
+            },
+            cancellationToken);
+
+        var sources = new List<AiSource>();
+        var extracts = new List<(string Title, string Text)>();
+
+        // The whole text budget is shared across the pages consulted, so reading more pages makes
+        // each extract shorter rather than making one request cost more.
+        var perPage = Math.Max(400, rules.MaxInputCharacters / Math.Max(1, found.Results.Count));
+
+        foreach (SearchResultItem hit in found.Results)
         {
-            return AiTextResult.Failure("That page could not be found in the search index.", 404);
+            if (hit.Key is not { } hitKey)
+            {
+                continue;
+            }
+
+            AiContentText? text = _contentReader.Read(hitKey, perPage);
+
+            if (text is null || !text.HasBody)
+            {
+                continue;
+            }
+
+            var title = string.IsNullOrWhiteSpace(text.Name) ? hit.Name : text.Name;
+
+            extracts.Add((title, text.Body));
+            sources.Add(new AiSource { Title = title, Url = hit.Url });
         }
 
-        if (!content.HasBody)
+        if (extracts.Count == 0)
         {
-            return AiTextResult.Failure("That page has no text to work with.", 422);
+            return AiTextResult.Success(NotFound);
         }
 
         IAiCompletionClient? client = _clients.FirstOrDefault(c => c.Protocol == target.Protocol);
@@ -215,7 +342,13 @@ public sealed class AiTextService : IAiTextService
             new AiCompletionRequest
             {
                 SystemPrompt = AiPrompts.For(request.Action, language),
-                UserText = Compose(content, rules.MaxInputCharacters),
+
+                // The term or the question travels in its own labelled block after the extracts,
+                // so the model can tell the visitor's words from the site's content.
+                UserText = AiPrompts.Content(
+                    extracts,
+                    term,
+                    request.Action == AiAction.Ask ? question : null),
                 Target = target,
                 ApiKey = apiKey,
                 MaxOutputTokens = Math.Clamp(rules.MaxOutputTokens, 256, 8192),
@@ -236,6 +369,22 @@ public sealed class AiTextService : IAiTextService
             return AiTextResult.Failure("There is not enough text on that page to work with.", 422);
         }
 
+        // The model declining to answer from outside the site's own pages is the feature working,
+        // not a fault - it is what keeps this answering about the site rather than about anything at
+        // all. Cached as a refusal, so the same question is not paid for twice.
+        if (completion.Text.Contains("NOT_FOUND", StringComparison.OrdinalIgnoreCase))
+        {
+            if (rules.CacheMinutes > 0)
+            {
+                _appCaches.RuntimeCache.InsertCacheItem(
+                    cacheKey,
+                    () => NotFound,
+                    TimeSpan.FromMinutes(rules.CacheMinutes));
+            }
+
+            return AiTextResult.Success(NotFound);
+        }
+
         if (rules.CacheMinutes > 0)
         {
             _appCaches.RuntimeCache.InsertCacheItem(
@@ -244,7 +393,7 @@ public sealed class AiTextService : IAiTextService
                 TimeSpan.FromMinutes(rules.CacheMinutes));
         }
 
-        return AiTextResult.Success(completion.Text);
+        return AiTextResult.Success(completion.Text, sources: sources);
     }
 
     /// <inheritdoc />
@@ -383,21 +532,20 @@ public sealed class AiTextService : IAiTextService
         return text.Length <= ceiling ? text : text[..ceiling];
     }
 
-    private static string? ResolveLanguage(AiRules rules, string? requested)
-    {
-        if (string.IsNullOrWhiteSpace(requested))
-        {
-            return rules.Languages.FirstOrDefault();
-        }
+    /// <summary>Shown when nothing on the site answers the question.</summary>
+    private const string NotFound = "I could not find an answer to that on this site.";
 
-        return rules.Languages.FirstOrDefault(l => l.InvariantEquals(requested.Trim()));
-    }
-
-    private static string CacheKey(AiResolvedTarget target, AiAction action, Guid key, string? language)
+    private static string CacheKey(
+        AiResolvedTarget target,
+        AiAction action,
+        string term,
+        string? language,
+        string question)
     {
         // The model is part of the key: changing model should produce fresh answers rather than
-        // serving the previous model's.
-        var raw = $"{target.Provider}|{target.Model}|{action}|{key:N}|{language}";
+        // serving the previous model's. The question is folded in case-insensitively, so the same
+        // question asked again is free however it was capitalised.
+        var raw = $"{target.Provider}|{target.Model}|{action}|{term.ToLowerInvariant()}|{language}|{question.ToLowerInvariant()}";
 
         return ImobisoftSearchConstants.Ai.CacheKeyPrefix + "|" + Convert.ToHexString(
             SHA256.HashData(Encoding.UTF8.GetBytes(raw)))[..24];

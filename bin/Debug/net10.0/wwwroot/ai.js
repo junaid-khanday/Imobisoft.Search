@@ -1,13 +1,16 @@
 /*
-    Live text tools on search results: summarise, shorten, key points, translate.
+    Live text tools on a search: summarise, shorten, key points, translate, and ask.
 
     The package renders the results list with its AI settings on it as data attributes; this script
-    reads those, adds a row of buttons under each result, and calls the package's own endpoint when
-    one is pressed. The page the visitor is on is never left.
+    reads those and puts one row of buttons above the results. The page the visitor is on is never
+    left.
 
-    What goes over the wire is the result's node key and an action name - never page text and never
-    a prompt. The server reads the text from the search index itself and builds the instructions, so
-    this endpoint cannot be used to ask the site's AI account something else.
+    Every action is about the search, not about one result: the browser sends the action and the
+    search term, the server searches the site with it, reads the pages that match, and works on
+    those. Ask additionally carries a question the visitor typed, and retrieves on the question
+    instead of the term. No page text and no prompt is ever sent by the browser - the instructions
+    are built server-side and the content comes from the search index, so this endpoint cannot be
+    turned into a general chatbot.
 */
 (function () {
     'use strict';
@@ -16,14 +19,16 @@
         summarise: 'Summarise',
         shorten: 'Shorten',
         keyPoints: 'Key points',
-        translate: 'Translate'
+        translate: 'Translate',
+        ask: 'Ask a question'
     };
 
     var WORKING = {
         summarise: 'Summarising…',
         shorten: 'Shortening…',
         keyPoints: 'Pulling out the key points…',
-        translate: 'Translating…'
+        translate: 'Translating…',
+        ask: 'Searching the site for an answer…'
     };
 
     function split(value) {
@@ -38,7 +43,9 @@
             endpoint: list.getAttribute('data-imobisoft-ai-endpoint') || '',
             actions: split(list.getAttribute('data-imobisoft-ai-actions')),
             languages: split(list.getAttribute('data-imobisoft-ai-languages')),
-            profile: list.getAttribute('data-imobisoft-ai-profile') || ''
+            profile: list.getAttribute('data-imobisoft-ai-profile') || '',
+            term: list.getAttribute('data-imobisoft-ai-term') || '',
+            questionLimit: parseInt(list.getAttribute('data-imobisoft-ai-question-limit'), 10) || 300
         };
     }
 
@@ -76,6 +83,39 @@
         });
     }
 
+    // Titles and links come from the server's own search results, but they are still rendered as
+    // text and href only - never as markup.
+    function sourceList(sources) {
+        var wrap = document.createElement('div');
+        wrap.className = 'imai-sources';
+
+        var caption = document.createElement('span');
+        caption.className = 'imai-sources-label';
+        caption.textContent = sources.length === 1 ? 'Answered from:' : 'Answered from these pages:';
+        wrap.appendChild(caption);
+
+        var list = document.createElement('ul');
+
+        sources.forEach(function (source) {
+            var item = document.createElement('li');
+
+            if (source.url) {
+                var link = document.createElement('a');
+                link.href = source.url;
+                link.textContent = source.title || source.url;
+                item.appendChild(link);
+            } else {
+                item.textContent = source.title || '';
+            }
+
+            list.appendChild(item);
+        });
+
+        wrap.appendChild(list);
+
+        return wrap;
+    }
+
     function error(panel, message) {
         panel.textContent = '';
         panel.classList.add('is-error');
@@ -86,14 +126,6 @@
     }
 
     function decorate(card, config) {
-        var key = card.getAttribute('data-imobisoft-key');
-
-        if (!key || card.dataset.imobisoftAiBound) {
-            return;
-        }
-
-        card.dataset.imobisoftAiBound = 'true';
-
         var bar = document.createElement('div');
         bar.className = 'imai';
 
@@ -121,8 +153,24 @@
         foot.appendChild(close);
 
         var languageSelect = null;
+        var originalButton = null;
         var buttons = [];
         var inFlight = null;
+
+        // Set once the visitor translates. From then on every action answers in the chosen language:
+        // summarising back into the page's own language after a translation reads as a bug. The
+        // dropdown stays live, so changing it changes what the next action answers in.
+        var languageActive = false;
+
+        function activeLanguage() {
+            return languageActive && languageSelect ? languageSelect.value : null;
+        }
+
+        function showOriginal(on) {
+            if (originalButton) {
+                originalButton.style.display = on ? '' : 'none';
+            }
+        }
 
         function reset() {
             buttons.forEach(function (button) {
@@ -161,10 +209,23 @@
 
             foot.style.display = 'none';
 
-            var body = { action: action, key: key, profile: config.profile };
+            var body = { action: action, term: config.term, profile: config.profile };
+
+            if (action === 'ask' && askInput) {
+                body.question = askInput.value.trim();
+            }
 
             if (action === 'translate' && languageSelect) {
                 body.language = languageSelect.value;
+                languageActive = true;
+                showOriginal(true);
+            } else {
+                // Carries a translation the visitor already asked for into this action too. Left
+                // off, the server answers in the page's own language.
+                var language = activeLanguage();
+                if (language) {
+                    body.language = language;
+                }
             }
 
             fetch(config.endpoint, {
@@ -185,9 +246,22 @@
 
                     if (result.ok && result.data && result.data.text) {
                         render(panel, result.data.text);
-                        note.textContent = result.data.cached
-                            ? 'AI generated · reused from an earlier request'
-                            : 'AI generated · may contain mistakes';
+
+                        // A question is answered from across the site, so show which pages it drew
+                        // on - an answer with no visible provenance is hard to trust, and these are
+                        // the pages the server actually read.
+                        if (result.data.sources && result.data.sources.length > 0) {
+                            panel.appendChild(sourceList(result.data.sources));
+                        }
+
+                        var parts = ['AI generated'];
+                        var shownIn = action === 'translate' ? (languageSelect ? languageSelect.value : null) : activeLanguage();
+                        if (shownIn) {
+                            parts.push('in ' + shownIn);
+                        }
+                        parts.push(result.data.cached ? 'reused from an earlier request' : 'may contain mistakes');
+
+                        note.textContent = parts.join(' · ');
                     } else {
                         error(panel, (result.data && result.data.error) || 'That could not be done just now.');
                         note.textContent = '';
@@ -212,6 +286,45 @@
                 });
         }
 
+        // The question row, built only when the action is enabled. It stays hidden until the Ask
+        // button is pressed, so a result card is not covered in form fields by default.
+        var askRow = null;
+        var askInput = null;
+
+        function buildAskRow() {
+            askRow = document.createElement('form');
+            askRow.className = 'imai-ask';
+            askRow.style.display = 'none';
+
+            askInput = document.createElement('input');
+            askInput.type = 'text';
+            askInput.className = 'imai-ask-input';
+            askInput.maxLength = config.questionLimit;
+            askInput.placeholder = 'Ask a question about this site…';
+            askInput.setAttribute('aria-label', 'Ask a question about this site');
+
+            var send = document.createElement('button');
+            send.type = 'submit';
+            send.className = 'imai-btn';
+            send.textContent = 'Ask';
+
+            askRow.appendChild(askInput);
+            askRow.appendChild(send);
+
+            askRow.addEventListener('submit', function (e) {
+                e.preventDefault();
+
+                if (askInput.value.trim().length === 0) {
+                    askInput.focus();
+                    return;
+                }
+
+                run('ask', send);
+            });
+
+            return askRow;
+        }
+
         config.actions.forEach(function (action) {
             if (!LABELS[action]) {
                 return;
@@ -234,13 +347,44 @@
                 });
 
                 bar.appendChild(languageSelect);
+
+                // Lets the visitor undo a sticky language and go back to the page's own. Hidden
+                // until there is something to undo.
+                originalButton = document.createElement('button');
+                originalButton.type = 'button';
+                originalButton.className = 'imai-btn';
+                originalButton.textContent = 'Original language';
+                originalButton.style.display = 'none';
+                originalButton.addEventListener('click', function () {
+                    languageActive = false;
+                    showOriginal(false);
+                    panel.style.display = 'none';
+                    foot.style.display = 'none';
+                    reset();
+                });
+
+                bar.appendChild(originalButton);
             }
 
             var button = document.createElement('button');
             button.type = 'button';
             button.className = 'imai-btn';
             button.textContent = LABELS[action];
-            button.addEventListener('click', function () { run(action, button); });
+
+            if (action === 'ask') {
+                // Opens the question box rather than calling anything: there is nothing to ask yet.
+                buildAskRow();
+                button.addEventListener('click', function () {
+                    var opening = askRow.style.display === 'none';
+                    askRow.style.display = opening ? 'flex' : 'none';
+                    button.classList.toggle('is-active', opening);
+                    if (opening) {
+                        askInput.focus();
+                    }
+                });
+            } else {
+                button.addEventListener('click', function () { run(action, button); });
+            }
 
             buttons.push(button);
             bar.appendChild(button);
@@ -251,15 +395,15 @@
         }
 
         card.appendChild(bar);
+
+        if (askRow) {
+            card.appendChild(askRow);
+        }
+
         card.appendChild(panel);
         card.appendChild(foot);
     }
 
-    function scan(list, config) {
-        list.querySelectorAll('[data-imobisoft-key]').forEach(function (card) {
-            decorate(card, config);
-        });
-    }
 
     function init(list) {
         if (list.dataset.imobisoftAiReady) {
@@ -274,13 +418,14 @@
             return;
         }
 
-        scan(list, config);
+        // One bar for the search, placed above the results. Every action now answers about the
+        // search term across the whole site, so a bar on each result would repeat itself - and it
+        // needs no re-scan when Load More appends more results.
+        var mount = document.createElement('div');
+        mount.className = 'imai-bar';
+        list.parentNode.insertBefore(mount, list);
 
-        // "Load more" appends results after load, so new cards have to be picked up as they arrive.
-        if (typeof MutationObserver === 'function') {
-            new MutationObserver(function () { scan(list, config); })
-                .observe(list, { childList: true });
-        }
+        decorate(mount, config);
     }
 
     function run() {

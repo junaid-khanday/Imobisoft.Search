@@ -587,6 +587,16 @@
         <member name="F:Imobisoft.Search.Models.AiAction.Translate">
             <summary>The text in another language.</summary>
         </member>
+        <member name="F:Imobisoft.Search.Models.AiAction.Ask">
+            <summary>
+            An answer to the visitor's own question about the page.
+            <para>
+            The one action that carries text a visitor typed. It is answered strictly from the page, and
+            the question is framed as data rather than instructions - but it is still the widest surface
+            here, and the costliest, because a distinct question cannot be served from the cache.
+            </para>
+            </summary>
+        </member>
         <member name="T:Imobisoft.Search.Models.AiProvider">
             <summary>
             Which service answers. <see cref="F:Imobisoft.Search.Models.AiProvider.Auto"/> works out the provider from the shape of the key that
@@ -646,6 +656,42 @@
         </member>
         <member name="P:Imobisoft.Search.Models.AiRules.Actions">
             <summary>Which actions appear on a result. An empty list offers none of them.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.AiRules.MaxQuestionCharacters">
+            <summary>
+            Longest question a visitor may ask. Short on purpose: a question about one page needs a
+            sentence, and a generous limit here is an invitation to paste something else entirely.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.AiRules.MaxPagesConsulted">
+            <summary>
+            How many pages a question may be answered from. A question is answered from the whole site,
+            so the package searches first and reads the best matches - this is how many it reads.
+            <para>
+            It is the main cost lever for questions: every page consulted is more text sent. Three or
+            four is usually enough to answer and cheap enough to leave switched on.
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.AiRules.ActionsVersion">
+            <summary>
+            Which generation of the <see cref="P:Imobisoft.Search.Models.AiRules.Actions"/> list this profile was last saved with.
+            <para>
+            Without this there is no way to tell a profile saved before an action existed from one where
+            an editor deliberately switched that action off - the stored list looks identical. So a new
+            action is added once, to profiles that predate it, and the version is stamped; after that an
+            editor's choice stands and nothing is re-added behind their back.
+            </para>
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Models.AiRules.CurrentActionsVersion">
+            <summary>Generation of the action set this build of the package ships.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Models.AiRules.ApplyActionsAddedSinceSave">
+            <summary>
+            Offers actions added since this profile was saved. Called when a profile is read, so a new
+            action appears on the site without an editor having to find and tick it.
+            </summary>
         </member>
         <member name="P:Imobisoft.Search.Models.AiRules.Languages">
             <summary>Languages offered for <see cref="F:Imobisoft.Search.Models.AiAction.Translate"/>.</summary>
@@ -1865,24 +1911,73 @@
             <summary>
             The instructions behind each action.
             <para>
-            Every prompt is built here, server-side, from an action in a closed set. Nothing a visitor sends
-            becomes part of the instructions - a visitor supplies which result and which action, and that is
-            all - so the endpoint cannot be steered into answering something else on the site's API bill.
+            Every action works the same way: the package searches the site, puts the best matching pages in
+            <c>&lt;source&gt;</c> blocks, and asks for one thing to be done with them - summarised, shortened,
+            reduced to key points, translated, or used to answer a question. The actions differ only in the
+            instruction, so they share one framing.
+            </para>
+            <para>
+            Prompts are built here, server-side, from an action in a closed set. The two pieces of visitor
+            input that reach a prompt - the search term and, for Ask, the question - arrive in their own
+            labelled blocks, length-capped and with their angle brackets replaced, so neither can appear to
+            close a block and start giving orders.
             </para>
             </summary>
         </member>
         <member name="F:Imobisoft.Search.Services.Ai.AiPrompts.Preamble">
             <summary>
-            Shared framing. The text being worked on is a page from the site, and it arrives from the
-            search index rather than from the caller, so the model is told to treat it as content to
-            transform and not as instructions to follow.
+            Shared framing. The sources are pages from the site, so the model is told to treat them as
+            content to work on rather than as instructions - a page is editable by anyone with CMS
+            access, and several are concatenated here.
             </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiPrompts.For(Imobisoft.Search.Models.AiAction,System.String)">
+            <summary>
+            Instructions for one action.
+            </summary>
+            <param name="action">What to do with the sources.</param>
+            <param name="language">
+            Language to answer in, or null to answer in whatever language the sources are written in.
+            Once a visitor has translated, this carries that choice into the other actions too.
+            </param>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Ai.AiPrompts.AskPreamble">
+            <summary>
+            Framing for a question. Separate from the shared preamble because a question replaces the
+            term as the thing being answered, and because it is the one block holding text a visitor
+            typed - so it says so explicitly rather than relying on the general rule.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiPrompts.In(System.String)">
+            <summary>
+            Which language to answer in. Stated explicitly when the visitor has chosen one, so the model
+            translates as it works rather than answering in the sources' language.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiPrompts.Content(System.Collections.Generic.IEnumerable{System.ValueTuple{System.String,System.String}},System.String,System.String)">
+            <summary>
+            Builds the content: the extracts the search found, then what the visitor is asking about.
+            <para>
+            Everything is fenced. A visitor cannot close a block from the search box or the question
+            field, and neither can a page a content editor wrote - which matters more here, because
+            several pages are concatenated into one message.
+            </para>
+            </summary>
+            <param name="sources">Page title and extract for each page consulted.</param>
+            <param name="term">What the visitor searched for.</param>
+            <param name="question">The visitor's question, for Ask; null for the other actions.</param>
         </member>
         <member name="M:Imobisoft.Search.Services.Ai.AiPrompts.Language(System.String)">
             <summary>
-            The target language, which is the one piece of visitor input that reaches a prompt. It is
-            checked against the profile's own list before it gets here; this is the second line of
-            defence, keeping it to something that reads as a language name.
+            The target language, which with the search term and the question is one of the few pieces of
+            visitor input reaching a prompt. It is checked against the profile's own list before it gets
+            here; this is the second line of defence, keeping it to something that reads as a language.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiPrompts.Fence(System.String)">
+            <summary>
+            Replaces angle brackets with look-alikes, so no block can be closed from inside its own
+            content. The substitutes read identically to a human and carry no markup meaning.
             </summary>
         </member>
         <member name="T:Imobisoft.Search.Services.Ai.AiProtocol">
@@ -1981,11 +2076,21 @@
         <member name="T:Imobisoft.Search.Services.Ai.AiTextRequest">
             <summary>One request from the site: which result, which action, and into which language.</summary>
         </member>
-        <member name="P:Imobisoft.Search.Services.Ai.AiTextRequest.Key">
-            <summary>The result's node key. The text itself is read server-side from that key.</summary>
+        <member name="P:Imobisoft.Search.Services.Ai.AiTextRequest.Term">
+            <summary>
+            What the visitor searched for. Every action works from this: the package searches the site
+            with it and works on the pages that match, so the answer is about the search rather than
+            about one result.
+            </summary>
         </member>
         <member name="P:Imobisoft.Search.Services.Ai.AiTextRequest.Language">
             <summary>Target language for <see cref="F:Imobisoft.Search.Models.AiAction.Translate"/>; ignored by the other actions.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiTextRequest.Question">
+            <summary>
+            The visitor's question, for <see cref="F:Imobisoft.Search.Models.AiAction.Ask"/>. The only free text that reaches the
+            model, so it is length-capped and framed as data rather than instructions.
+            </summary>
         </member>
         <member name="P:Imobisoft.Search.Services.Ai.AiTextRequest.Caller">
             <summary>
@@ -1996,11 +2101,21 @@
         <member name="P:Imobisoft.Search.Services.Ai.AiTextRequest.ProfileAlias">
             <summary>Which profile's AI rules apply. Null uses the default profile.</summary>
         </member>
+        <member name="T:Imobisoft.Search.Services.Ai.AiSource">
+            <summary>A page an answer drew on.</summary>
+        </member>
         <member name="T:Imobisoft.Search.Services.Ai.AiTextResult">
             <summary>What the site gets back.</summary>
         </member>
         <member name="P:Imobisoft.Search.Services.Ai.AiTextResult.Cached">
             <summary>True when this answer came from the cache, so the site can show it instantly.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiTextResult.Sources">
+            <summary>
+            Pages a question was answered from, so the site can show where the answer came from. The
+            list is what the server actually sent to the model, not something parsed back out of the
+            answer - a model asked to cite its sources will sometimes invent one.
+            </summary>
         </member>
         <member name="P:Imobisoft.Search.Services.Ai.AiTextResult.Status">
             <summary>HTTP status the endpoint should use.</summary>
@@ -2054,6 +2169,9 @@
         </member>
         <member name="M:Imobisoft.Search.Services.Ai.AiTextService.Compose(Imobisoft.Search.Services.Ai.AiContentText,System.Int32)">
             <summary>Title first, then the body: the title is the strongest hint about what the page is.</summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Ai.AiTextService.NotFound">
+            <summary>Shown when nothing on the site answers the question.</summary>
         </member>
         <member name="M:Imobisoft.Search.Services.Ai.AiTextService.WithinRateLimit(System.String,System.Int32)">
             <summary>
@@ -2982,10 +3100,19 @@
             <summary>What the site's JavaScript posts: which result, which action, and into which language.</summary>
         </member>
         <member name="P:Imobisoft.Search.Web.AiTransformRequest.Action">
-            <summary>One of <c>summarise</c>, <c>shorten</c>, <c>keyPoints</c>, <c>translate</c>.</summary>
+            <summary>One of <c>summarise</c>, <c>shorten</c>, <c>keyPoints</c>, <c>translate</c>, <c>ask</c>.</summary>
         </member>
-        <member name="P:Imobisoft.Search.Web.AiTransformRequest.Key">
-            <summary>The result's node key. The text is read server-side from this, never sent by the browser.</summary>
+        <member name="P:Imobisoft.Search.Web.AiTransformRequest.Question">
+            <summary>
+            The visitor's question, for the <c>ask</c> action. Length-capped by the profile and framed
+            as data rather than instructions; ignored by every other action.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Web.AiTransformRequest.Term">
+            <summary>
+            What the visitor searched for. The server searches the site with this and reads the matching
+            pages itself, so no page text is ever sent by the browser.
+            </summary>
         </member>
         <member name="P:Imobisoft.Search.Web.AiTransformRequest.Profile">
             <summary>Which profile's AI rules apply. Empty uses the default profile.</summary>

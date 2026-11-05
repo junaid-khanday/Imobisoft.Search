@@ -27,11 +27,12 @@
     data-imobisoft-ai-endpoint="@(ai is null ? null : "/" + ImobisoftSearchConstants.Web.SearchPagePath + "/ai")"
     data-imobisoft-ai-actions="@(ai is null ? null : aiActions)"
     data-imobisoft-ai-languages="@(ai is null ? null : string.Join(',', ai.Languages))"
+    data-imobisoft-ai-term="@(ai is null ? null : response?.Term)"
+    data-imobisoft-ai-question-limit="@(ai is null ? null : ai.MaxQuestionCharacters.ToString())"
     data-imobisoft-ai-profile="@(ai is null ? null : response?.ProfileAlias)">
     @foreach (var item in response!.Results)
     {
-        <li class="isl-card @(item.IsBestBet ? "is-bestbet" : "")"
-            data-imobisoft-key="@(ai is not null && item.Key.HasValue ? item.Key.Value.ToString() : null)">
+        <li class="isl-card @(item.IsBestBet ? "is-bestbet" : "")">
             <div class="isl-card-header">
                 @if (item.IsBestBet)
                 {

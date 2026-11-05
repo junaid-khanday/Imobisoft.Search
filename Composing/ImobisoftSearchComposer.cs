@@ -112,7 +112,10 @@ public sealed class ImobisoftSearchComposer : IComposer
         builder.Services.AddSingleton<IAiCompletionClient, OpenAiCompatibleCompletionClient>();
         builder.Services.AddSingleton<IAiCompletionClient, GeminiCompletionClient>();
 
-        builder.Services.AddSingleton<IAiTextService, AiTextService>();
+        // Scoped, not singleton: answering a question runs a real search, and the search service is
+        // itself scoped because it reaches for the current request's Umbraco context. The rate-limit
+        // counters it keeps are static, so they survive across requests regardless.
+        builder.Services.AddScoped<IAiTextService, AiTextService>();
     }
 
     private static void RegisterAuthorization(IUmbracoBuilder builder)

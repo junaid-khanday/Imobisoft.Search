@@ -352,12 +352,15 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     provider: 'auto',
                     model: '',
                     baseUrl: '',
-                    actions: ['summarise', 'shorten', 'keyPoints', 'translate'],
+                    actions: ['summarise', 'shorten', 'keyPoints', 'translate', 'ask'],
+                    actionsVersion: 2,
                     languages: ['English', 'French', 'German', 'Spanish'],
                     maxInputCharacters: 6000,
                     maxOutputTokens: 2048,
                     cacheMinutes: 1440,
-                    requestsPerMinutePerVisitor: 8
+                    requestsPerMinutePerVisitor: 8,
+                    maxQuestionCharacters: 300,
+                    maxPagesConsulted: 4
                 },
                 searchBox: {
                     enabled: true,
@@ -592,7 +595,12 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         if (p.rules.ai.provider === undefined) p.rules.ai.provider = 'auto';
         if (p.rules.ai.model === undefined) p.rules.ai.model = '';
         if (p.rules.ai.baseUrl === undefined) p.rules.ai.baseUrl = '';
-        if (!Array.isArray(p.rules.ai.actions)) p.rules.ai.actions = ['summarise', 'shorten', 'keyPoints', 'translate'];
+        if (!Array.isArray(p.rules.ai.actions)) p.rules.ai.actions = ['summarise', 'shorten', 'keyPoints', 'translate', 'ask'];
+        if (p.rules.ai.maxQuestionCharacters === undefined) p.rules.ai.maxQuestionCharacters = 300;
+        if (p.rules.ai.maxPagesConsulted === undefined) p.rules.ai.maxPagesConsulted = 4;
+        // The server offers newly added actions when it reads a profile and stamps this, so by the
+        // time the list reaches here it is already current - this only carries the field through.
+        if (p.rules.ai.actionsVersion === undefined) p.rules.ai.actionsVersion = 2;
         if (!Array.isArray(p.rules.ai.languages)) p.rules.ai.languages = ['English', 'French', 'German', 'Spanish'];
         if (p.rules.ai.maxInputCharacters === undefined) p.rules.ai.maxInputCharacters = 6000;
         if (p.rules.ai.maxOutputTokens === undefined) p.rules.ai.maxOutputTokens = 2048;
@@ -1047,6 +1055,8 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             const languages = ai.languages || [];
             this._sidePanelData = {
                 actions: [...(ai.actions || [])],
+                maxQuestionCharacters: ai.maxQuestionCharacters ?? 300,
+                maxPagesConsulted: ai.maxPagesConsulted ?? 4,
                 languages: [...languages],
                 _languagesInput: languages.join('\n')
             };
@@ -1662,6 +1672,8 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             if (!this._currentProfile.rules.ai) this._currentProfile.rules.ai = {};
             this._currentProfile.rules.ai.actions = d.actions || [];
             this._currentProfile.rules.ai.languages = this._toPathList(d._languagesInput, d.languages);
+            this._currentProfile.rules.ai.maxQuestionCharacters = Math.min(1000, Math.max(20, parseInt(d.maxQuestionCharacters) || 300));
+            this._currentProfile.rules.ai.maxPagesConsulted = Math.min(10, Math.max(1, parseInt(d.maxPagesConsulted) || 4));
         } else if (this._sidePanelType === 'editAiLimits') {
             if (!this._currentProfile.rules.ai) this._currentProfile.rules.ai = {};
             const ai = this._currentProfile.rules.ai;
@@ -2575,6 +2587,19 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         }
     }
 
+    /**
+     * Turns one AI action on or off, keeping the canonical order so the buttons on the site never
+     * reshuffle between saves.
+     */
+    _setAiAction(ai, value, on) {
+        const order = ['summarise', 'shorten', 'keyPoints', 'translate', 'ask'];
+        const set = new Set(ai.actions || []);
+
+        if (on) set.add(value); else set.delete(value);
+
+        ai.actions = order.filter(v => set.has(v));
+    }
+
     // --- TAB: AI ---
     _renderAiTab(p) {
         this._ensureProfileStructure(p);
@@ -2584,7 +2609,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         const providers = status.providers || [];
         const current = providers.find(x => x.value.toLowerCase() === String(ai.provider || '').toLowerCase());
         const models = this._aiModels || { loaded: false, ok: false, error: '', models: [], suggested: '' };
-        const actionNames = { summarise: 'Summarise', shorten: 'Shorten', keyPoints: 'Key points', translate: 'Translate' };
+        const actionNames = { summarise: 'Summarise', shorten: 'Shorten', keyPoints: 'Key points', translate: 'Translate', ask: 'Ask a question' };
 
         return html`
             <div class="source-settings-container">
@@ -2763,6 +2788,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                     <span class="selected-chip"><strong>Languages:</strong> ${(ai.languages || []).join(', ') || 'none'}</span>
                                 ` : nothing}
                             </div>
+
                         </div>
                     </div>
                 </div>
@@ -5160,33 +5186,60 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             { value: 'summarise', name: 'Summarise', desc: 'Two or three sentences covering what the page says.' },
             { value: 'shorten', name: 'Shorten', desc: 'The same text at about half the length, facts kept.' },
             { value: 'keyPoints', name: 'Key points', desc: 'The main points as a short list.' },
-            { value: 'translate', name: 'Translate', desc: 'The text in one of the languages below.' }
+            { value: 'translate', name: 'Translate', desc: 'The text in one of the languages below.' },
+            { value: 'ask', name: 'Ask a question', desc: 'A visitor types a question and gets an answer drawn from that page. The only action that accepts typed text, and the costliest - a distinct question can never be served from the cache.' }
         ];
 
         const toggle = (value, on) => {
-            const set = new Set(d.actions || []);
-            if (on) set.add(value); else set.delete(value);
-            // Kept in the listed order so the buttons never reshuffle between saves.
-            d.actions = options.map(o => o.value).filter(v => set.has(v));
+            // Shared with the switch on the tab itself, so both keep the same canonical order.
+            this._setAiAction(d, value, on);
             this.requestUpdate();
         };
 
         return html`
             <div class="sp-multi-choice-layout">
-                <div class="toggle-list" style="margin-bottom: 20px;">
-                    ${options.map(option => html`
-                        <label class="toggle-item">
-                            <div class="toggle-info">
-                                <strong>${option.name}</strong>
-                                <span>${option.desc}</span>
-                            </div>
+                <!-- The same sliding switch the other side panels use, rather than a bare
+                     checkbox, so turning an action on reads the same as every other toggle here. -->
+                ${options.map(option => html`
+                    <div class="sp-toggle-row" style="margin-bottom: 14px;">
+                        <div class="sp-toggle-info">
+                            <span class="sp-toggle-title">${option.name}</span>
+                            <span class="sp-toggle-desc">${option.desc}</span>
+                        </div>
+                        <label class="switch switch-sm">
                             <input type="checkbox"
-                                   class="switch-input"
                                    .checked=${(d.actions || []).includes(option.value)}
                                    @change=${e => toggle(option.value, e.target.checked)}>
+                            <span class="slider round"></span>
                         </label>
-                    `)}
-                </div>
+                    </div>
+                `)}
+
+                <div style="margin-bottom: 20px;"></div>
+
+                ${(d.actions || []).includes('ask') ? html`
+                    <div class="sp-group" style="margin-bottom: 20px;">
+                        <label class="sp-label">Longest Question (characters)</label>
+                        <input type="number"
+                               class="sp-input"
+                               min="20"
+                               max="1000"
+                               .value=${String(d.maxQuestionCharacters ?? 300)}
+                               @change=${e => { d.maxQuestionCharacters = parseInt(e.target.value) || 300; this.requestUpdate(); }}>
+                        <span class="sp-hint">A question needs a sentence. Keeping this short is a cost control, and limits what can be pasted into the one field on the site that reaches the model.</span>
+                    </div>
+
+                    <div class="sp-group" style="margin-bottom: 20px;">
+                        <label class="sp-label">Pages Consulted Per Question</label>
+                        <input type="number"
+                               class="sp-input"
+                               min="1"
+                               max="10"
+                               .value=${String(d.maxPagesConsulted ?? 4)}
+                               @change=${e => { d.maxPagesConsulted = parseInt(e.target.value) || 4; this.requestUpdate(); }}>
+                        <span class="sp-hint">A question is answered from the whole site, not just the result it was asked from: the package searches first, then reads this many of the best matching pages. More pages answer more questions. The text budget on the Limits panel is shared between them, so this does not multiply the cost of one question.</span>
+                    </div>
+                ` : nothing}
 
                 <div class="sp-group">
                     <label class="sp-label">Translation Languages (one per line)</label>

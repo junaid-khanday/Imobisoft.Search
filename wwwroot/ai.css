@@ -5,12 +5,17 @@
     these classes in its own stylesheet; nothing here is required for the tools to work.
 */
 
+/* One bar for the search, sitting above the results. */
+.imai-bar {
+    margin-bottom: 16px;
+}
+
 .imai {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 6px;
-    margin-top: 12px;
+    margin-top: 0;
 }
 
 .imai-label {
@@ -60,6 +65,33 @@
     background: #fff;
     border: 1px solid #e2e8f0;
     border-radius: 6px;
+}
+
+/* The question row. Hidden until the Ask button is pressed - ai.js owns that, as an inline style. */
+.imai-ask {
+    display: flex;
+    gap: 6px;
+    width: 100%;
+    margin-top: 8px;
+}
+
+.imai-ask-input {
+    flex: 1;
+    min-width: 0;
+    height: 32px;
+    padding: 0 10px;
+    font: inherit;
+    font-size: 13px;
+    color: #1e293b;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    outline: none;
+}
+
+.imai-ask-input:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, .15);
 }
 
 /* The answer. Hidden until there is something to show - ai.js owns that, as an inline style, so
@@ -127,4 +159,30 @@
 
 @media (prefers-reduced-motion: reduce) {
     .imai-waiting { animation: none; }
+}
+
+/* Where a question was answered from. */
+.imai-sources {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid #e2e8f0;
+    font-size: 12px;
+}
+
+.imai-sources-label {
+    color: #64748b;
+    font-weight: 600;
+}
+
+.imai-sources ul {
+    margin: 4px 0 0;
+    padding-left: 16px;
+}
+
+.imai-sources li {
+    margin-bottom: 2px;
+}
+
+.imai-sources a {
+    color: #2563eb;
 }

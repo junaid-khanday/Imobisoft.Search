@@ -18,6 +18,16 @@ public enum AiAction
 
     /// <summary>The text in another language.</summary>
     Translate,
+
+    /// <summary>
+    /// An answer to the visitor's own question about the page.
+    /// <para>
+    /// The one action that carries text a visitor typed. It is answered strictly from the page, and
+    /// the question is framed as data rather than instructions - but it is still the widest surface
+    /// here, and the costliest, because a distinct question cannot be served from the cache.
+    /// </para>
+    /// </summary>
+    Ask,
 }
 
 /// <summary>
@@ -97,7 +107,58 @@ public sealed class AiRules
         AiAction.Shorten,
         AiAction.KeyPoints,
         AiAction.Translate,
+        AiAction.Ask,
     };
+
+    /// <summary>
+    /// Longest question a visitor may ask. Short on purpose: a question about one page needs a
+    /// sentence, and a generous limit here is an invitation to paste something else entirely.
+    /// </summary>
+    public int MaxQuestionCharacters { get; set; } = 300;
+
+    /// <summary>
+    /// How many pages a question may be answered from. A question is answered from the whole site,
+    /// so the package searches first and reads the best matches - this is how many it reads.
+    /// <para>
+    /// It is the main cost lever for questions: every page consulted is more text sent. Three or
+    /// four is usually enough to answer and cheap enough to leave switched on.
+    /// </para>
+    /// </summary>
+    public int MaxPagesConsulted { get; set; } = 4;
+
+    /// <summary>
+    /// Which generation of the <see cref="Actions"/> list this profile was last saved with.
+    /// <para>
+    /// Without this there is no way to tell a profile saved before an action existed from one where
+    /// an editor deliberately switched that action off - the stored list looks identical. So a new
+    /// action is added once, to profiles that predate it, and the version is stamped; after that an
+    /// editor's choice stands and nothing is re-added behind their back.
+    /// </para>
+    /// </summary>
+    public int ActionsVersion { get; set; }
+
+    /// <summary>Generation of the action set this build of the package ships.</summary>
+    public const int CurrentActionsVersion = 2;
+
+    /// <summary>
+    /// Offers actions added since this profile was saved. Called when a profile is read, so a new
+    /// action appears on the site without an editor having to find and tick it.
+    /// </summary>
+    public void ApplyActionsAddedSinceSave()
+    {
+        if (ActionsVersion >= CurrentActionsVersion)
+        {
+            return;
+        }
+
+        // Version 2 added Ask. Earlier profiles never had the chance to turn it off, so they get it.
+        if (!Actions.Contains(AiAction.Ask))
+        {
+            Actions.Add(AiAction.Ask);
+        }
+
+        ActionsVersion = CurrentActionsVersion;
+    }
 
     /// <summary>Languages offered for <see cref="AiAction.Translate"/>.</summary>
     public IList<string> Languages { get; set; } = new List<string> { "English", "French", "German", "Spanish" };

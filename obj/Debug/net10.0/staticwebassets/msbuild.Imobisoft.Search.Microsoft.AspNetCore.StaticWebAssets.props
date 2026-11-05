@@ -12,12 +12,12 @@
       <RelatedAsset></RelatedAsset>
       <AssetTraitName></AssetTraitName>
       <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>tdph3k0p2r</Fingerprint>
-      <Integrity>P3J/71BDxUvht1Su2m5Bb++jkF2rGp/gabbuo7kT1gA=</Integrity>
+      <Fingerprint>yv03g4rovo</Fingerprint>
+      <Integrity>woj9maeHLzeEsYCEgOy0xHIWUf2j2Mzvf6f1016ud8Y=</Integrity>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-      <FileLength>2682</FileLength>
-      <LastWriteTime>Thu, 05 Nov 2026 06:28:10 GMT</LastWriteTime>
+      <FileLength>3698</FileLength>
+      <LastWriteTime>Thu, 05 Nov 2026 08:49:04 GMT</LastWriteTime>
       <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\ai.css'))</OriginalItemSpec>
     </StaticWebAsset>
     <StaticWebAsset Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\ai.js'))">
@@ -32,12 +32,12 @@
       <RelatedAsset></RelatedAsset>
       <AssetTraitName></AssetTraitName>
       <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>3thrcdn4dg</Fingerprint>
-      <Integrity>GR3OM0SBVXCyntsV4MKiC/dOV4XqsuI+fciY196UFoc=</Integrity>
+      <Fingerprint>740uqfwtdp</Fingerprint>
+      <Integrity>F5K/Z2NLSmkobnciUwHmybSI4sV6ipbmVqFgk9XNbwo=</Integrity>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-      <FileLength>10115</FileLength>
-      <LastWriteTime>Thu, 05 Nov 2026 06:28:49 GMT</LastWriteTime>
+      <FileLength>16141</FileLength>
+      <LastWriteTime>Thu, 05 Nov 2026 08:47:40 GMT</LastWriteTime>
       <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\ai.js'))</OriginalItemSpec>
     </StaticWebAsset>
     <StaticWebAsset Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\auth-fetch.js'))">
@@ -152,12 +152,12 @@
       <RelatedAsset></RelatedAsset>
       <AssetTraitName></AssetTraitName>
       <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>64k9e7nsrn</Fingerprint>
-      <Integrity>6nc3YdPuJv6ipmXYEmDpJu6CF4N7gig0f/EVV6Ub/HU=</Integrity>
+      <Fingerprint>rm4ptwp8zb</Fingerprint>
+      <Integrity>Tc+Iho58gH3srA16rd2e0Y6lmnDqckYPydwi6eamk90=</Integrity>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-      <FileLength>420891</FileLength>
-      <LastWriteTime>Thu, 05 Nov 2026 07:30:42 GMT</LastWriteTime>
+      <FileLength>424552</FileLength>
+      <LastWriteTime>Thu, 05 Nov 2026 08:14:56 GMT</LastWriteTime>
       <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\workspace.js'))</OriginalItemSpec>
     </StaticWebAsset>
   </ItemGroup>
