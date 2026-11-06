@@ -96,6 +96,19 @@ public sealed class ResultRules
     public int MaxResults { get; set; } = 500;
 
     /// <summary>
+    /// The property aliases a result's description is taken from, in order of preference - the
+    /// first one with anything in it wins.
+    /// <para>
+    /// This is the line under a result's name when there is no matched sentence to show there
+    /// instead: on a page nobody has searched yet, and on a result that matched something other
+    /// than its prose. Empty - the default - uses the aliases Umbraco sites normally use, which is
+    /// why descriptions appear without this being configured at all. Name your own here when the
+    /// site calls them something else.
+    /// </para>
+    /// </summary>
+    public IList<string> DescriptionFields { get; set; } = new List<string>();
+
+    /// <summary>
     /// Index fields copied into each result. Empty means the package returns a useful default set
     /// (name, url, content type, dates) plus whatever fields were searched.
     /// </summary>

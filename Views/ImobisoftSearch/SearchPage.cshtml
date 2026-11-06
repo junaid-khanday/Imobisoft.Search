@@ -692,17 +692,29 @@ else
                                     <div class="imobisoft-result-path">@item.Url</div>
                                 }
 
+                                @* The sentence that matched, or - when nothing did, which is every
+                                   result before a visitor has typed - what the page says about
+                                   itself. A result with nothing under its name tells a visitor
+                                   nothing about whether to click it. *@
                                 @if (!string.IsNullOrWhiteSpace(item.Highlight))
                                 {
                                     @* The engine HTML-encodes the snippet and leaves only the
                                        configured highlight tag intact, so this is safe as markup. *@
                                     <div class="imobisoft-result-snippet">@Html.Raw(item.Highlight)</div>
                                 }
+                                else if (!string.IsNullOrWhiteSpace(item.Summary))
+                                {
+                                    @* Plain text by the time it reaches here - markup stripped,
+                                       structured values flattened - so it is printed, not raw. *@
+                                    <div class="imobisoft-result-snippet">@item.Summary</div>
+                                }
 
                                 <div class="imobisoft-result-meta">
-                                    @if (item.Fields.TryGetValue("updateDate", out var updateDate) && !string.IsNullOrWhiteSpace(updateDate))
+                                    @* The parsed date, never the index's own value for it: that is
+                                       written as a tick count and reads as an id. *@
+                                    @if (item.CreateDate is { } created)
                                     {
-                                        <span class="imobisoft-result-date">@updateDate</span>
+                                        <span class="imobisoft-result-date">@created.ToString("dd MMM yyyy")</span>
                                     }
                                     @if (!string.IsNullOrWhiteSpace(item.ContentTypeAlias) || !string.IsNullOrWhiteSpace(item.IndexType))
                                     {

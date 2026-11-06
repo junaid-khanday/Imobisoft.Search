@@ -99,6 +99,10 @@ internal sealed partial class SearchResultProcessor
             ApplyHighlighting(pageItems, plan, rules.Results.Highlight);
         }
 
+        // After highlighting, so a result that got a matched sentence keeps it and only the rest
+        // fall back to what the page says about itself. Only the page being returned is walked.
+        Describe(pageItems, rules.Results);
+
         var response = new SearchResponse
         {
             Term = request.Term,
@@ -1099,6 +1103,144 @@ internal sealed partial class SearchResultProcessor
         }
 
         return DateTime.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out date);
+    }
+
+    /// <summary>
+    /// The property aliases a description is looked for in when a profile names none. These are
+    /// what Umbraco sites call the field in practice, most specific first: a meta description is
+    /// written to be read out of context, an opening paragraph is only the next best thing.
+    /// </summary>
+    internal static readonly string[] DefaultDescriptionFields =
+    {
+        "metaDescription",
+        "seoMetaDescription",
+        "searchDescription",
+        "description",
+        "summary",
+        "excerpt",
+        "teaser",
+        "standfirst",
+        "introText",
+        "intro",
+        "subtitle",
+        "bodyText",
+        "content",
+    };
+
+    /// <summary>
+    /// Gives each result on the page the two things a result line needs beyond its name: something
+    /// to say about itself, and a date that reads as a date.
+    /// <para>
+    /// The dates are parsed here rather than left to the view, because the index writes them as a
+    /// tick count - a view printing the raw field shows a long run of digits that looks like an id.
+    /// </para>
+    /// </summary>
+    internal static void Describe(IList<SearchResultItem> items, ResultRules results)
+    {
+        IReadOnlyList<string> fields = results.DescriptionFields
+            .Where(f => !string.IsNullOrWhiteSpace(f))
+            .Select(f => f.Trim())
+            .ToList();
+
+        if (fields.Count == 0)
+        {
+            fields = DefaultDescriptionFields;
+        }
+
+        // A description is a line, not a page: the snippet length the profile already sets for
+        // matched sentences is the same measure of "as much as a result line should carry".
+        var limit = results.Highlight.SnippetLength > 0 ? results.Highlight.SnippetLength : 200;
+
+        foreach (SearchResultItem item in items)
+        {
+            if (TryParseDate(FieldValue(item, ImobisoftSearchConstants.IndexFields.CreateDate) ?? string.Empty, out DateTime created))
+            {
+                item.CreateDate = created;
+            }
+
+            if (TryParseDate(FieldValue(item, ImobisoftSearchConstants.IndexFields.UpdateDate) ?? string.Empty, out DateTime updated))
+            {
+                item.UpdateDate = updated;
+            }
+
+            item.Summary ??= FindDescription(item, fields, limit);
+        }
+    }
+
+    /// <summary>The first of the named fields this result actually carries anything in.</summary>
+    private static string? FindDescription(SearchResultItem item, IReadOnlyList<string> fields, int limit)
+    {
+        foreach (var field in fields)
+        {
+            var raw = FieldValue(item, field) ?? CultureVariantValue(item, field);
+
+            // Block list properties are indexed as raw JSON, so what is in the field may be a blob
+            // rather than prose. The same flattening the snippet builder uses gets the sentence
+            // someone actually wrote out of it.
+            var value = PlainText(FlattenStructuredValue(raw));
+
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            return Shorten(value, limit);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The same field on a site that varies by culture, where Umbraco indexes it as
+    /// <c>description_en-gb</c> rather than <c>description</c>. The first culture that carries one
+    /// is used: a result already belongs to one culture by the time it is here.
+    /// </summary>
+    private static string? CultureVariantValue(SearchResultItem item, string field)
+    {
+        var prefix = field + "_";
+
+        foreach (KeyValuePair<string, string> candidate in item.Fields)
+        {
+            if (candidate.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(candidate.Value))
+            {
+                return candidate.Value;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Markup out, runs of whitespace collapsed. A description is printed as text, so a stray tag
+    /// would be shown rather than rendered - and rendering it instead would let indexed content
+    /// write markup into the page.
+    /// </summary>
+    private static string? PlainText(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var text = Regex.Replace(value, "<[^>]+>", " ");
+        text = WebUtility.HtmlDecode(text);
+        text = Regex.Replace(text, @"\s+", " ").Trim();
+
+        return text.Length == 0 ? null : text;
+    }
+
+    /// <summary>Cut at a word boundary, so a description never ends mid-word.</summary>
+    private static string Shorten(string value, int limit)
+    {
+        if (limit <= 0 || value.Length <= limit)
+        {
+            return value;
+        }
+
+        var cut = value.LastIndexOf(' ', Math.Min(limit, value.Length - 1));
+
+        return (cut > limit / 2 ? value[..cut] : value[..limit]).TrimEnd(' ', ',', ';', ':', '-') + "...";
     }
 
     /// <summary>

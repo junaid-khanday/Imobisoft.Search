@@ -20,7 +20,7 @@ using System.Reflection;
       for use in the site. Requires no files or code in the consuming project.
     ")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+9489032885583afb72f74100001f8f0ac7a414e9")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+67c7b565ba13ea932f7376674eebe9c4f16fb4e9")]
 [assembly: System.Reflection.AssemblyProductAttribute("Imobisoft.Search")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Imobisoft.Search")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

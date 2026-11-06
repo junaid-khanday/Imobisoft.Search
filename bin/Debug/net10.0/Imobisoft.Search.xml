@@ -1164,6 +1164,19 @@
             boosting and de-duplication bounded on large sites.
             </summary>
         </member>
+        <member name="P:Imobisoft.Search.Models.ResultRules.DescriptionFields">
+            <summary>
+            The property aliases a result's description is taken from, in order of preference - the
+            first one with anything in it wins.
+            <para>
+            This is the line under a result's name when there is no matched sentence to show there
+            instead: on a page nobody has searched yet, and on a result that matched something other
+            than its prose. Empty - the default - uses the aliases Umbraco sites normally use, which is
+            why descriptions appear without this being configured at all. Name your own here when the
+            site calls them something else.
+            </para>
+            </summary>
+        </member>
         <member name="P:Imobisoft.Search.Models.ResultRules.ReturnFields">
             <summary>
             Index fields copied into each result. Empty means the package returns a useful default set
@@ -1509,6 +1522,29 @@
         </member>
         <member name="P:Imobisoft.Search.Models.SearchResultItem.Highlight">
             <summary>Snippet built from the highlight rules, when highlighting is on.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchResultItem.Summary">
+            <summary>
+            What the page says about itself - its meta description, summary or opening text - read from
+            the first of <see cref="P:Imobisoft.Search.Models.ResultRules.DescriptionFields"/> that has anything in it.
+            <para>
+            This is what a result line shows when there is no <see cref="P:Imobisoft.Search.Models.SearchResultItem.Highlight"/> to show instead,
+            which is every result on a search page nobody has typed into yet, and any result that
+            matched on something other than its prose. A result with a name and nothing under it tells
+            a visitor nothing about whether to click it.
+            </para>
+            <para>Plain text: markup is stripped and structured values flattened, so it is safe to print.</para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchResultItem.CreateDate">
+            <summary>
+            When the page was created, read out of the index whichever way it was written there - a
+            Lucene date string, a tick count or a formatted date - so a view never has to print the raw
+            value, which is a long run of digits.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchResultItem.UpdateDate">
+            <summary>When the page was last edited. Read the same way as <see cref="P:Imobisoft.Search.Models.SearchResultItem.CreateDate"/>.</summary>
         </member>
         <member name="P:Imobisoft.Search.Models.SearchResultItem.Fields">
             <summary>The fields requested by <see cref="P:Imobisoft.Search.Models.ResultRules.ReturnFields"/>.</summary>
@@ -2564,7 +2600,7 @@
             </para>
             </summary>
         </member>
-        <member name="M:Imobisoft.Search.Services.ImobisoftSearchService.Describe(Umbraco.Cms.Core.Models.PublishedContent.IPublishedContent)">
+        <member name="M:Imobisoft.Search.Services.ImobisoftSearchService.Describe(Umbraco.Cms.Core.Models.PublishedContent.IPublishedContent,Imobisoft.Search.Models.ResultRules)">
             <summary>One picked page, in the shape the rest of the pipeline and the view expect.</summary>
         </member>
         <member name="M:Imobisoft.Search.Services.ImobisoftSearchService.TrimReturnedFields(Imobisoft.Search.Models.SearchResponse,Imobisoft.Search.Services.Querying.SearchPlan)">
@@ -2896,6 +2932,43 @@
             otherwise be read as the year 65.
             </para>
             </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Querying.SearchResultProcessor.DefaultDescriptionFields">
+            <summary>
+            The property aliases a description is looked for in when a profile names none. These are
+            what Umbraco sites call the field in practice, most specific first: a meta description is
+            written to be read out of context, an opening paragraph is only the next best thing.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Querying.SearchResultProcessor.Describe(System.Collections.Generic.IList{Imobisoft.Search.Models.SearchResultItem},Imobisoft.Search.Models.ResultRules)">
+            <summary>
+            Gives each result on the page the two things a result line needs beyond its name: something
+            to say about itself, and a date that reads as a date.
+            <para>
+            The dates are parsed here rather than left to the view, because the index writes them as a
+            tick count - a view printing the raw field shows a long run of digits that looks like an id.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Querying.SearchResultProcessor.FindDescription(Imobisoft.Search.Models.SearchResultItem,System.Collections.Generic.IReadOnlyList{System.String},System.Int32)">
+            <summary>The first of the named fields this result actually carries anything in.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Querying.SearchResultProcessor.CultureVariantValue(Imobisoft.Search.Models.SearchResultItem,System.String)">
+            <summary>
+            The same field on a site that varies by culture, where Umbraco indexes it as
+            <c>description_en-gb</c> rather than <c>description</c>. The first culture that carries one
+            is used: a result already belongs to one culture by the time it is here.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Querying.SearchResultProcessor.PlainText(System.String)">
+            <summary>
+            Markup out, runs of whitespace collapsed. A description is printed as text, so a stray tag
+            would be shown rather than rendered - and rendering it instead would let indexed content
+            write markup into the page.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Querying.SearchResultProcessor.Shorten(System.String,System.Int32)">
+            <summary>Cut at a word boundary, so a description never ends mid-word.</summary>
         </member>
         <member name="M:Imobisoft.Search.Services.Querying.SearchResultProcessor.ApplyHighlighting(System.Collections.Generic.IList{Imobisoft.Search.Models.SearchResultItem},Imobisoft.Search.Services.Querying.SearchPlan,Imobisoft.Search.Models.HighlightRules)">
             <summary>

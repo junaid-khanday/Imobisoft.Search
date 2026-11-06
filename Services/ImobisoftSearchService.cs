@@ -610,7 +610,7 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
                     continue;
                 }
 
-                picked.Add(Describe(node));
+                picked.Add(Describe(node, plan.Rules.Results));
             }
         }
         catch (Exception ex)
@@ -632,6 +632,10 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
             return;
         }
 
+        // The same pass the index results get, so a picked page carries a description and a real
+        // date rather than being the one kind of result that does not.
+        SearchResultProcessor.Describe(picked, plan.Rules.Results);
+
         response.Results = picked;
         response.TotalResults = picked.Count;
         response.Page = 1;
@@ -643,7 +647,7 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
     }
 
     /// <summary>One picked page, in the shape the rest of the pipeline and the view expect.</summary>
-    private static SearchResultItem Describe(IPublishedContent node)
+    private static SearchResultItem Describe(IPublishedContent node, ResultRules results)
     {
         var isMedia = node.ItemType == PublishedItemType.Media;
 
@@ -667,8 +671,32 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
         // date line finds one here too.
         item.Fields[ImobisoftSearchConstants.IndexFields.NodeName] = item.Name;
         item.Fields[ImobisoftSearchConstants.IndexFields.NodeTypeAlias] = item.ContentTypeAlias;
-        item.Fields[ImobisoftSearchConstants.IndexFields.CreateDate] = node.CreateDate.ToString("yyyy-MM-dd");
-        item.Fields[ImobisoftSearchConstants.IndexFields.UpdateDate] = node.UpdateDate.ToString("yyyy-MM-dd");
+        item.Fields[ImobisoftSearchConstants.IndexFields.CreateDate] = node.CreateDate.ToString("O");
+        item.Fields[ImobisoftSearchConstants.IndexFields.UpdateDate] = node.UpdateDate.ToString("O");
+
+        // The fields a description is looked for in, copied off the node so the shared pass can
+        // find one here exactly as it does on a result that came from the index.
+        IEnumerable<string> aliases = results.DescriptionFields.Count > 0
+            ? results.DescriptionFields.Where(f => !string.IsNullOrWhiteSpace(f)).Select(f => f.Trim())
+            : SearchResultProcessor.DefaultDescriptionFields;
+
+        foreach (var alias in aliases)
+        {
+            if (item.Fields.ContainsKey(alias))
+            {
+                continue;
+            }
+
+            // The property API rather than the Value() extension, which wants an
+            // IPublishedValueFallback this does not need: the value is either on the node or it is
+            // not, and the next alias in the list is the fallback.
+            var value = node.GetProperty(alias)?.GetValue()?.ToString();
+
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                item.Fields[alias] = value;
+            }
+        }
 
         return item;
     }

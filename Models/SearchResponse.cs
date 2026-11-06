@@ -38,6 +38,29 @@ public sealed class SearchResultItem
     /// <summary>Snippet built from the highlight rules, when highlighting is on.</summary>
     public string? Highlight { get; set; }
 
+    /// <summary>
+    /// What the page says about itself - its meta description, summary or opening text - read from
+    /// the first of <see cref="ResultRules.DescriptionFields"/> that has anything in it.
+    /// <para>
+    /// This is what a result line shows when there is no <see cref="Highlight"/> to show instead,
+    /// which is every result on a search page nobody has typed into yet, and any result that
+    /// matched on something other than its prose. A result with a name and nothing under it tells
+    /// a visitor nothing about whether to click it.
+    /// </para>
+    /// <para>Plain text: markup is stripped and structured values flattened, so it is safe to print.</para>
+    /// </summary>
+    public string? Summary { get; set; }
+
+    /// <summary>
+    /// When the page was created, read out of the index whichever way it was written there - a
+    /// Lucene date string, a tick count or a formatted date - so a view never has to print the raw
+    /// value, which is a long run of digits.
+    /// </summary>
+    public DateTime? CreateDate { get; set; }
+
+    /// <summary>When the page was last edited. Read the same way as <see cref="CreateDate"/>.</summary>
+    public DateTime? UpdateDate { get; set; }
+
     /// <summary>The fields requested by <see cref="ResultRules.ReturnFields"/>.</summary>
     public IDictionary<string, string> Fields { get; set; } =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

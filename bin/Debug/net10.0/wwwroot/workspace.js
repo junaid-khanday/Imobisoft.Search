@@ -1066,7 +1066,9 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 enabled: this._currentProfile.rules?.results?.highlight?.enabled || false,
                 mode: this._currentProfile.rules?.results?.highlight?.mode || 'sentence',
                 snippetLength: this._currentProfile.rules?.results?.highlight?.snippetLength ?? 200,
-                sentenceContext: this._currentProfile.rules?.results?.highlight?.sentenceContext ?? 0
+                sentenceContext: this._currentProfile.rules?.results?.highlight?.sentenceContext ?? 0,
+                descriptionFields: [...(this._currentProfile.rules?.results?.descriptionFields ?? [])],
+                _descriptionInput: (this._currentProfile.rules?.results?.descriptionFields ?? []).join('\n')
             };
         } else if (type === 'editResultShaping') {
             this._sidePanelData = {
@@ -1702,6 +1704,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             this._currentProfile.rules.results.highlight.mode = d.mode || 'sentence';
             this._currentProfile.rules.results.highlight.snippetLength = parseInt(d.snippetLength) || 200;
             this._currentProfile.rules.results.highlight.sentenceContext = parseInt(d.sentenceContext) || 0;
+            this._currentProfile.rules.results.descriptionFields = this._toPathList(d._descriptionInput, d.descriptionFields);
         } else if (this._sidePanelType === 'editResultShaping') {
             if (!this._currentProfile.rules.results) this._currentProfile.rules.results = {};
             this._currentProfile.rules.results.enableDeduplication = d.enableDeduplication !== false;
@@ -5962,6 +5965,22 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     _renderHighlightingSidePanelBody(d) {
         return html`
             <div class="sp-multi-choice-layout">
+                <div class="sp-group" style="margin-bottom: 20px;">
+                    <label class="sp-label">Description Fields (one per line)</label>
+                    <textarea class="sp-textarea"
+                              style="min-height: 90px; font-family: monospace; font-size: 13px;"
+                              placeholder="e.g.&#10;metaDescription&#10;introText"
+                              .value=${d._descriptionInput ?? ''}
+                              @input=${e => { d._descriptionInput = e.target.value; this.requestUpdate(); }}></textarea>
+                    <span class="sp-hint">
+                        The line under a result's name when there is no matched sentence to show there instead -
+                        on a page nobody has searched yet, and on a result that matched something other than its
+                        prose. The first of these with anything in it wins. Leave empty to use the aliases Umbraco
+                        sites normally use (metaDescription, description, summary, introText, bodyText and the
+                        like), which is why descriptions appear without setting this at all.
+                    </span>
+                </div>
+
                 <div class="sp-toggle-row" style="margin-bottom: 16px;">
                     <div class="sp-toggle-info">
                         <span class="sp-toggle-title">Enable Snippet Highlights</span>
