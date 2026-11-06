@@ -426,6 +426,12 @@
             which a site is likely to want for a content node of its own.
             </summary>
         </member>
+        <member name="F:Imobisoft.Search.ImobisoftSearchConstants.Web.PageRenderedKey">
+            <summary>
+            Set on the request once the search page has been rendered into it, so a site page that
+            renders the view component itself is not then given a second copy by the injector.
+            </summary>
+        </member>
         <member name="F:Imobisoft.Search.ImobisoftSearchConstants.Settings.KeyValueKey">
             <summary>Key the site-wide settings JSON is stored under in Umbraco's key/value table.</summary>
         </member>
@@ -1134,6 +1140,24 @@
             term is submitted.
             </summary>
         </member>
+        <member name="P:Imobisoft.Search.Models.ResultRules.BrowseNodeKeys">
+            <summary>
+            The pages the search page opens with, picked from the content tree, in the order they are
+            picked. This is the curated version of <see cref="P:Imobisoft.Search.Models.ResultRules.BrowsePageSize"/>: where that says how
+            many of whatever the index returns to list, this says exactly which pages to list.
+            <para>
+            Pick nothing - the default - and the automatic list is used, as before. Pick anything and
+            those pages are what an untouched search page shows, all of them, whatever
+            <see cref="P:Imobisoft.Search.Models.ResultRules.BrowsePageSize"/> says; it goes back to governing the automatic list the moment
+            the picks are cleared. Nothing here affects a real search: the moment a visitor types, the
+            results are the ones that matched.
+            </para>
+            <para>
+            A page that has since been unpublished or deleted is skipped rather than listed as a dead
+            link, and the filter counts above the list still come from the whole site.
+            </para>
+            </summary>
+        </member>
         <member name="P:Imobisoft.Search.Models.ResultRules.MaxResults">
             <summary>
             Hard ceiling on how many documents are pulled from the index before post-processing. Keeps
@@ -1597,6 +1621,51 @@
         </member>
         <member name="P:Imobisoft.Search.Models.SuggestionSettings.AutocompleteSize">
             <summary>Default number of type-ahead suggestions returned.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Models.SearchPageSettings">
+            <summary>How the package's built-in search page is rendered.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchPageSettings.UseSiteLayout">
+            <summary>
+            Renders the search page inside the site's own layout, so it gets the site's header, footer
+            and navigation. Off, the page is its own standalone document with only the package's own
+            plain styling.
+            <para>
+            A layout that declares a view model of its own cannot be used - a layout shares its model
+            with the page inside it - and such a layout is detected and skipped rather than failing to
+            render. To put search inside a layout like that, render
+            <c>@await Component.InvokeAsync("ImobisoftSearchPage")</c> from one of the site's own
+            templates instead.
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchPageSettings.LayoutPath">
+            <summary>
+            The layout to use, as an application-rooted path such as
+            <c>~/Views/Shared/_Layout.cshtml</c>. Empty looks in the usual places for one. A path that
+            is set but unusable is not quietly replaced by a guess: the page falls back to its
+            standalone look and says why in the log.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchPageSettings.SitePagePaths">
+            <summary>
+            Paths of the site's own pages that search is rendered into, one per entry - "/search",
+            "/site-search". This is what gets search the site's header, footer and navigation on a site
+            whose layout declares a view model of its own: the site renders its own page exactly as it
+            always does, and the search page is placed into it.
+            <para>
+            Create the page in Umbraco with whatever document type the site already uses for an ordinary
+            content page, so the site's own controllers and template build it, then put its path here.
+            Nothing is injected anywhere else.
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchPageSettings.SitePageContainer">
+            <summary>
+            A CSS selector for where in that page search is placed - the site's main content area.
+            Empty tries the usual ones. The first match wins; where nothing matches, search is left at
+            the end of the page rather than not shown at all.
+            </summary>
         </member>
         <member name="T:Imobisoft.Search.Models.SearchSettings">
             <summary>
@@ -2479,6 +2548,25 @@
             failing to parse or read must not take the whole search down.
             </summary>
         </member>
+        <member name="M:Imobisoft.Search.Services.ImobisoftSearchService.ApplyCuratedBrowseResults(Imobisoft.Search.Models.SearchResponse,Imobisoft.Search.Services.Querying.SearchPlan,Imobisoft.Search.Models.SearchRequest)">
+            <summary>
+            Replaces the results of a browse - a search page nobody has typed into yet - with the pages
+            the profile names, in the order it names them.
+            <para>
+            Read from the published cache rather than from the index, because an editor's choice has to
+            appear whether or not it happens to fall inside the window of documents the browse query
+            pulled back. A pick is an instruction, not a ranking signal.
+            </para>
+            <para>
+            Does nothing on a real search, and nothing when the profile picks nothing. If not one pick
+            can be resolved - every one of them unpublished, say - the automatic list is left exactly as
+            it was, which is a working search page rather than an empty one.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.ImobisoftSearchService.Describe(Umbraco.Cms.Core.Models.PublishedContent.IPublishedContent)">
+            <summary>One picked page, in the shape the rest of the pipeline and the view expect.</summary>
+        </member>
         <member name="M:Imobisoft.Search.Services.ImobisoftSearchService.TrimReturnedFields(Imobisoft.Search.Models.SearchResponse,Imobisoft.Search.Services.Querying.SearchPlan)">
             <summary>
             Cuts each result down to the fields the profile asked for. Done after paging so only the
@@ -3016,6 +3104,59 @@
             </para>
             </summary>
         </member>
+        <member name="T:Imobisoft.Search.Services.ISearchPageModelBuilder">
+            <summary>
+            Builds what the search page renders: the term, the filters, the sort choice and the results.
+            <para>
+            Shared rather than living in the controller, because the search page is reached two ways and both
+            have to behave identically. The package serves it at its own route, and a site can render it
+            inside one of its own pages through <see cref="T:Imobisoft.Search.Web.ImobisoftSearchPageViewComponent"/> - which is the
+            only way to get the site's header and footer around it when the site's layout declares a view
+            model of its own.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.ISearchPageModelBuilder.BuildAsync(System.String,System.Int32,System.Threading.CancellationToken)">
+            <summary>
+            Reads the term, page, filters and sort from the current request and runs the search.
+            </summary>
+            <param name="term">
+            What to search for. Null reads <c>q</c> from the query string, which is what a site rendering
+            the view component wants - the search box posts to the page it is on.
+            </param>
+            <param name="page">1-based page number. 0 or less reads it from the query string.</param>
+            <param name="cancellationToken">Abandons the search when the request goes away.</param>
+        </member>
+        <member name="T:Imobisoft.Search.Services.SearchPageModelBuilder">
+            <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.SearchPageModelBuilder.BuildAsync(System.String,System.Int32,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="T:Imobisoft.Search.Services.ISearchPageRenderer">
+            <summary>
+            Renders the search page to markup outside of an action, so it can be placed into a page the site
+            is already rendering.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.ISearchPageRenderer.RenderAsync(Microsoft.AspNetCore.Http.HttpContext,System.Threading.CancellationToken)">
+            <summary>
+            The search page as a block of markup - no layout, no document of its own - or null when it
+            could not be rendered, which is never a reason to take the site's page down with it.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.SearchPageRenderer">
+            <inheritdoc />
+        </member>
+        <member name="F:Imobisoft.Search.Services.SearchPageRenderer.ViewPath">
+            <summary>
+            The same file the package's own route renders and that Search → Templates edits, by path
+            rather than by name so a site's own copy at this path wins and nothing else can.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.SearchPageRenderer.RenderAsync(Microsoft.AspNetCore.Http.HttpContext,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
         <member name="T:Imobisoft.Search.Services.SearchProfileService">
             <inheritdoc />
         </member>
@@ -3094,6 +3235,75 @@
             <summary>
             Settings live in Umbraco's own key/value table rather than a table of ours, because one JSON
             document needs no schema and no migration when a new setting is added.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.ISiteLayoutLocator">
+            <summary>
+            Finds the layout the site renders its own pages with, so the package's search page can be
+            rendered inside it.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.ISiteLayoutLocator.Find">
+            <summary>
+            The layout to render the search page into, or null to leave it as its own standalone
+            document - either because the setting is off, or because nothing usable was found.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.SiteLayoutLocator">
+            <inheritdoc />
+        </member>
+        <member name="F:Imobisoft.Search.Services.SiteLayoutLocator.Candidates">
+            <summary>
+            Where a layout lives in a project that has not been told to put it anywhere in particular.
+            Umbraco's own default comes first, then the wider MVC conventions, then the older Umbraco
+            names that plenty of upgraded sites still use.
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.SiteLayoutLocator.CacheDuration">
+            <summary>
+            Short enough that adding a layout to a project shows up without a restart, long enough that
+            a page view is not paying for the lookup.
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.SiteLayoutLocator.NotFound">
+            <summary>Stands in for "looked, found nothing", which cannot be cached as a null.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.SiteLayoutLocator.Find">
+            <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.SiteLayoutLocator.Usable(System.String)">
+            <summary>
+            Whether this layout both exists and can render the search page.
+            <para>
+            Existence is asked of the view engine rather than of the file system: a published site
+            compiles its views into an assembly, so the .cshtml file is often not on disk at all and
+            probing for it would find a layout in development and none in production.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.SiteLayoutLocator.AcceptsOurModel(System.String,Microsoft.AspNetCore.Mvc.ViewEngines.IView)">
+            <summary>
+            Whether the layout will accept the search page's view model.
+            <para>
+            A layout and the page inside it share one model: Razor has no separate model for a layout.
+            So a layout declared as <c>@inherits UmbracoViewPage&lt;SomePageViewModel&gt;</c> is handed
+            the search page's model and cannot bind it, which Umbraco reports as a ModelBindingException
+            at render time - a 500 on the search page rather than a layout that quietly does not fit.
+            </para>
+            <para>
+            There is no fixing that from inside this package: such a model is the site's own, usually
+            built by the site's own controllers from the routed Umbraco page, and nothing here can
+            manufacture one. So the incompatibility is found here instead, before anything renders, and
+            the page falls back to its standalone look. To have search inside a layout like that, render
+            the package's view component from one of the site's own templates - see the message logged
+            below.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.SiteLayoutLocator.DeclaredModelType(Microsoft.AspNetCore.Mvc.ViewEngines.IView)">
+            <summary>
+            The model type a compiled Razor view declares, by finding the <c>RazorPage&lt;T&gt;</c> it
+            derives from. Null when the view is not a Razor page this can read.
             </summary>
         </member>
         <member name="T:Imobisoft.Search.Services.Templates.SearchTemplateInfo">
@@ -3222,6 +3432,12 @@
             The search pages the script should recognise by name. Its own rule already covers a URL
             whose last segment is the word "search", so this is the package's page plus whatever the
             site has named differently.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Web.HeaderSearchBoxTagHelperComponent.SitePagePaths">
+            <summary>
+            The site pages search is placed into, from the settings. Empty when that read fails, for the
+            same reason as <see cref="M:Imobisoft.Search.Web.HeaderSearchBoxTagHelperComponent.Suggestions"/>: a page must still render.
             </summary>
         </member>
         <member name="T:Imobisoft.Search.Web.AiTransformRequest">
@@ -3372,6 +3588,54 @@
         <member name="M:Imobisoft.Search.Web.ImobisoftSearchController.Index(System.String,System.Int32,System.Threading.CancellationToken)">
             <summary>The search page. A request with no term renders the form on its own.</summary>
         </member>
+        <member name="M:Imobisoft.Search.Web.ImobisoftSearchController.SitePage">
+            <summary>
+            The first site page search is rendered into, as a path to send a visitor to, or null when the
+            site has none and this route is the search page.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Web.ImobisoftSearchPageViewComponent">
+            <summary>
+            The whole search page, renderable from inside one of the site's own pages.
+            <para>
+            This is how search gets the site's header, footer and navigation around it on a site whose layout
+            declares a view model of its own. A layout shares its model with the page inside it, so the
+            package's own route cannot render into such a layout - it would hand the layout a model it cannot
+            bind. A view component has no such problem: it brings its own model and does not care what the
+            surrounding page's model is.
+            </para>
+            <para>
+            Add a page to the site - any document type, with any template - and render this from the
+            template:
+            </para>
+            <code>
+            @await Component.InvokeAsync("ImobisoftSearchPage")
+            </code>
+            <para>
+            That is the whole of it. The term, paging, filters and sort are read from the query string, the
+            search runs against the configured profile, and the page posts back to whatever URL it is on, so
+            searching stays on the site's own page. Everything else - the result cards, the filters, the AI
+            text tools, the styling - comes from the same <c>SearchPage.cshtml</c> that the package's own
+            route renders and that Search → Search Box → Templates edits, so there is still only one file to
+            design.
+            </para>
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Web.ImobisoftSearchPageViewComponent.ViewPath">
+            <summary>
+            Rendered by path rather than by the usual component view convention, so the file a site
+            edits is the file this renders. A copy at
+            <c>Views/Shared/Components/ImobisoftSearchPage/Default.cshtml</c> in the site would otherwise
+            silently take over, leaving two files where the backoffice only edits one.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Web.ImobisoftSearchPageViewComponent.InvokeAsync(System.String,System.Int32)">
+            <param name="term">
+            What to search for. Left unset it is read from <c>q</c> on the query string, which is what the
+            page's own search box submits.
+            </param>
+            <param name="page">1-based page number. Left unset it is read from the query string.</param>
+        </member>
         <member name="T:Imobisoft.Search.Web.ImobisoftSearchPageViewModel">
             <summary>What the package's built-in search page renders.</summary>
         </member>
@@ -3404,6 +3668,20 @@
             <summary>
             Whether the search box still holds what was searched for, from the profile's matching rules.
             Off, the box is cleared after a search.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Web.ImobisoftSearchPageViewModel.LayoutPath">
+            <summary>
+            The layout to render the page into, or null for no layout at all - either because the site
+            has none that can be used, or because the page is already inside one of the site's own pages.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Web.ImobisoftSearchPageViewModel.RenderDocumentShell">
+            <summary>
+            Whether the page writes its own <c>&lt;html&gt;</c>, <c>&lt;head&gt;</c> and
+            <c>&lt;body&gt;</c>. False when something else is already providing them: a site layout, or
+            the site page the view component is being rendered from. A second document nested inside the
+            site's own would be invalid.
             </summary>
         </member>
         <member name="T:Imobisoft.Search.Web.SearchContextExtensions">
@@ -3485,6 +3763,70 @@
             <summary>
             The current search at a different page, keeping the term and every filter. This is the href
             for a paging or "load more" link.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Web.SearchPageInjectionTagHelperComponent">
+            <summary>
+            Renders the whole search page inside one of the site's own pages, without the site writing a
+            line of code.
+            <para>
+            This is what gets search the site's header, footer and navigation. The package's own route
+            cannot: a layout shares its model with the page inside it, and a site layout declared as
+            <c>@inherits UmbracoViewPage&lt;SomePageViewModel&gt;</c> needs a model that only the site's own
+            controllers can build - from the routed Umbraco page, with its SEO data, its settings and its
+            navigation. Nothing in this package can manufacture one.
+            </para>
+            <para>
+            So the site renders its own page exactly as it always does - its document type, its controller,
+            its template, its layout - and the search page is placed into it as a block. A tag helper
+            component is how a library adds markup to a view it does not own, which is the same mechanism
+            the header search box already arrives by.
+            </para>
+            <para>
+            To use it: create a page in Umbraco with whatever document type the site uses for an ordinary
+            content page, then put its path in Search → Settings → Search Page. A site that wants to place
+            search exactly rather than have it placed can render
+            <see cref="T:Imobisoft.Search.Web.ImobisoftSearchPageViewComponent"/> from its own template instead, and this stands
+            aside when it has.
+            </para>
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Web.SearchPageInjectionTagHelperComponent.DefaultContainer">
+            <summary>
+            Where search is moved to once the page has loaded: the site's main content area, by the
+            names sites actually give it. First match wins.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Web.SearchPageInjectionTagHelperComponent.Order">
+            <summary>
+            After the header search box, so the script that places this runs after the script that
+            drives the box has been written.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Web.SearchPageInjectionTagHelperComponent.Wanted(Microsoft.AspNetCore.Http.HttpContext)">
+            <summary>
+            Whether this request is one to place search into at all: a visitor's own GET of a page of the
+            site, and not a page that has already rendered search itself.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Web.SearchPageInjectionTagHelperComponent.Matches(Microsoft.AspNetCore.Http.PathString,System.Collections.Generic.IList{System.String})">
+            <summary>
+            Whether this is one of the pages search was asked to be placed into. Compared on the path
+            alone and without case or a trailing slash, so the way the link was written does not decide
+            whether search appears.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Web.SearchPageInjectionTagHelperComponent.Normalise(System.String)">
+            <summary>
+            A path reduced to what two of them can be compared by: lower case, leading slash, no
+            trailing slash and no query string.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Web.SearchPageInjectionTagHelperComponent.Wrap(System.String,System.String)">
+            <summary>
+            The rendered page, hidden until it has been moved into the site's content area, so it is
+            never seen at the foot of the page first. A site with scripting off gets it where it is
+            rather than not at all.
             </summary>
         </member>
         <member name="T:System.Text.RegularExpressions.Generated.RelativeDatePattern_0">

@@ -112,13 +112,33 @@
       <RelatedAsset></RelatedAsset>
       <AssetTraitName></AssetTraitName>
       <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>29oxgizj8x</Fingerprint>
-      <Integrity>BoG7Qghxoy0OSBeX+AZXmKEVSQDyxCnL+M6OGgMTGUw=</Integrity>
+      <Fingerprint>kizxmq0m4j</Fingerprint>
+      <Integrity>DDB6S7D7ndVJpAoRcM+2vcS+3k7rdgbdkL2DYtsnBgI=</Integrity>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-      <FileLength>14820</FileLength>
-      <LastWriteTime>Thu, 05 Nov 2026 10:36:21 GMT</LastWriteTime>
+      <FileLength>18217</FileLength>
+      <LastWriteTime>Fri, 06 Nov 2026 04:47:19 GMT</LastWriteTime>
       <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\searchbox.js'))</OriginalItemSpec>
+    </StaticWebAsset>
+    <StaticWebAsset Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\searchpage.js'))">
+      <SourceType>Package</SourceType>
+      <SourceId>Imobisoft.Search</SourceId>
+      <ContentRoot>$(MSBuildThisFileDirectory)..\staticwebassets\</ContentRoot>
+      <BasePath>App_Plugins/Imobisoft.Search</BasePath>
+      <RelativePath>searchpage.js</RelativePath>
+      <AssetKind>All</AssetKind>
+      <AssetMode>All</AssetMode>
+      <AssetRole>Primary</AssetRole>
+      <RelatedAsset></RelatedAsset>
+      <AssetTraitName></AssetTraitName>
+      <AssetTraitValue></AssetTraitValue>
+      <Fingerprint>ex108aapl4</Fingerprint>
+      <Integrity>Pqb4pwb9vVOvx4S5L5zvrMTObn9O/j+nlRY0YJgz47M=</Integrity>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+      <FileLength>3702</FileLength>
+      <LastWriteTime>Fri, 06 Nov 2026 04:49:23 GMT</LastWriteTime>
+      <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\searchpage.js'))</OriginalItemSpec>
     </StaticWebAsset>
     <StaticWebAsset Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\suggest.js'))">
       <SourceType>Package</SourceType>
@@ -172,12 +192,12 @@
       <RelatedAsset></RelatedAsset>
       <AssetTraitName></AssetTraitName>
       <AssetTraitValue></AssetTraitValue>
-      <Fingerprint>joe5ibnxls</Fingerprint>
-      <Integrity>k+fbF3c6FtNjRiB4APzUCdN2i/fDl1pwWfZiXfSdB2s=</Integrity>
+      <Fingerprint>z7e5uuom3k</Fingerprint>
+      <Integrity>P+0pQEFaHUc7B+2ydoSM9MpzKnMYQ3jN9wg1CfivbF0=</Integrity>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-      <FileLength>441694</FileLength>
-      <LastWriteTime>Thu, 05 Nov 2026 10:19:19 GMT</LastWriteTime>
+      <FileLength>449707</FileLength>
+      <LastWriteTime>Fri, 06 Nov 2026 05:28:27 GMT</LastWriteTime>
       <OriginalItemSpec>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\workspace.js'))</OriginalItemSpec>
     </StaticWebAsset>
   </ItemGroup>

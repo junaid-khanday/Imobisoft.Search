@@ -40,6 +40,12 @@ public static class ImobisoftSearchConstants
         /// which a site is likely to want for a content node of its own.
         /// </summary>
         public const string SearchPagePath = "imobisoft-search";
+
+        /// <summary>
+        /// Set on the request once the search page has been rendered into it, so a site page that
+        /// renders the view component itself is not then given a second copy by the injector.
+        /// </summary>
+        public const string PageRenderedKey = "Imobisoft.Search.PageRendered";
     }
 
     public static class Database

@@ -49,6 +49,52 @@ public sealed class SuggestionSettings
     public int AutocompleteSize { get; set; } = 10;
 }
 
+/// <summary>How the package's built-in search page is rendered.</summary>
+public sealed class SearchPageSettings
+{
+    /// <summary>
+    /// Renders the search page inside the site's own layout, so it gets the site's header, footer
+    /// and navigation. Off, the page is its own standalone document with only the package's own
+    /// plain styling.
+    /// <para>
+    /// A layout that declares a view model of its own cannot be used - a layout shares its model
+    /// with the page inside it - and such a layout is detected and skipped rather than failing to
+    /// render. To put search inside a layout like that, render
+    /// <c>@await Component.InvokeAsync("ImobisoftSearchPage")</c> from one of the site's own
+    /// templates instead.
+    /// </para>
+    /// </summary>
+    public bool UseSiteLayout { get; set; } = true;
+
+    /// <summary>
+    /// The layout to use, as an application-rooted path such as
+    /// <c>~/Views/Shared/_Layout.cshtml</c>. Empty looks in the usual places for one. A path that
+    /// is set but unusable is not quietly replaced by a guess: the page falls back to its
+    /// standalone look and says why in the log.
+    /// </summary>
+    public string? LayoutPath { get; set; }
+
+    /// <summary>
+    /// Paths of the site's own pages that search is rendered into, one per entry - "/search",
+    /// "/site-search". This is what gets search the site's header, footer and navigation on a site
+    /// whose layout declares a view model of its own: the site renders its own page exactly as it
+    /// always does, and the search page is placed into it.
+    /// <para>
+    /// Create the page in Umbraco with whatever document type the site already uses for an ordinary
+    /// content page, so the site's own controllers and template build it, then put its path here.
+    /// Nothing is injected anywhere else.
+    /// </para>
+    /// </summary>
+    public IList<string> SitePagePaths { get; set; } = new List<string>();
+
+    /// <summary>
+    /// A CSS selector for where in that page search is placed - the site's main content area.
+    /// Empty tries the usual ones. The first match wins; where nothing matches, search is left at
+    /// the end of the page rather than not shown at all.
+    /// </summary>
+    public string? SitePageContainer { get; set; }
+}
+
 /// <summary>
 /// Site-wide package settings, as opposed to the per-profile rules.
 /// <para>
@@ -61,4 +107,6 @@ public sealed class SearchSettings
     public AnalyticsSettings Analytics { get; set; } = new();
 
     public SuggestionSettings Suggestions { get; set; } = new();
+
+    public SearchPageSettings SearchPage { get; set; } = new();
 }

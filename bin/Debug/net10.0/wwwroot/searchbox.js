@@ -82,6 +82,20 @@
         return segments[segments.length - 1].split('-').indexOf('search') > -1;
     }
 
+    /*
+        Whether the visitor is already on a search page.
+
+        The box is still put on the header here - the site's header is the same header on every page
+        and its search link has to keep working - but it arrives closed and empty. The search page
+        has a search box of its own, holding the term that produced the results, so a second bar
+        across the header showing the same term is both redundant and in the way: it covers the
+        header, and with a term in it neither clicking away nor pressing the link again will close
+        it.
+    */
+    function onSearchPage() {
+        return looksLikeSearchPage(window.location.pathname);
+    }
+
     // The stylesheet is normally in the page already. This is the fallback for a layout with no
     // <head> for the package to write into.
     function ensureStylesheet() {
@@ -174,12 +188,23 @@
         The view owns its own markup, styling and behaviour. All this does is fetch it, put it in
         place, run whatever script it brought with it, and point the site's own link at it.
     */
-    function enhance(link, target) {
-        link.dataset.imobisoftSearchBound = 'true';
+    function enhance(links, target, host) {
+        // A box already in this header is the box these links drive. Nothing is fetched and nothing
+        // is added: one header, one bar.
+        var existing = boxIn(host);
+
+        if (existing) {
+            links.forEach(function (link) { bind(link, existing); });
+
+            return;
+        }
 
         var url = config.boxEndpoint
             + '?resultsUrl=' + encodeURIComponent(target.pathname + (target.search || ''))
-            + '&term=' + encodeURIComponent(currentTerm());
+
+            // Nothing prefilled on the search page itself: an empty box stays closed, and closes
+            // again when the visitor clicks away from it.
+            + '&term=' + encodeURIComponent(onSearchPage() ? '' : currentTerm());
 
         fetch(url, { headers: { 'Accept': 'text/html' } })
             .then(function (response) {
@@ -188,11 +213,22 @@
                 }
                 return response.text();
             })
-            .then(function (html) { insert(link, html); })
+            .then(function (html) { insert(links, html, host); })
             .catch(function (err) {
-                // The link is left exactly as it was, so search still works the old way.
+                // The links are left exactly as they were, so search still works the old way.
                 console.error('Imobisoft.Search: could not load the header search box.', err);
             });
+    }
+
+    /// The box already placed in this header, or null when it has none yet.
+    function boxIn(host) {
+        if (!host || typeof host.querySelector !== 'function') {
+            return null;
+        }
+
+        var holder = host.querySelector(':scope > .imsx-holder');
+
+        return holder ? holder.querySelector('[data-imobisoft-searchbox]') : null;
     }
 
     function currentTerm() {
@@ -223,7 +259,7 @@
         return link.parentNode;
     }
 
-    function insert(link, html) {
+    function insert(links, html, host) {
         var holder = document.createElement('span');
         holder.className = 'imsx-holder';
         holder.innerHTML = html;
@@ -236,10 +272,9 @@
             return;
         }
 
-        // Mounted into the header itself rather than beside the link, so the bar can span the full
-        // width of it and cover what is there. Inline beside the link it could only ever be as wide
-        // as the gap next to the link, and would push the nav around.
-        var host = hostFor(link);
+        // The box is mounted into the header itself rather than beside the link, so the bar can span
+        // the full width of it and cover what is there. Inline beside the link it could only ever be
+        // as wide as the gap next to the link, and would push the nav around.
 
         // The overlay is positioned against the header, so the header has to be a positioning
         // context. Most are not, and setting it is harmless - it changes nothing on its own.
@@ -267,7 +302,8 @@
             original.parentNode.replaceChild(copy, original);
         });
 
-        bind(link, root);
+        // Every search link in this header drives the one box.
+        links.forEach(function (link) { bind(link, root); });
 
         // The box arrives after load, so the type-ahead has to be told there is a new input.
         if (window.imobisoftSearchSuggest && typeof window.imobisoftSearchSuggest.refresh === 'function') {
@@ -361,8 +397,10 @@
             }).observe(root, { attributes: true, attributeFilter: ['data-open'] });
         }
 
-        // On the results page the box opens showing the term that produced it.
-        if (input && input.value.trim()) {
+        // On a page of the site's own that was reached from a search, the box opens showing the term
+        // that produced it. Not on the search page itself, where the page's own box is already
+        // showing that term - see onSearchPage.
+        if (input && input.value.trim() && !onSearchPage()) {
             setOpen(true);
         }
     }
@@ -376,11 +414,53 @@
 
         ensureStylesheet();
 
+        /*
+            Grouped by the header each link sits in, because a header gets one box however many
+            search links it holds. A site with a "Search" in its nav and a "Search results" in a
+            secondary one - or, as happens while a search page is being set up, two search pages
+            both in the navigation - would otherwise get a bar for each, stacked over the same
+            header and all open at once.
+
+            Grouped before anything is fetched rather than checked as each box lands: the fetches
+            are concurrent, so two links in one header would both find no box there yet and both
+            add one.
+
+            A separate header still gets its own box - a site with a desktop header and a small
+            screen one needs the box in both, and only ever shows one of them at a time.
+        */
+        var groups = [];
+
         collect().forEach(function (link) {
             var target = resolve(link);
-            if (shouldEnhance(link, target)) {
-                enhance(link, target);
+
+            if (!shouldEnhance(link, target)) {
+                return;
             }
+
+            link.dataset.imobisoftSearchBound = 'true';
+
+            var host = hostFor(link);
+            var group = null;
+
+            for (var i = 0; i < groups.length; i++) {
+                if (groups[i].host === host) {
+                    group = groups[i];
+                    break;
+                }
+            }
+
+            if (!group) {
+                // The first search link in a header is the one its box is built for, so the box
+                // submits to that link's search page.
+                group = { host: host, target: target, links: [] };
+                groups.push(group);
+            }
+
+            group.links.push(link);
+        });
+
+        groups.forEach(function (group) {
+            enhance(group.links, group.target, group.host);
         });
     }
 

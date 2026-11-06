@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Models;
+using Umbraco.Cms.Core.Models.PublishedContent;
 using Umbraco.Cms.Core.Routing;
 using Umbraco.Cms.Core.Services;
 using Umbraco.Cms.Core.Web;
@@ -381,6 +382,10 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
         var processor = new SearchResultProcessor(IsProtectedPath, ResolveNodeIdForFacets);
         SearchResponse response = processor.Process(matches, plan, request, profileAlias);
 
+        // Runs after the processor rather than instead of it, so the filter counts above the list
+        // still describe the whole site while the list itself is the editor's.
+        ApplyCuratedBrowseResults(response, plan, request);
+
         TrimReturnedFields(response, plan);
         ResolveUrls(response);
 
@@ -562,6 +567,110 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
         }
 
         return matches;
+    }
+
+    /// <summary>
+    /// Replaces the results of a browse - a search page nobody has typed into yet - with the pages
+    /// the profile names, in the order it names them.
+    /// <para>
+    /// Read from the published cache rather than from the index, because an editor's choice has to
+    /// appear whether or not it happens to fall inside the window of documents the browse query
+    /// pulled back. A pick is an instruction, not a ranking signal.
+    /// </para>
+    /// <para>
+    /// Does nothing on a real search, and nothing when the profile picks nothing. If not one pick
+    /// can be resolved - every one of them unpublished, say - the automatic list is left exactly as
+    /// it was, which is a working search page rather than an empty one.
+    /// </para>
+    /// </summary>
+    private void ApplyCuratedBrowseResults(SearchResponse response, SearchPlan plan, SearchRequest request)
+    {
+        IList<Guid> keys = plan.Rules.Results.BrowseNodeKeys;
+
+        if (keys.Count == 0 || !request.AllowEmptyTerm || !string.IsNullOrWhiteSpace(request.Term))
+        {
+            return;
+        }
+
+        var picked = new List<SearchResultItem>();
+
+        try
+        {
+            using UmbracoContextReference reference = _umbracoContextFactory.EnsureUmbracoContext();
+            IUmbracoContext context = reference.UmbracoContext;
+
+            foreach (Guid key in keys)
+            {
+                // Media as well as content: the picker offers documents, but a profile saved
+                // against a media key should still resolve rather than silently vanish.
+                IPublishedContent? node = context.Content?.GetById(key) ?? context.Media?.GetById(key);
+
+                if (node is null)
+                {
+                    continue;
+                }
+
+                picked.Add(Describe(node));
+            }
+        }
+        catch (Exception ex)
+        {
+            // No published cache - the backoffice preview, for one. The automatic list stands.
+            _logger.LogDebug(ex, "Could not read the curated browse results from the published cache.");
+
+            return;
+        }
+
+        if (picked.Count == 0)
+        {
+            _logger.LogInformation(
+                "The profile names {Count} page(s) to open the search page with, but none of them "
+                + "could be found - unpublished or deleted, most likely. The search page is showing "
+                + "its usual results instead.",
+                keys.Count);
+
+            return;
+        }
+
+        response.Results = picked;
+        response.TotalResults = picked.Count;
+        response.Page = 1;
+
+        // Every pick is on this one page, which is what makes TotalPages one and HasMore false -
+        // both are worked out from these two numbers. Load More has nothing left to fetch.
+        response.PageSize = picked.Count;
+        response.EnableLoadMore = false;
+    }
+
+    /// <summary>One picked page, in the shape the rest of the pipeline and the view expect.</summary>
+    private static SearchResultItem Describe(IPublishedContent node)
+    {
+        var isMedia = node.ItemType == PublishedItemType.Media;
+
+        var item = new SearchResultItem
+        {
+            Id = node.Id.ToString(),
+            Key = node.Key,
+            Name = node.Name ?? string.Empty,
+            ContentTypeAlias = node.ContentType.Alias,
+            IndexType = isMedia
+                ? ImobisoftSearchConstants.IndexTypes.Media
+                : ImobisoftSearchConstants.IndexTypes.Content,
+            Path = node.Path,
+
+            // Picked, not scored. Nothing here was ranked against anything.
+            RawScore = 0,
+            Score = 0,
+        };
+
+        // The same fields a result off the index carries, so a view reading updateDate for its
+        // date line finds one here too.
+        item.Fields[ImobisoftSearchConstants.IndexFields.NodeName] = item.Name;
+        item.Fields[ImobisoftSearchConstants.IndexFields.NodeTypeAlias] = item.ContentTypeAlias;
+        item.Fields[ImobisoftSearchConstants.IndexFields.CreateDate] = node.CreateDate.ToString("yyyy-MM-dd");
+        item.Fields[ImobisoftSearchConstants.IndexFields.UpdateDate] = node.UpdateDate.ToString("yyyy-MM-dd");
+
+        return item;
     }
 
     private static SearchResultItem MapResult(ISearchResult result, string indexName)

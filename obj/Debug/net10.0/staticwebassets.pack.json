@@ -25,6 +25,10 @@
       "PackagePath": "staticwebassets\\searchbox.js"
     },
     {
+      "Id": "D:\\imobisoft\\Imobisoft.Search\\wwwroot\\searchpage.js",
+      "PackagePath": "staticwebassets\\searchpage.js"
+    },
+    {
       "Id": "D:\\imobisoft\\Imobisoft.Search\\wwwroot\\suggest.js",
       "PackagePath": "staticwebassets\\suggest.js"
     },

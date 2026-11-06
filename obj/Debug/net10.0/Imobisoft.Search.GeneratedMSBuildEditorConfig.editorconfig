@@ -27,6 +27,10 @@ build_property.EnableCodeStyleSeverity =
 build_metadata.AdditionalFiles.TargetPath = Vmlld3NcSW1vYmlzb2Z0U2VhcmNoXFNlYXJjaFBhZ2UuY3NodG1s
 build_metadata.AdditionalFiles.CssScope = 
 
+[D:/imobisoft/Imobisoft.Search/Views/ImobisoftSearch/_SearchPageLayout.cshtml]
+build_metadata.AdditionalFiles.TargetPath = Vmlld3NcSW1vYmlzb2Z0U2VhcmNoXF9TZWFyY2hQYWdlTGF5b3V0LmNzaHRtbA==
+build_metadata.AdditionalFiles.CssScope = 
+
 [D:/imobisoft/Imobisoft.Search/Views/Partials/Search/HeaderSearchBox.cshtml]
 build_metadata.AdditionalFiles.TargetPath = Vmlld3NcUGFydGlhbHNcU2VhcmNoXEhlYWRlclNlYXJjaEJveC5jc2h0bWw=
 build_metadata.AdditionalFiles.CssScope = 

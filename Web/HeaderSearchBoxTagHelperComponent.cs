@@ -173,9 +173,32 @@ public sealed class HeaderSearchBoxTagHelperComponent : TagHelperComponent
             paths.Add("/" + ImobisoftSearchConstants.Web.SearchPagePath);
         }
 
+        // The site's own pages that search is rendered into. The box has to know about them or it
+        // would treat the site's search page as an ordinary page and open a second box on it.
+        paths.AddRange(SitePagePaths());
+
         paths.AddRange(box.ExtraPaths.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()));
 
         return string.Join(',', paths);
+    }
+
+    /// <summary>
+    /// The site pages search is placed into, from the settings. Empty when that read fails, for the
+    /// same reason as <see cref="Suggestions"/>: a page must still render.
+    /// </summary>
+    private IEnumerable<string> SitePagePaths()
+    {
+        try
+        {
+            return _settings.Get().SearchPage.SitePagePaths
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Select(p => p.Trim())
+                .ToList();
+        }
+        catch
+        {
+            return Array.Empty<string>();
+        }
     }
 
     private static string Join(IEnumerable<string> paths)

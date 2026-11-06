@@ -37,4 +37,18 @@ public sealed class ImobisoftSearchPageViewModel
     /// Off, the box is cleared after a search.
     /// </summary>
     public bool KeepSearchTerm { get; set; } = true;
+
+    /// <summary>
+    /// The layout to render the page into, or null for no layout at all - either because the site
+    /// has none that can be used, or because the page is already inside one of the site's own pages.
+    /// </summary>
+    public string? LayoutPath { get; set; }
+
+    /// <summary>
+    /// Whether the page writes its own <c>&lt;html&gt;</c>, <c>&lt;head&gt;</c> and
+    /// <c>&lt;body&gt;</c>. False when something else is already providing them: a site layout, or
+    /// the site page the view component is being rendered from. A second document nested inside the
+    /// site's own would be invalid.
+    /// </summary>
+    public bool RenderDocumentShell { get; set; } = true;
 }

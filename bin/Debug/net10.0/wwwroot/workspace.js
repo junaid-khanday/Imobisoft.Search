@@ -35,6 +35,10 @@ import {
 
 const VERSION = "1.0.0";
 
+// Where the package serves its own search page, as ImobisoftSearchConstants.Web.SearchPagePath has
+// it. Named here so the Settings tab can talk about it rather than spelling it out four times.
+const SEARCH_PAGE_PATH = "/imobisoft-search";
+
 export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     static properties = {
         _loading: { state: true },
@@ -320,6 +324,16 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         fuzziness: res.data.suggestions?.fuzziness ?? 0.65,
                         maximumEditDistance: res.data.suggestions?.maximumEditDistance ?? 3,
                         autocompleteSize: res.data.suggestions?.autocompleteSize ?? 10
+                    },
+                    searchPage: {
+                        useSiteLayout: res.data.searchPage?.useSiteLayout ?? true,
+                        layoutPath: res.data.searchPage?.layoutPath ?? '',
+                        sitePagePaths: res.data.searchPage?.sitePagePaths ?? [],
+                        sitePageContainer: res.data.searchPage?.sitePageContainer ?? '',
+
+                        // The textarea holds the list as typed, one path per line, and is turned
+                        // back into a list on save - the same way the profile editor's lists work.
+                        _pathsInput: (res.data.searchPage?.sitePagePaths ?? []).join('\n')
                     }
                 };
             }
@@ -459,6 +473,12 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 fuzziness: 0.65,
                 maximumEditDistance: 3,
                 autocompleteSize: 10
+            },
+            searchPage: {
+                useSiteLayout: true,
+                layoutPath: '',
+                sitePagePaths: [],
+                sitePageContainer: ''
             }
         };
     }
@@ -636,6 +656,8 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         if (!p.rules.sources.excludeContentTypes) p.rules.sources.excludeContentTypes = [];
         if (!p.rules.sources.includeMediaTypes) p.rules.sources.includeMediaTypes = [];
         if (!p.rules.sources.excludeMediaTypes) p.rules.sources.excludeMediaTypes = [];
+        if (!p.rules.results) p.rules.results = {};
+        if (!Array.isArray(p.rules.results.browseNodeKeys)) p.rules.results.browseNodeKeys = [];
         if (!p.rules.sources.rootNodeKeys) p.rules.sources.rootNodeKeys = [];
         if (!p.rules.sources.startNodeKeys) p.rules.sources.startNodeKeys = p.rules.sources.rootNodeKeys || [];
         if (!p.rules.sources.excludedNodeKeys) p.rules.sources.excludedNodeKeys = [];
@@ -1035,6 +1057,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             this._sidePanelData = {
                 pageSize: this._currentProfile.rules?.results?.pageSize ?? 10,
                 browsePageSize: this._currentProfile.rules?.results?.browsePageSize ?? 10,
+                browseNodeKeys: [...(this._currentProfile.rules?.results?.browseNodeKeys ?? [])],
                 maxResults: this._currentProfile.rules?.results?.maxResults ?? 500,
                 enableLoadMore: !!this._currentProfile.rules?.results?.enableLoadMore
             };
@@ -1665,6 +1688,11 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             this._currentProfile.rules.results.browsePageSize = Number.isFinite(browseParsed)
                 ? Math.min(100, Math.max(0, browseParsed))
                 : 10;
+
+            // Saved in the order they were picked - that is the order they are listed in.
+            this._currentProfile.rules.results.browseNodeKeys = Array.isArray(d.browseNodeKeys)
+                ? [...d.browseNodeKeys]
+                : [];
             this._currentProfile.rules.results.maxResults = parseInt(d.maxResults) || 500;
             this._currentProfile.rules.results.enableLoadMore = !!d.enableLoadMore;
         } else if (this._sidePanelType === 'editHighlighting') {
@@ -1882,6 +1910,11 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     async _saveSettings() {
         this._settingsSaving = true;
         this.requestUpdate();
+
+        const page = this._settings.searchPage;
+        if (page) {
+            page.sitePagePaths = this._toPathList(page._pathsInput, page.sitePagePaths);
+        }
 
         try {
             const res = await updateSettings(this._fetch.bind(this), this._settings);
@@ -3750,6 +3783,12 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                 <span class="selected-chip">
                                     <strong>Max Results Window:</strong> ${res.maxResults || 500} items
                                 </span>
+                                <span class="selected-chip ${(res.browseNodeKeys || []).length > 0 ? 'chip-success' : ''}">
+                                    <strong>Before Searching:</strong>
+                                    ${(res.browseNodeKeys || []).length > 0
+                                        ? `✓ ${(res.browseNodeKeys || []).length} chosen page(s)`
+                                        : `${res.browsePageSize ?? 10} automatic`}
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -4445,6 +4484,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     _renderSettingsView() {
         const a = this._settings.analytics;
         const s = this._settings.suggestions;
+        const p = this._settings.searchPage ?? {};
 
         return html`
             <div class="settings-view">
@@ -4553,6 +4593,69 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                            @input=${e => { s.autocompleteSize = parseInt(e.target.value) || 10; this.requestUpdate(); }}>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Search Page: how the page gets the site's header and footer -->
+                <div class="card" style="margin-top: 16px;">
+                    <div class="card-header">
+                        <h4>Search Page</h4>
+                    </div>
+                    <div class="card-body">
+                        <div class="sp-group" style="margin-bottom: 20px;">
+                            <label class="sp-label">Render Search Into These Site Pages (one per line)</label>
+                            <textarea class="sp-textarea"
+                                      style="min-height: 90px; font-family: monospace; font-size: 13px;"
+                                      placeholder="e.g.&#10;/search"
+                                      .value=${p._pathsInput ?? (p.sitePagePaths ?? []).join('\n')}
+                                      @input=${e => { p._pathsInput = e.target.value; this.requestUpdate(); }}></textarea>
+                            <span class="sp-hint">
+                                This is how search gets the site's header, footer and navigation. Create a page in
+                                Umbraco using the document type the site already uses for an ordinary content page, so
+                                the site builds and renders it exactly as it does its own, then put its path here -
+                                the whole search page is placed into it. ${SEARCH_PAGE_PATH} then sends
+                                visitors to that page, so there is one search page rather than two. Leave this empty
+                                and search stays on ${SEARCH_PAGE_PATH} as a plain standalone page.
+                            </span>
+                        </div>
+
+                        <div class="sp-group" style="margin-bottom: 20px;">
+                            <label class="sp-label">Place It Inside (CSS selector)</label>
+                            <input type="text"
+                                   class="sp-input"
+                                   style="font-family: monospace;"
+                                   placeholder="main, [role=&quot;main&quot;], #main, .main-content"
+                                   .value=${p.sitePageContainer ?? ''}
+                                   @input=${e => { p.sitePageContainer = e.target.value; this.requestUpdate(); }}>
+                            <span class="sp-hint">Where in that page search goes - the site's main content area. Leave empty to try the usual ones. Only needed if search lands somewhere it should not.</span>
+                        </div>
+
+                        <label class="toggle-item" style="margin-bottom: 16px;">
+                            <div class="toggle-info">
+                                <strong>Use The Site's Layout On ${SEARCH_PAGE_PATH}</strong>
+                                <span>
+                                    For the package's own page only, and only on a site whose layout can take it. A
+                                    layout that declares a view model of its own cannot: it shares its model with the
+                                    page inside it, and only the site can build that model. Such a layout is detected,
+                                    skipped and logged - use the setting above for those sites.
+                                </span>
+                            </div>
+                            <input type="checkbox"
+                                   class="switch-input"
+                                   .checked=${p.useSiteLayout ?? true}
+                                   @change=${e => { p.useSiteLayout = e.target.checked; this.requestUpdate(); }}>
+                        </label>
+
+                        <div class="sp-group">
+                            <label class="sp-label">Layout Path</label>
+                            <input type="text"
+                                   class="sp-input"
+                                   style="font-family: monospace;"
+                                   placeholder="~/Views/Shared/_Layout.cshtml"
+                                   .value=${p.layoutPath ?? ''}
+                                   @input=${e => { p.layoutPath = e.target.value; this.requestUpdate(); }}>
+                            <span class="sp-hint">Leave empty to look in the usual places. A layout named here that cannot be used is not quietly replaced by a guess - the page falls back to standalone and says why in the log.</span>
                         </div>
                     </div>
                 </div>
@@ -5827,6 +5930,19 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                            .value=${String(d.browsePageSize ?? 10)}
                            @change=${e => { d.browsePageSize = Math.min(100, Math.max(0, parseInt(e.target.value) || 0)); this.requestUpdate(); }}>
                     <span class="sp-hint">How many results show when the page opens without a search term. Set 0 to list nothing until the visitor searches; filters still show their counts.</span>
+                </div>
+
+                <div class="sp-group" style="margin-bottom: 20px;">
+                    <label class="sp-label">Or Choose Exactly What Shows Before Searching</label>
+                    <umb-input-document
+                        .selection=${d.browseNodeKeys || []}
+                        @change=${e => { d.browseNodeKeys = e.target.selection || []; this.requestUpdate(); }}>
+                    </umb-input-document>
+                    <span class="sp-hint">
+                        ${(d.browseNodeKeys || []).length > 0
+                            ? html`The search page opens with these <strong>${(d.browseNodeKeys || []).length}</strong> page(s), in this order, and "Results Before Searching" above no longer applies. Drag to reorder; remove them all to go back to the automatic list.`
+                            : html`Pick pages to open the search page with - a curated starting point instead of whatever the index returns first. Leave empty to use "Results Before Searching" above. Either way, as soon as a visitor searches they get the pages that actually matched.`}
+                    </span>
                 </div>
 
                 <div class="sp-group">

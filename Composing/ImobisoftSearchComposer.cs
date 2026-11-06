@@ -86,11 +86,26 @@ public sealed class ImobisoftSearchComposer : IComposer
         // Scoped, because resolving result URLs reaches for the current request's Umbraco context.
         builder.Services.AddScoped<IImobisoftSearchService, ImobisoftSearchService>();
 
+        // What the search page renders, built the same way whether the package's own route is
+        // serving it or a site is rendering it inside one of its own pages. Scoped, because it runs
+        // the search through the scoped search service.
+        builder.Services.AddScoped<ISearchPageModelBuilder, SearchPageModelBuilder>();
+
+        // Finds the layout the site renders its own pages with. Singleton: the answer is the same
+        // for every request and is cached behind this anyway.
+        builder.Services.AddSingleton<ISiteLayoutLocator, SiteLayoutLocator>();
+
         // What puts the header search box on a site without the site placing it: a tag helper
         // component adds its stylesheet and script to every Razor view, so the existing search
         // link starts opening a box in place instead of leaving for an empty search page. Honours
         // the backoffice toggle on every request.
         builder.Services.AddTransient<ITagHelperComponent, HeaderSearchBoxTagHelperComponent>();
+
+        // What gets search the site's header and footer: the site renders one of its own pages and
+        // the whole search page is placed into it. Does nothing until a site page's path is named
+        // in Search → Settings.
+        builder.Services.AddScoped<ISearchPageRenderer, SearchPageRenderer>();
+        builder.Services.AddTransient<ITagHelperComponent, SearchPageInjectionTagHelperComponent>();
 
         RegisterAi(builder);
 

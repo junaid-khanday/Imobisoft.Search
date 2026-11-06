@@ -48,12 +48,6 @@
       <EndpointProperties><![CDATA[[{"Name":"fingerprint","Value":"s9cip73zfn"},{"Name":"integrity","Value":"sha256-YMwchWOIpBXZjTyTq9t53c6AoQXmQrw31JzOdDTxpZY="},{"Name":"label","Value":"App_Plugins/Imobisoft.Search/data-cache.js"}]]]></EndpointProperties>
       <ResponseHeaders><![CDATA[[{"Name":"Cache-Control","Value":"max-age=31536000, immutable"},{"Name":"Content-Length","Value":"11576"},{"Name":"Content-Type","Value":"text/javascript"},{"Name":"ETag","Value":"\u0022YMwchWOIpBXZjTyTq9t53c6AoQXmQrw31JzOdDTxpZY=\u0022"},{"Name":"Last-Modified","Value":"Thu, 05 Nov 2026 09:15:43 GMT"},{"Name":"Vary","Value":"Accept-Encoding"}]]]></ResponseHeaders>
     </StaticWebAssetEndpoint>
-    <StaticWebAssetEndpoint Include="App_Plugins/Imobisoft.Search/searchbox.29oxgizj8x.js">
-      <AssetFile>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\searchbox.js'))</AssetFile>
-      <Selectors><![CDATA[[]]]></Selectors>
-      <EndpointProperties><![CDATA[[{"Name":"fingerprint","Value":"29oxgizj8x"},{"Name":"integrity","Value":"sha256-BoG7Qghxoy0OSBeX\u002BAZXmKEVSQDyxCnL\u002BM6OGgMTGUw="},{"Name":"label","Value":"App_Plugins/Imobisoft.Search/searchbox.js"}]]]></EndpointProperties>
-      <ResponseHeaders><![CDATA[[{"Name":"Cache-Control","Value":"max-age=31536000, immutable"},{"Name":"Content-Length","Value":"14820"},{"Name":"Content-Type","Value":"text/javascript"},{"Name":"ETag","Value":"\u0022BoG7Qghxoy0OSBeX\u002BAZXmKEVSQDyxCnL\u002BM6OGgMTGUw=\u0022"},{"Name":"Last-Modified","Value":"Thu, 05 Nov 2026 10:36:21 GMT"},{"Name":"Vary","Value":"Accept-Encoding"}]]]></ResponseHeaders>
-    </StaticWebAssetEndpoint>
     <StaticWebAssetEndpoint Include="App_Plugins/Imobisoft.Search/searchbox.3m2gtx9cfn.css">
       <AssetFile>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\searchbox.css'))</AssetFile>
       <Selectors><![CDATA[[]]]></Selectors>
@@ -69,8 +63,26 @@
     <StaticWebAssetEndpoint Include="App_Plugins/Imobisoft.Search/searchbox.js">
       <AssetFile>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\searchbox.js'))</AssetFile>
       <Selectors><![CDATA[[]]]></Selectors>
-      <EndpointProperties><![CDATA[[{"Name":"integrity","Value":"sha256-BoG7Qghxoy0OSBeX\u002BAZXmKEVSQDyxCnL\u002BM6OGgMTGUw="}]]]></EndpointProperties>
-      <ResponseHeaders><![CDATA[[{"Name":"Cache-Control","Value":"no-cache"},{"Name":"Content-Length","Value":"14820"},{"Name":"Content-Type","Value":"text/javascript"},{"Name":"ETag","Value":"\u0022BoG7Qghxoy0OSBeX\u002BAZXmKEVSQDyxCnL\u002BM6OGgMTGUw=\u0022"},{"Name":"Last-Modified","Value":"Thu, 05 Nov 2026 10:36:21 GMT"},{"Name":"Vary","Value":"Accept-Encoding"}]]]></ResponseHeaders>
+      <EndpointProperties><![CDATA[[{"Name":"integrity","Value":"sha256-DDB6S7D7ndVJpAoRcM\u002B2vcS\u002B3k7rdgbdkL2DYtsnBgI="}]]]></EndpointProperties>
+      <ResponseHeaders><![CDATA[[{"Name":"Cache-Control","Value":"no-cache"},{"Name":"Content-Length","Value":"18217"},{"Name":"Content-Type","Value":"text/javascript"},{"Name":"ETag","Value":"\u0022DDB6S7D7ndVJpAoRcM\u002B2vcS\u002B3k7rdgbdkL2DYtsnBgI=\u0022"},{"Name":"Last-Modified","Value":"Fri, 06 Nov 2026 04:47:19 GMT"},{"Name":"Vary","Value":"Accept-Encoding"}]]]></ResponseHeaders>
+    </StaticWebAssetEndpoint>
+    <StaticWebAssetEndpoint Include="App_Plugins/Imobisoft.Search/searchbox.kizxmq0m4j.js">
+      <AssetFile>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\searchbox.js'))</AssetFile>
+      <Selectors><![CDATA[[]]]></Selectors>
+      <EndpointProperties><![CDATA[[{"Name":"fingerprint","Value":"kizxmq0m4j"},{"Name":"integrity","Value":"sha256-DDB6S7D7ndVJpAoRcM\u002B2vcS\u002B3k7rdgbdkL2DYtsnBgI="},{"Name":"label","Value":"App_Plugins/Imobisoft.Search/searchbox.js"}]]]></EndpointProperties>
+      <ResponseHeaders><![CDATA[[{"Name":"Cache-Control","Value":"max-age=31536000, immutable"},{"Name":"Content-Length","Value":"18217"},{"Name":"Content-Type","Value":"text/javascript"},{"Name":"ETag","Value":"\u0022DDB6S7D7ndVJpAoRcM\u002B2vcS\u002B3k7rdgbdkL2DYtsnBgI=\u0022"},{"Name":"Last-Modified","Value":"Fri, 06 Nov 2026 04:47:19 GMT"},{"Name":"Vary","Value":"Accept-Encoding"}]]]></ResponseHeaders>
+    </StaticWebAssetEndpoint>
+    <StaticWebAssetEndpoint Include="App_Plugins/Imobisoft.Search/searchpage.ex108aapl4.js">
+      <AssetFile>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\searchpage.js'))</AssetFile>
+      <Selectors><![CDATA[[]]]></Selectors>
+      <EndpointProperties><![CDATA[[{"Name":"fingerprint","Value":"ex108aapl4"},{"Name":"integrity","Value":"sha256-Pqb4pwb9vVOvx4S5L5zvrMTObn9O/j\u002BnlRY0YJgz47M="},{"Name":"label","Value":"App_Plugins/Imobisoft.Search/searchpage.js"}]]]></EndpointProperties>
+      <ResponseHeaders><![CDATA[[{"Name":"Cache-Control","Value":"max-age=31536000, immutable"},{"Name":"Content-Length","Value":"3702"},{"Name":"Content-Type","Value":"text/javascript"},{"Name":"ETag","Value":"\u0022Pqb4pwb9vVOvx4S5L5zvrMTObn9O/j\u002BnlRY0YJgz47M=\u0022"},{"Name":"Last-Modified","Value":"Fri, 06 Nov 2026 04:49:23 GMT"},{"Name":"Vary","Value":"Accept-Encoding"}]]]></ResponseHeaders>
+    </StaticWebAssetEndpoint>
+    <StaticWebAssetEndpoint Include="App_Plugins/Imobisoft.Search/searchpage.js">
+      <AssetFile>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\searchpage.js'))</AssetFile>
+      <Selectors><![CDATA[[]]]></Selectors>
+      <EndpointProperties><![CDATA[[{"Name":"integrity","Value":"sha256-Pqb4pwb9vVOvx4S5L5zvrMTObn9O/j\u002BnlRY0YJgz47M="}]]]></EndpointProperties>
+      <ResponseHeaders><![CDATA[[{"Name":"Cache-Control","Value":"no-cache"},{"Name":"Content-Length","Value":"3702"},{"Name":"Content-Type","Value":"text/javascript"},{"Name":"ETag","Value":"\u0022Pqb4pwb9vVOvx4S5L5zvrMTObn9O/j\u002BnlRY0YJgz47M=\u0022"},{"Name":"Last-Modified","Value":"Fri, 06 Nov 2026 04:49:23 GMT"},{"Name":"Vary","Value":"Accept-Encoding"}]]]></ResponseHeaders>
     </StaticWebAssetEndpoint>
     <StaticWebAssetEndpoint Include="App_Plugins/Imobisoft.Search/suggest.0z728gle1r.js">
       <AssetFile>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\suggest.js'))</AssetFile>
@@ -96,17 +108,17 @@
       <EndpointProperties><![CDATA[[{"Name":"integrity","Value":"sha256-FUfn8AGpyo0wwx67lcK4QtPfjRw\u002BURpoFd50CLFbqeI="}]]]></EndpointProperties>
       <ResponseHeaders><![CDATA[[{"Name":"Cache-Control","Value":"no-cache"},{"Name":"Content-Length","Value":"891"},{"Name":"Content-Type","Value":"application/json"},{"Name":"ETag","Value":"\u0022FUfn8AGpyo0wwx67lcK4QtPfjRw\u002BURpoFd50CLFbqeI=\u0022"},{"Name":"Last-Modified","Value":"Thu, 05 Nov 2026 04:26:12 GMT"},{"Name":"Vary","Value":"Accept-Encoding"}]]]></ResponseHeaders>
     </StaticWebAssetEndpoint>
-    <StaticWebAssetEndpoint Include="App_Plugins/Imobisoft.Search/workspace.joe5ibnxls.js">
-      <AssetFile>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\workspace.js'))</AssetFile>
-      <Selectors><![CDATA[[]]]></Selectors>
-      <EndpointProperties><![CDATA[[{"Name":"fingerprint","Value":"joe5ibnxls"},{"Name":"integrity","Value":"sha256-k\u002BfbF3c6FtNjRiB4APzUCdN2i/fDl1pwWfZiXfSdB2s="},{"Name":"label","Value":"App_Plugins/Imobisoft.Search/workspace.js"}]]]></EndpointProperties>
-      <ResponseHeaders><![CDATA[[{"Name":"Cache-Control","Value":"max-age=31536000, immutable"},{"Name":"Content-Length","Value":"441694"},{"Name":"Content-Type","Value":"text/javascript"},{"Name":"ETag","Value":"\u0022k\u002BfbF3c6FtNjRiB4APzUCdN2i/fDl1pwWfZiXfSdB2s=\u0022"},{"Name":"Last-Modified","Value":"Thu, 05 Nov 2026 10:19:19 GMT"},{"Name":"Vary","Value":"Accept-Encoding"}]]]></ResponseHeaders>
-    </StaticWebAssetEndpoint>
     <StaticWebAssetEndpoint Include="App_Plugins/Imobisoft.Search/workspace.js">
       <AssetFile>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\workspace.js'))</AssetFile>
       <Selectors><![CDATA[[]]]></Selectors>
-      <EndpointProperties><![CDATA[[{"Name":"integrity","Value":"sha256-k\u002BfbF3c6FtNjRiB4APzUCdN2i/fDl1pwWfZiXfSdB2s="}]]]></EndpointProperties>
-      <ResponseHeaders><![CDATA[[{"Name":"Cache-Control","Value":"no-cache"},{"Name":"Content-Length","Value":"441694"},{"Name":"Content-Type","Value":"text/javascript"},{"Name":"ETag","Value":"\u0022k\u002BfbF3c6FtNjRiB4APzUCdN2i/fDl1pwWfZiXfSdB2s=\u0022"},{"Name":"Last-Modified","Value":"Thu, 05 Nov 2026 10:19:19 GMT"},{"Name":"Vary","Value":"Accept-Encoding"}]]]></ResponseHeaders>
+      <EndpointProperties><![CDATA[[{"Name":"integrity","Value":"sha256-P\u002B0pQEFaHUc7B\u002B2ydoSM9MpzKnMYQ3jN9wg1CfivbF0="}]]]></EndpointProperties>
+      <ResponseHeaders><![CDATA[[{"Name":"Cache-Control","Value":"no-cache"},{"Name":"Content-Length","Value":"449707"},{"Name":"Content-Type","Value":"text/javascript"},{"Name":"ETag","Value":"\u0022P\u002B0pQEFaHUc7B\u002B2ydoSM9MpzKnMYQ3jN9wg1CfivbF0=\u0022"},{"Name":"Last-Modified","Value":"Fri, 06 Nov 2026 05:28:27 GMT"},{"Name":"Vary","Value":"Accept-Encoding"}]]]></ResponseHeaders>
+    </StaticWebAssetEndpoint>
+    <StaticWebAssetEndpoint Include="App_Plugins/Imobisoft.Search/workspace.z7e5uuom3k.js">
+      <AssetFile>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\workspace.js'))</AssetFile>
+      <Selectors><![CDATA[[]]]></Selectors>
+      <EndpointProperties><![CDATA[[{"Name":"fingerprint","Value":"z7e5uuom3k"},{"Name":"integrity","Value":"sha256-P\u002B0pQEFaHUc7B\u002B2ydoSM9MpzKnMYQ3jN9wg1CfivbF0="},{"Name":"label","Value":"App_Plugins/Imobisoft.Search/workspace.js"}]]]></EndpointProperties>
+      <ResponseHeaders><![CDATA[[{"Name":"Cache-Control","Value":"max-age=31536000, immutable"},{"Name":"Content-Length","Value":"449707"},{"Name":"Content-Type","Value":"text/javascript"},{"Name":"ETag","Value":"\u0022P\u002B0pQEFaHUc7B\u002B2ydoSM9MpzKnMYQ3jN9wg1CfivbF0=\u0022"},{"Name":"Last-Modified","Value":"Fri, 06 Nov 2026 05:28:27 GMT"},{"Name":"Vary","Value":"Accept-Encoding"}]]]></ResponseHeaders>
     </StaticWebAssetEndpoint>
   </ItemGroup>
 </Project>

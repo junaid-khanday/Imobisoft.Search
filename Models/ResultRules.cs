@@ -72,6 +72,24 @@ public sealed class ResultRules
     public int BrowsePageSize { get; set; } = 10;
 
     /// <summary>
+    /// The pages the search page opens with, picked from the content tree, in the order they are
+    /// picked. This is the curated version of <see cref="BrowsePageSize"/>: where that says how
+    /// many of whatever the index returns to list, this says exactly which pages to list.
+    /// <para>
+    /// Pick nothing - the default - and the automatic list is used, as before. Pick anything and
+    /// those pages are what an untouched search page shows, all of them, whatever
+    /// <see cref="BrowsePageSize"/> says; it goes back to governing the automatic list the moment
+    /// the picks are cleared. Nothing here affects a real search: the moment a visitor types, the
+    /// results are the ones that matched.
+    /// </para>
+    /// <para>
+    /// A page that has since been unpublished or deleted is skipped rather than listed as a dead
+    /// link, and the filter counts above the list still come from the whole site.
+    /// </para>
+    /// </summary>
+    public IList<Guid> BrowseNodeKeys { get; set; } = new List<Guid>();
+
+    /// <summary>
     /// Hard ceiling on how many documents are pulled from the index before post-processing. Keeps
     /// boosting and de-duplication bounded on large sites.
     /// </summary>

@@ -115,8 +115,11 @@ D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\ee9apxmh1x-{0}-s9cip7
 D:\imobisoft\Imobisoft.Search\bin\Debug\net10.0\wwwroot\suggest.js
 D:\imobisoft\Imobisoft.Search\bin\Debug\net10.0\wwwroot\suggest.js.gz
 D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\3csu7xp2fv-{0}-3m2gtx9cfn-3m2gtx9cfn.gz
-D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\yngxw0rsot-{0}-joe5ibnxls-joe5ibnxls.gz
 D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\q8au7vvl4l-{0}-0z728gle1r-0z728gle1r.gz
-D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\2o3xyinrf9-{0}-29oxgizj8x-29oxgizj8x.gz
+D:\imobisoft\Imobisoft.Search\bin\Debug\net10.0\wwwroot\searchpage.js
+D:\imobisoft\Imobisoft.Search\bin\Debug\net10.0\wwwroot\searchpage.js.gz
+D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\2o3xyinrf9-{0}-kizxmq0m4j-kizxmq0m4j.gz
+D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\od2tpep2xh-{0}-ex108aapl4-ex108aapl4.gz
+D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\yngxw0rsot-{0}-z7e5uuom3k-z7e5uuom3k.gz
 D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\staticwebassets.upToDateCheck.txt
 D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\Imobisof.5574A79A.Up2Date
