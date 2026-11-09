@@ -123,13 +123,33 @@
             container.querySelectorAll('a[href]').forEach(add);
         });
 
-        document.querySelectorAll('a[href][data-imobisoft-search]').forEach(add);
+        // Opted in by attribute, and not necessarily a link: plenty of sites open their search
+        // from a button, or from an <a> with no href that their own script listens to.
+        document.querySelectorAll('[data-imobisoft-search]').forEach(add);
 
         return links;
     }
 
+    /// Whether this element was opted in by hand, rather than found by looking like a search link.
+    function optedIn(element) {
+        return element.hasAttribute('data-imobisoft-search')
+            && element.getAttribute('data-imobisoft-search') !== 'false';
+    }
+
+    /*
+        The search page an element points at.
+
+        An element opted in by attribute does not have to point anywhere - a header button has no
+        href to read. The box still needs a page to submit to, so it falls back to the first search
+        page the package was told about, which is the site's own search page where one is set and
+        the package's own otherwise.
+    */
     function resolve(link) {
         var href = link.getAttribute('href') || '';
+
+        if (!href && optedIn(link)) {
+            return configuredTarget();
+        }
 
         // An in-page jump has the current path, which on a search page would match every heading
         // link on it.
@@ -155,6 +175,18 @@
         }
     }
 
+    function configuredTarget() {
+        if (config.paths.length === 0) {
+            return null;
+        }
+
+        try {
+            return new URL(config.paths[0], window.location.href);
+        } catch (e) {
+            return null;
+        }
+    }
+
     function shouldEnhance(link, target) {
         if (!target || link.dataset.imobisoftSearchBound) {
             return false;
@@ -170,7 +202,7 @@
             return false;
         }
 
-        if (link.hasAttribute('data-imobisoft-search')) {
+        if (optedIn(link)) {
             return true;
         }
 

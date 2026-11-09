@@ -34,6 +34,35 @@ public interface ISearchPageModelBuilder
 /// <inheritdoc />
 public sealed class SearchPageModelBuilder : ISearchPageModelBuilder
 {
+    /// <summary>
+    /// The query string parameter the term is read from. What this page's own form submits, and
+    /// first in <see cref="TermParameters"/>.
+    /// </summary>
+    private const string DefaultTermParameter = "q";
+
+    /// <summary>
+    /// Parameters the term is accepted on, in order of preference.
+    /// <para>
+    /// More than one because a site whose search page this package has taken over has links,
+    /// bookmarks and search engine results already pointing at it, written with whatever parameter
+    /// the site's own search used. A visitor arriving on <c>/search?keyword=roofing</c> has asked a
+    /// question, and answering it matters more than which word the site spelled it with. Everything
+    /// this page then links to uses <see cref="DefaultTermParameter"/>, so a URL only looks like the
+    /// site's old one until the first search is run.
+    /// </para>
+    /// </summary>
+    private static readonly string[] TermParameters =
+    {
+        DefaultTermParameter,
+        "term",
+        "query",
+        "search",
+        "searchterm",
+        "searchtext",
+        "keyword",
+        "keywords",
+    };
+
     private readonly IImobisoftSearchService _search;
     private readonly ISearchProfileService _profiles;
     private readonly IHttpContextAccessor _http;
@@ -57,7 +86,14 @@ public sealed class SearchPageModelBuilder : ISearchPageModelBuilder
         HttpContext? context = _http.HttpContext;
         IQueryCollection? query = context?.Request.Query;
 
-        var searchFor = (term ?? query?["q"].ToString() ?? string.Empty).Trim();
+        SearchProfile? profile = _profiles.ResolveForSearch(null);
+
+        // Which parameter this request carried the term on. Normally "q" - what this page's form
+        // submits and what the header box is configured with - but a link written before the
+        // package took this page over will have used the site's own name for it.
+        var parameter = TermParameter(query, profile);
+
+        var searchFor = (term ?? query?[parameter].ToString() ?? string.Empty).Trim();
 
         if (page <= 0)
         {
@@ -67,11 +103,9 @@ public sealed class SearchPageModelBuilder : ISearchPageModelBuilder
         }
 
         var hasQuery = !string.IsNullOrWhiteSpace(searchFor)
-                       || (query?.ContainsKey("q") ?? false)
+                       || (query?.ContainsKey(parameter) ?? false)
                        || (query?.ContainsKey("sort") ?? false)
                        || (context?.HasActiveFilters() ?? false);
-
-        SearchProfile? profile = _profiles.ResolveForSearch(null);
 
         List<SortOption> configuredSorts = profile?.Rules.Results.SortOptions
             .Where(s => s.Enabled && !string.IsNullOrWhiteSpace(s.Alias) && !string.IsNullOrWhiteSpace(s.Label))
@@ -143,6 +177,44 @@ public sealed class SearchPageModelBuilder : ISearchPageModelBuilder
         }
 
         return model;
+    }
+
+    /// <summary>
+    /// The parameter on this request that carries the term: the configured one if it is there, then
+    /// the names a site's own search is likely to have used, and <see cref="DefaultTermParameter"/>
+    /// when none of them is - so a request with no term at all still reports the name the page's
+    /// own form will submit.
+    /// </summary>
+    private static string TermParameter(IQueryCollection? query, SearchProfile? profile)
+    {
+        if (query is null || query.Count == 0)
+        {
+            return DefaultTermParameter;
+        }
+
+        // The profile's Search Box tab can name the parameter, and what the box submits is what
+        // this page has to read before anything it merely recognises.
+        var configured = (profile?.Rules.SearchBox.QueryName ?? string.Empty).Trim();
+
+        if (configured.Length > 0 && query.ContainsKey(configured))
+        {
+            return configured;
+        }
+
+        foreach (var candidate in TermParameters)
+        {
+            // Matched without case, and the key as the request spelled it is the one returned -
+            // IQueryCollection is case-insensitive on lookup, but being exact costs nothing.
+            var key = query.Keys.FirstOrDefault(
+                k => k.Equals(candidate, StringComparison.OrdinalIgnoreCase));
+
+            if (key is not null)
+            {
+                return key;
+            }
+        }
+
+        return configured.Length > 0 ? configured : DefaultTermParameter;
     }
 
     private static string CurrentPath(HttpContext? context)

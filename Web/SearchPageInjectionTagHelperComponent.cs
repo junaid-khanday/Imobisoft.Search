@@ -33,6 +33,13 @@ namespace Imobisoft.Search.Web;
 /// <see cref="ImobisoftSearchPageViewComponent"/> from its own template instead, and this stands
 /// aside when it has.
 /// </para>
+/// <para>
+/// A site that already had a search page before the package needs none of that: the page is
+/// recognised by <see cref="ISiteSearchPageLocator"/> and taken over where it stands, so the links
+/// already pointing at it arrive at the package's search. On a page taken over this way the site's
+/// own search form and results are stood down too - that is what keeps one search page from
+/// showing two searches.
+/// </para>
 /// </summary>
 public sealed class SearchPageInjectionTagHelperComponent : TagHelperComponent
 {
@@ -42,6 +49,15 @@ public sealed class SearchPageInjectionTagHelperComponent : TagHelperComponent
     /// </summary>
     private const string DefaultContainer = "main, [role=\"main\"], #main, #content, .main-content, .page-content, article";
 
+    /// <summary>
+    /// The site's own search markup, by the names sites actually give it. Only ever looked for
+    /// inside the page's content area, and only on a page the package recognised and took over.
+    /// </summary>
+    private const string DefaultReplaced =
+        "form[role=\"search\"], form[action*=\"search\" i], .search-form, #search-form, "
+        + "[class*=\"search-result\"], [id*=\"search-result\"], [class*=\"searchresult\"], "
+        + "[id*=\"searchresult\"], .no-results, .search-pagination";
+
     private const string HostElementId = "imobisoft-search-page";
 
     private const string ScriptPath = "/App_Plugins/" + ImobisoftSearchConstants.PackageName + "/searchpage.js";
@@ -49,17 +65,20 @@ public sealed class SearchPageInjectionTagHelperComponent : TagHelperComponent
     private readonly ImobisoftSearchOptions _options;
     private readonly ISearchSettingsService _settings;
     private readonly ISearchPageRenderer _renderer;
+    private readonly ISiteSearchPageLocator _locator;
     private readonly IHttpContextAccessor _http;
 
     public SearchPageInjectionTagHelperComponent(
         IOptions<ImobisoftSearchOptions> options,
         ISearchSettingsService settings,
         ISearchPageRenderer renderer,
+        ISiteSearchPageLocator locator,
         IHttpContextAccessor http)
     {
         _options = options.Value;
         _settings = settings;
         _renderer = renderer;
+        _locator = locator;
         _http = http;
     }
 
@@ -92,7 +111,17 @@ public sealed class SearchPageInjectionTagHelperComponent : TagHelperComponent
 
         SearchPageSettings? page = Settings();
 
-        if (page is null || !Matches(http.Request.Path, page.SitePagePaths))
+        if (page is null)
+        {
+            return;
+        }
+
+        // Named in the settings, or recognised as the search page this site already had. The
+        // difference matters once: a page someone named is left as they built it, while a page the
+        // package recognised is one it is taking over, so the site's own search on it stands down.
+        SiteSearchPageSource source = _locator.Match(http);
+
+        if (source == SiteSearchPageSource.None)
         {
             return;
         }
@@ -106,7 +135,25 @@ public sealed class SearchPageInjectionTagHelperComponent : TagHelperComponent
 
         http.Items[ImobisoftSearchConstants.Web.PageRenderedKey] = true;
 
-        output.PostContent.AppendHtml(Wrap(markup, page.SitePageContainer));
+        output.PostContent.AppendHtml(Wrap(markup, page, Replaced(page, source)));
+    }
+
+    /// <summary>
+    /// The site's own search markup to stand down on this page, or null to leave the page's
+    /// content as it is.
+    /// </summary>
+    private static string? Replaced(SearchPageSettings page, SiteSearchPageSource source)
+    {
+        // A page whose path was typed into the settings is not being taken over - search was
+        // placed into it on purpose, and the rest of that page is the site's to keep.
+        if (source != SiteSearchPageSource.Discovered || !page.ReplaceSitePageSearch)
+        {
+            return null;
+        }
+
+        return string.IsNullOrWhiteSpace(page.SitePageSearchSelector)
+            ? DefaultReplaced
+            : page.SitePageSearchSelector.Trim();
     }
 
     /// <summary>
@@ -153,86 +200,31 @@ public sealed class SearchPageInjectionTagHelperComponent : TagHelperComponent
     }
 
     /// <summary>
-    /// Whether this is one of the pages search was asked to be placed into. Compared on the path
-    /// alone and without case or a trailing slash, so the way the link was written does not decide
-    /// whether search appears.
-    /// </summary>
-    private static bool Matches(PathString path, IList<string> configured)
-    {
-        if (configured.Count == 0)
-        {
-            return false;
-        }
-
-        var current = Normalise(path.Value);
-
-        if (current.Length == 0)
-        {
-            return false;
-        }
-
-        foreach (var candidate in configured)
-        {
-            if (Normalise(candidate) == current)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// A path reduced to what two of them can be compared by: lower case, leading slash, no
-    /// trailing slash and no query string.
-    /// </summary>
-    private static string Normalise(string? path)
-    {
-        var value = (path ?? string.Empty).Trim();
-
-        var cut = value.IndexOfAny(new[] { '?', '#' });
-
-        if (cut >= 0)
-        {
-            value = value[..cut];
-        }
-
-        value = value.Trim();
-
-        if (value.Length == 0)
-        {
-            return string.Empty;
-        }
-
-        if (!value.StartsWith('/'))
-        {
-            value = "/" + value;
-        }
-
-        if (value.Length > 1 && value.EndsWith('/'))
-        {
-            value = value.TrimEnd('/');
-        }
-
-        return value.ToLowerInvariant();
-    }
-
-    /// <summary>
     /// The rendered page, hidden until it has been moved into the site's content area, so it is
     /// never seen at the foot of the page first. A site with scripting off gets it where it is
     /// rather than not at all.
     /// </summary>
-    private static string Wrap(string markup, string? container)
+    private static string Wrap(string markup, SearchPageSettings page, string? replaced)
     {
         HtmlEncoder encoder = HtmlEncoder.Default;
 
-        var target = string.IsNullOrWhiteSpace(container) ? DefaultContainer : container.Trim();
+        var target = string.IsNullOrWhiteSpace(page.SitePageContainer)
+            ? DefaultContainer
+            : page.SitePageContainer.Trim();
 
         var html = new StringBuilder();
 
         html.Append("<div id=\"").Append(HostElementId).Append('"')
-            .Append(" data-container=\"").Append(encoder.Encode(target)).Append('"')
-            .Append(" hidden>")
+            .Append(" data-container=\"").Append(encoder.Encode(target)).Append('"');
+
+        // Only written on a page the package took over, so the script has nothing to stand down on
+        // a page that merely has search placed into it.
+        if (!string.IsNullOrWhiteSpace(replaced))
+        {
+            html.Append(" data-replace=\"").Append(encoder.Encode(replaced)).Append('"');
+        }
+
+        html.Append(" hidden>")
             .Append(markup)
             .Append("</div>");
 

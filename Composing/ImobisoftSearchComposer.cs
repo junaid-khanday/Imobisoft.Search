@@ -95,6 +95,12 @@ public sealed class ImobisoftSearchComposer : IComposer
         // for every request and is cached behind this anyway.
         builder.Services.AddSingleton<ISiteLayoutLocator, SiteLayoutLocator>();
 
+        // Finds the search page a site already had, so installing the package on a site that
+        // already has search leaves it with one search page rather than two. Scoped, because
+        // recognising a page reads the content Umbraco routed for this request and resolves URLs
+        // through the request's own URL provider; the tree walk behind it is cached.
+        builder.Services.AddScoped<ISiteSearchPageLocator, SiteSearchPageLocator>();
+
         // What puts the header search box on a site without the site placing it: a tag helper
         // component adds its stylesheet and script to every Razor view, so the existing search
         // link starts opening a box in place instead of leaving for an empty search page. Honours

@@ -55,6 +55,24 @@ public sealed class ImobisoftSearchOptions
     public bool EnableSearchPage { get; set; } = true;
 
     /// <summary>
+    /// Finds the search page a site already had and answers it with the package, so installing on
+    /// a site that already has search leaves it with one search page rather than two.
+    /// <para>
+    /// This is the companion to <see cref="TakeOverSiteSearch"/>: that one puts the package behind
+    /// the site's search <em>service</em>, this one behind the site's search <em>page</em>. A site
+    /// that built search without a service of its own - the query written straight into a
+    /// controller or a template - is covered by this and not by that.
+    /// </para>
+    /// <para>
+    /// On by default, for the same reason: installing the package is taken to mean you want it
+    /// answering searches. This is the deployment-level switch; day to day it is controlled in the
+    /// backoffice (Search → Settings), and setting this to <c>false</c> stops the package touching
+    /// the site's own search page at all, whatever the backoffice says.
+    /// </para>
+    /// </summary>
+    public bool TakeOverSiteSearchPage { get; set; } = true;
+
+    /// <summary>
     /// Adds the header search box to every page, which is what turns a site's existing search link
     /// into a box that opens in place rather than a link that leaves for an empty search page. No
     /// markup or code is needed in the site for this.

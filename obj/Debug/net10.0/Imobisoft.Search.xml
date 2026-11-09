@@ -359,6 +359,24 @@
             its own.
             </summary>
         </member>
+        <member name="P:Imobisoft.Search.Configuration.ImobisoftSearchOptions.TakeOverSiteSearchPage">
+            <summary>
+            Finds the search page a site already had and answers it with the package, so installing on
+            a site that already has search leaves it with one search page rather than two.
+            <para>
+            This is the companion to <see cref="P:Imobisoft.Search.Configuration.ImobisoftSearchOptions.TakeOverSiteSearch"/>: that one puts the package behind
+            the site's search <em>service</em>, this one behind the site's search <em>page</em>. A site
+            that built search without a service of its own - the query written straight into a
+            controller or a template - is covered by this and not by that.
+            </para>
+            <para>
+            On by default, for the same reason: installing the package is taken to mean you want it
+            answering searches. This is the deployment-level switch; day to day it is controlled in the
+            backoffice (Search → Settings), and setting this to <c>false</c> stops the package touching
+            the site's own search page at all, whatever the backoffice says.
+            </para>
+            </summary>
+        </member>
         <member name="P:Imobisoft.Search.Configuration.ImobisoftSearchOptions.EnableHeaderSearchBox">
             <summary>
             Adds the header search box to every page, which is what turns a site's existing search link
@@ -1701,6 +1719,44 @@
             A CSS selector for where in that page search is placed - the site's main content area.
             Empty tries the usual ones. The first match wins; where nothing matches, search is left at
             the end of the page rather than not shown at all.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchPageSettings.TakeOverSitePage">
+            <summary>
+            Finds the search page the site already had and answers it, without its path being listed
+            above.
+            <para>
+            On by default, because a site that already has a search page has links pointing at it: left
+            alone, those links keep arriving at the site's own search while the package answers a
+            different page, and the site has two. A page is recognised by its document type -
+            <c>searchPage</c>, <c>siteSearch</c>, <c>searchResults</c> - or by its URL being
+            <c>/search</c> or similar. Nothing in the site's content, templates or links has to change.
+            </para>
+            <para>
+            Turn this off to leave the site's own search page as it was; search is then only placed into
+            the pages named in <see cref="P:Imobisoft.Search.Models.SearchPageSettings.SitePagePaths"/>.
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchPageSettings.ReplaceSitePageSearch">
+            <summary>
+            Stands the site's own search form and results down on a page that was taken over, so the
+            visitor sees one search rather than two.
+            <para>
+            Applies only to a page the package recognised by itself. A page whose path was typed into
+            <see cref="P:Imobisoft.Search.Models.SearchPageSettings.SitePagePaths"/> is left as it is: someone placed search into that page
+            deliberately and the rest of it is theirs.
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchPageSettings.SitePageSearchSelector">
+            <summary>
+            A CSS selector for the site's own search markup to stand down, when the usual ones do not
+            match it. Empty looks for a search form and a results list by the names sites give them.
+            <para>
+            The package's own markup is never matched by this, whatever is typed, and neither is
+            anything outside the page's content area.
+            </para>
             </summary>
         </member>
         <member name="T:Imobisoft.Search.Models.SearchSettings">
@@ -3203,8 +3259,35 @@
         <member name="T:Imobisoft.Search.Services.SearchPageModelBuilder">
             <inheritdoc />
         </member>
+        <member name="F:Imobisoft.Search.Services.SearchPageModelBuilder.DefaultTermParameter">
+            <summary>
+            The query string parameter the term is read from. What this page's own form submits, and
+            first in <see cref="F:Imobisoft.Search.Services.SearchPageModelBuilder.TermParameters"/>.
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.SearchPageModelBuilder.TermParameters">
+            <summary>
+            Parameters the term is accepted on, in order of preference.
+            <para>
+            More than one because a site whose search page this package has taken over has links,
+            bookmarks and search engine results already pointing at it, written with whatever parameter
+            the site's own search used. A visitor arriving on <c>/search?keyword=roofing</c> has asked a
+            question, and answering it matters more than which word the site spelled it with. Everything
+            this page then links to uses <see cref="F:Imobisoft.Search.Services.SearchPageModelBuilder.DefaultTermParameter"/>, so a URL only looks like the
+            site's old one until the first search is run.
+            </para>
+            </summary>
+        </member>
         <member name="M:Imobisoft.Search.Services.SearchPageModelBuilder.BuildAsync(System.String,System.Int32,System.Threading.CancellationToken)">
             <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.SearchPageModelBuilder.TermParameter(Microsoft.AspNetCore.Http.IQueryCollection,Imobisoft.Search.Models.SearchProfile)">
+            <summary>
+            The parameter on this request that carries the term: the configured one if it is there, then
+            the names a site's own search is likely to have used, and <see cref="F:Imobisoft.Search.Services.SearchPageModelBuilder.DefaultTermParameter"/>
+            when none of them is - so a request with no term at all still reports the name the page's
+            own form will submit.
+            </summary>
         </member>
         <member name="T:Imobisoft.Search.Services.ISearchPageRenderer">
             <summary>
@@ -3379,6 +3462,182 @@
             derives from. Null when the view is not a Razor page this can read.
             </summary>
         </member>
+        <member name="T:Imobisoft.Search.Services.SiteSearchPageSource">
+            <summary>How the package came to be answering a page of the site's.</summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.SiteSearchPageSource.None">
+            <summary>Not a search page of the site's; nothing to do.</summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.SiteSearchPageSource.Configured">
+            <summary>Named in Search → Settings. Someone placed search here deliberately.</summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.SiteSearchPageSource.Discovered">
+            <summary>
+            Recognised as the site's own search page without anyone saying so. The package is taking it
+            over, which is why the site's own search markup on it is stood down.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.ISiteSearchPageLocator">
+            <summary>
+            Finds the search page a site already had, so installing the package is enough to take it over.
+            <para>
+            A site that built search before the package has a page for it - an Umbraco node, or a route of
+            its own - and the visitor's search link points there. Left alone that leaves two search pages on
+            one site: the site's, which the links go to, and the package's. This recognises the site's and
+            the package answers it instead, with no path typed into Search → Settings and no change to the
+            site's content, template or links.
+            </para>
+            <para>
+            Turn it off with <c>Imobisoft:Search:TakeOverSiteSearchPage</c>, or in Search → Settings.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.ISiteSearchPageLocator.Find">
+            <summary>
+            Every path on this site that search is answered on - configured first, then discovered. Used
+            where a list of paths is needed up front rather than a decision about one request: the
+            header box, which must not open a second box on a search page, and the package's own route,
+            which sends visitors to the site's page where there is one.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.ISiteSearchPageLocator.Match(Microsoft.AspNetCore.Http.HttpContext)">
+            <summary>
+            Whether this request is a search page of the site's, and how it was decided. The answer for
+            a single request, which is the reliable one: a page is recognised from the document type
+            Umbraco actually routed, not from a list of paths assembled earlier.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.SiteSearchPageLocator">
+            <inheritdoc />
+        </member>
+        <member name="F:Imobisoft.Search.Services.SiteSearchPageLocator.Segments">
+            <summary>
+            URL segments that are a search page whatever the document type is called. Matched whole, so
+            <c>/search</c> is a search page and <c>/search-tips</c> is an article about one.
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.SiteSearchPageLocator.AliasEndings">
+            <summary>
+            How a document type alias has to end before an alias containing "search" is taken to be a
+            page rather than a settings node or an element type. Keeps <c>searchPage</c>,
+            <c>siteSearch</c> and <c>searchResults</c>; leaves <c>searchBoxSettings</c> alone.
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.SiteSearchPageLocator.MaxPages">
+            <summary>
+            How many matches are read back. A site has one search page, or one per culture; a number
+            far past that means the recognition is matching something it should not, and reading more
+            of them would not help.
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.SiteSearchPageLocator.FetchSize">
+            <summary>
+            How many matches are read before confirming them. More than is kept, because the query is a
+            narrowing and some of what it returns is discarded.
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.SiteSearchPageLocator.CacheDuration">
+            <summary>
+            Long enough that a page view is not paying for a tree walk, short enough that adding a
+            search page to the site takes effect without a restart.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.SiteSearchPageLocator.Find">
+            <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.SiteSearchPageLocator.Match(Microsoft.AspNetCore.Http.HttpContext)">
+            <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.SiteSearchPageLocator.RoutedAsSearchPage">
+            <summary>
+            Whether the content Umbraco routed for this request is a search page of the site's. False
+            when there is no routed content, which is the case for an MVC route of the site's own.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.SiteSearchPageLocator.Discovered">
+            <summary>
+            The site's search pages as paths, found in the published content index. Cached: this is only
+            needed where a list is wanted up front, and the answer is the same for every request.
+            <para>
+            Read from the index rather than by walking the content tree because that is what this
+            package already does with the site's content, and because it answers in one query however
+            deep the tree is - a search page is as likely to be filed under a section as at the root.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.SiteSearchPageLocator.Query">
+            <summary>
+            The query that narrows the index down to the site's likely search pages: a published content
+            node whose URL segment reads like a search page's, or whose document type does. Empty when
+            there is nothing to ask for.
+            <para>
+            Deliberately a narrowing rather than the decision. An index field is analysed, so
+            <c>urlName:search</c> also comes back with a page at <c>/search-tips</c> - the word is in
+            there. <see cref="M:Imobisoft.Search.Services.SiteSearchPageLocator.Confirmed(Examine.ISearchResult)"/> is what decides, on the values the index returns, by exactly
+            the rules that recognise a page at request time.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.SiteSearchPageLocator.Confirmed(Examine.ISearchResult)">
+            <summary>
+            Whether an indexed node really is the site's search page, by the same rules that recognise
+            one at request time - so a page the analysed query merely brought back does not become a
+            page visitors are sent to.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.SiteSearchPageLocator.SearchDocumentTypes">
+            <summary>
+            The site's own document types that read like a search page. Taken from the site's types
+            rather than guessed, so the aliases asked for are ones that exist.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.SiteSearchPageLocator.Url(Examine.ISearchResult)">
+            <summary>The indexed node's relative URL, or empty where it has none that can be linked to.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.SiteSearchPageLocator.IsSearchPage(Umbraco.Cms.Core.Models.PublishedContent.IPublishedContent)">
+            <summary>
+            Whether this node is the site's search page: its document type says so, or its URL segment
+            does. Never the package's own route, which is not the site's page to take over.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.SiteSearchPageLocator.IsSearchAlias(System.String)">
+            <summary>
+            Whether a document type alias reads like a search page's. An alias merely mentioning search
+            is not enough: a site has types for search settings and search box configuration too, and
+            neither is the page that shows results.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.SiteSearchPageLocator.IsSearchSegment(System.String)">
+            <summary>
+            Whether a URL segment is a search page's. Matched whole and without case, so a page whose
+            URL merely mentions searching is not taken for the search page itself.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.SiteSearchPageLocator.Simplify(System.String)">
+            <summary>An alias reduced to what two of them can be compared by: lower case and letters only.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.SiteSearchPageLocator.Configured(Imobisoft.Search.Models.SearchPageSettings)">
+            <summary>
+            The paths named in the settings. The settings are one JSON document in the database, so an
+            older one - written before this list existed - can leave it absent rather than empty.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.SiteSearchPageLocator.Add(System.Collections.Generic.List{System.String},System.String)">
+            <summary>Adds a path once, normalised, skipping what is empty or already there.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.SearchPagePath">
+            <summary>
+            Reducing a page path to what two of them can be compared by. Shared, so the path a site typed
+            into the settings, the path a node resolves to and the path on the request are all compared the
+            same way - a trailing slash or a capital letter must not decide whether search appears.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.SearchPagePath.Normalise(System.String)">
+            <summary>
+            The path as lower case, with a leading slash, no trailing slash and no query string. Empty
+            for anything that is not a path on this site.
+            </summary>
+        </member>
         <member name="T:Imobisoft.Search.Services.Templates.SearchTemplateInfo">
             <summary>One view a site may take over, as the backoffice lists it.</summary>
         </member>
@@ -3509,9 +3768,19 @@
         </member>
         <member name="M:Imobisoft.Search.Web.HeaderSearchBoxTagHelperComponent.SitePagePaths">
             <summary>
-            The site pages search is placed into, from the settings. Empty when that read fails, for the
-            same reason as <see cref="M:Imobisoft.Search.Web.HeaderSearchBoxTagHelperComponent.Suggestions"/>: a page must still render.
+            The site pages search is answered on: the ones named in the settings, and the search page
+            the site already had, which the package recognises on its own. Empty when that read fails,
+            for the same reason as <see cref="M:Imobisoft.Search.Web.HeaderSearchBoxTagHelperComponent.Suggestions"/>: a page must still render.
             </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Web.HeaderSearchBoxTagHelperComponent.CurrentSearchPage">
+            <summary>
+            This request's path when the package is answering search on it, or null. Empty when that
+            read fails, for the same reason as the rest of this: a page must still render.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Web.HeaderSearchBoxTagHelperComponent.Add(System.Collections.Generic.List{System.String},System.String)">
+            <summary>Adds a path once, trimmed, skipping what is empty or already in the list.</summary>
         </member>
         <member name="T:Imobisoft.Search.Web.AiTransformRequest">
             <summary>What the site's JavaScript posts: which result, which action, and into which language.</summary>
@@ -3663,8 +3932,13 @@
         </member>
         <member name="M:Imobisoft.Search.Web.ImobisoftSearchController.SitePage">
             <summary>
-            The first site page search is rendered into, as a path to send a visitor to, or null when the
+            The first site page search is answered on, as a path to send a visitor to, or null when the
             site has none and this route is the search page.
+            <para>
+            Either a page named in Search → Settings or the search page the site already had, which the
+            package recognises on its own - so a site that had search before the package keeps the one
+            page its links already point at.
+            </para>
             </summary>
         </member>
         <member name="T:Imobisoft.Search.Web.ImobisoftSearchPageViewComponent">
@@ -3862,6 +4136,13 @@
             <see cref="T:Imobisoft.Search.Web.ImobisoftSearchPageViewComponent"/> from its own template instead, and this stands
             aside when it has.
             </para>
+            <para>
+            A site that already had a search page before the package needs none of that: the page is
+            recognised by <see cref="T:Imobisoft.Search.Services.ISiteSearchPageLocator"/> and taken over where it stands, so the links
+            already pointing at it arrive at the package's search. On a page taken over this way the site's
+            own search form and results are stood down too - that is what keeps one search page from
+            showing two searches.
+            </para>
             </summary>
         </member>
         <member name="F:Imobisoft.Search.Web.SearchPageInjectionTagHelperComponent.DefaultContainer">
@@ -3870,10 +4151,22 @@
             names sites actually give it. First match wins.
             </summary>
         </member>
+        <member name="F:Imobisoft.Search.Web.SearchPageInjectionTagHelperComponent.DefaultReplaced">
+            <summary>
+            The site's own search markup, by the names sites actually give it. Only ever looked for
+            inside the page's content area, and only on a page the package recognised and took over.
+            </summary>
+        </member>
         <member name="P:Imobisoft.Search.Web.SearchPageInjectionTagHelperComponent.Order">
             <summary>
             After the header search box, so the script that places this runs after the script that
             drives the box has been written.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Web.SearchPageInjectionTagHelperComponent.Replaced(Imobisoft.Search.Models.SearchPageSettings,Imobisoft.Search.Services.SiteSearchPageSource)">
+            <summary>
+            The site's own search markup to stand down on this page, or null to leave the page's
+            content as it is.
             </summary>
         </member>
         <member name="M:Imobisoft.Search.Web.SearchPageInjectionTagHelperComponent.Wanted(Microsoft.AspNetCore.Http.HttpContext)">
@@ -3882,20 +4175,7 @@
             site, and not a page that has already rendered search itself.
             </summary>
         </member>
-        <member name="M:Imobisoft.Search.Web.SearchPageInjectionTagHelperComponent.Matches(Microsoft.AspNetCore.Http.PathString,System.Collections.Generic.IList{System.String})">
-            <summary>
-            Whether this is one of the pages search was asked to be placed into. Compared on the path
-            alone and without case or a trailing slash, so the way the link was written does not decide
-            whether search appears.
-            </summary>
-        </member>
-        <member name="M:Imobisoft.Search.Web.SearchPageInjectionTagHelperComponent.Normalise(System.String)">
-            <summary>
-            A path reduced to what two of them can be compared by: lower case, leading slash, no
-            trailing slash and no query string.
-            </summary>
-        </member>
-        <member name="M:Imobisoft.Search.Web.SearchPageInjectionTagHelperComponent.Wrap(System.String,System.String)">
+        <member name="M:Imobisoft.Search.Web.SearchPageInjectionTagHelperComponent.Wrap(System.String,Imobisoft.Search.Models.SearchPageSettings,System.String)">
             <summary>
             The rendered page, hidden until it has been moved into the site's content area, so it is
             never seen at the foot of the page first. A site with scripting off gets it where it is

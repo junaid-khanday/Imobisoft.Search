@@ -330,6 +330,9 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         layoutPath: res.data.searchPage?.layoutPath ?? '',
                         sitePagePaths: res.data.searchPage?.sitePagePaths ?? [],
                         sitePageContainer: res.data.searchPage?.sitePageContainer ?? '',
+                        takeOverSitePage: res.data.searchPage?.takeOverSitePage ?? true,
+                        replaceSitePageSearch: res.data.searchPage?.replaceSitePageSearch ?? true,
+                        sitePageSearchSelector: res.data.searchPage?.sitePageSearchSelector ?? '',
 
                         // The textarea holds the list as typed, one path per line, and is turned
                         // back into a list on save - the same way the profile editor's lists work.
@@ -478,7 +481,10 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 useSiteLayout: true,
                 layoutPath: '',
                 sitePagePaths: [],
-                sitePageContainer: ''
+                sitePageContainer: '',
+                takeOverSitePage: true,
+                replaceSitePageSearch: true,
+                sitePageSearchSelector: ''
             }
         };
     }
@@ -4606,6 +4612,58 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         <h4>Search Page</h4>
                     </div>
                     <div class="card-body">
+                        <label class="toggle-item" style="margin-bottom: 16px;">
+                            <div class="toggle-info">
+                                <strong>Take Over The Search Page This Site Already Has</strong>
+                                <span>
+                                    For a site that had search before this package. Its search page is recognised on
+                                    its own - by its document type (searchPage, siteSearch, searchResults) or by its
+                                    URL being /search or similar - and answered with this package's search, so the
+                                    links already pointing at it keep working. Nothing in the site's content,
+                                    templates or links has to change, and no path has to be listed below. Turn this
+                                    off to leave the site's own search page as it was.
+                                </span>
+                            </div>
+                            <input type="checkbox"
+                                   class="switch-input"
+                                   .checked=${p.takeOverSitePage ?? true}
+                                   @change=${e => { p.takeOverSitePage = e.target.checked; this.requestUpdate(); }}>
+                        </label>
+
+                        ${(p.takeOverSitePage ?? true) ? html`
+                            <label class="toggle-item" style="margin-bottom: 16px;">
+                                <div class="toggle-info">
+                                    <strong>Hide The Site's Own Search On A Page That Was Taken Over</strong>
+                                    <span>
+                                        So the visitor sees one search rather than two. Applies only to a page
+                                        recognised above - a page whose path is listed below is left exactly as the
+                                        site built it. This package's own markup is never hidden by it.
+                                    </span>
+                                </div>
+                                <input type="checkbox"
+                                       class="switch-input"
+                                       .checked=${p.replaceSitePageSearch ?? true}
+                                       @change=${e => { p.replaceSitePageSearch = e.target.checked; this.requestUpdate(); }}>
+                            </label>
+
+                            ${(p.replaceSitePageSearch ?? true) ? html`
+                                <div class="sp-group" style="margin-bottom: 20px;">
+                                    <label class="sp-label">The Site's Own Search Is (CSS selector)</label>
+                                    <input type="text"
+                                           class="sp-input"
+                                           style="font-family: monospace;"
+                                           placeholder='form[role="search"], .search-results'
+                                           .value=${p.sitePageSearchSelector ?? ''}
+                                           @input=${e => { p.sitePageSearchSelector = e.target.value; this.requestUpdate(); }}>
+                                    <span class="sp-hint">
+                                        Only needed where the site's search form and results are not found by the
+                                        usual names, or where too much of the page is being hidden. Leave empty to
+                                        look for a search form and a results list the way sites usually write them.
+                                    </span>
+                                </div>
+                            ` : ''}
+                        ` : ''}
+
                         <div class="sp-group" style="margin-bottom: 20px;">
                             <label class="sp-label">Render Search Into These Site Pages (one per line)</label>
                             <textarea class="sp-textarea"
@@ -4618,8 +4676,10 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                 Umbraco using the document type the site already uses for an ordinary content page, so
                                 the site builds and renders it exactly as it does its own, then put its path here -
                                 the whole search page is placed into it. ${SEARCH_PAGE_PATH} then sends
-                                visitors to that page, so there is one search page rather than two. Leave this empty
-                                and search stays on ${SEARCH_PAGE_PATH} as a plain standalone page.
+                                visitors to that page, so there is one search page rather than two. A page listed
+                                here is placed into rather than taken over: the rest of it is left exactly as the
+                                site built it. Leave this empty and search is on whatever page the takeover above
+                                found, or on ${SEARCH_PAGE_PATH} as a plain standalone page if it found none.
                             </span>
                         </div>
 

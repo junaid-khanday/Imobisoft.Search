@@ -3,6 +3,7 @@ using System.Text.Encodings.Web;
 using Imobisoft.Search.Configuration;
 using Imobisoft.Search.Models;
 using Imobisoft.Search.Services;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Razor.TagHelpers;
 using Microsoft.AspNetCore.Razor.TagHelpers;
 using Microsoft.Extensions.Options;
@@ -43,15 +44,21 @@ public sealed class HeaderSearchBoxTagHelperComponent : TagHelperComponent
     private readonly ImobisoftSearchOptions _options;
     private readonly ISearchProfileService _profiles;
     private readonly ISearchSettingsService _settings;
+    private readonly ISiteSearchPageLocator _sitePages;
+    private readonly IHttpContextAccessor _http;
 
     public HeaderSearchBoxTagHelperComponent(
         IOptions<ImobisoftSearchOptions> options,
         ISearchProfileService profiles,
-        ISearchSettingsService settings)
+        ISearchSettingsService settings,
+        ISiteSearchPageLocator sitePages,
+        IHttpContextAccessor http)
     {
         _options = options.Value;
         _profiles = profiles;
         _settings = settings;
+        _sitePages = sitePages;
+        _http = http;
     }
 
     /// <summary>
@@ -168,14 +175,23 @@ public sealed class HeaderSearchBoxTagHelperComponent : TagHelperComponent
     {
         var paths = new List<string>();
 
+        // The site's own pages that search is rendered into. The box has to know about them or it
+        // would treat the site's search page as an ordinary page and open a second box on it.
+        // First in the list, because the first is the one a box with nowhere else to send a
+        // visitor uses - and that should be the page with the site's header and footer on it
+        // rather than the package's bare one.
+        paths.AddRange(SitePagePaths());
+
+        // And this page, when it is the search page the site already had. Recognising it here as
+        // well as in the list above is what covers a search page the list cannot know about - one
+        // the site serves from a route of its own rather than from a content node, or one added
+        // since the list was last worked out.
+        Add(paths, CurrentSearchPage());
+
         if (_options.EnableSearchPage)
         {
             paths.Add("/" + ImobisoftSearchConstants.Web.SearchPagePath);
         }
-
-        // The site's own pages that search is rendered into. The box has to know about them or it
-        // would treat the site's search page as an ordinary page and open a second box on it.
-        paths.AddRange(SitePagePaths());
 
         paths.AddRange(box.ExtraPaths.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()));
 
@@ -183,22 +199,59 @@ public sealed class HeaderSearchBoxTagHelperComponent : TagHelperComponent
     }
 
     /// <summary>
-    /// The site pages search is placed into, from the settings. Empty when that read fails, for the
-    /// same reason as <see cref="Suggestions"/>: a page must still render.
+    /// The site pages search is answered on: the ones named in the settings, and the search page
+    /// the site already had, which the package recognises on its own. Empty when that read fails,
+    /// for the same reason as <see cref="Suggestions"/>: a page must still render.
     /// </summary>
     private IEnumerable<string> SitePagePaths()
     {
         try
         {
-            return _settings.Get().SearchPage.SitePagePaths
-                .Where(p => !string.IsNullOrWhiteSpace(p))
-                .Select(p => p.Trim())
-                .ToList();
+            return _sitePages.Find();
         }
         catch
         {
             return Array.Empty<string>();
         }
+    }
+
+    /// <summary>
+    /// This request's path when the package is answering search on it, or null. Empty when that
+    /// read fails, for the same reason as the rest of this: a page must still render.
+    /// </summary>
+    private string? CurrentSearchPage()
+    {
+        try
+        {
+            HttpContext? http = _http.HttpContext;
+
+            if (http is null)
+            {
+                return null;
+            }
+
+            return _sitePages.Match(http) == SiteSearchPageSource.None
+                ? null
+                : http.Request.Path.Value;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Adds a path once, trimmed, skipping what is empty or already in the list.</summary>
+    private static void Add(List<string> paths, string? path)
+    {
+        var value = (path ?? string.Empty).Trim();
+
+        if (value.Length == 0
+            || paths.Any(p => SearchPagePath.Normalise(p) == SearchPagePath.Normalise(value)))
+        {
+            return;
+        }
+
+        paths.Add(value);
     }
 
     private static string Join(IEnumerable<string> paths)

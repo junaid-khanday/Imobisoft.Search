@@ -25,20 +25,20 @@ public sealed class ImobisoftSearchController : Controller
 {
     private readonly ISearchPageModelBuilder _builder;
     private readonly ISiteLayoutLocator _layout;
-    private readonly ISearchSettingsService _settings;
+    private readonly ISiteSearchPageLocator _sitePages;
     private readonly ImobisoftSearchOptions _options;
     private readonly ILogger<ImobisoftSearchController> _logger;
 
     public ImobisoftSearchController(
         ISearchPageModelBuilder builder,
         ISiteLayoutLocator layout,
-        ISearchSettingsService settings,
+        ISiteSearchPageLocator sitePages,
         IOptions<ImobisoftSearchOptions> options,
         ILogger<ImobisoftSearchController> logger)
     {
         _builder = builder;
         _layout = layout;
-        _settings = settings;
+        _sitePages = sitePages;
         _options = options.Value;
         _logger = logger;
     }
@@ -84,25 +84,21 @@ public sealed class ImobisoftSearchController : Controller
     }
 
     /// <summary>
-    /// The first site page search is rendered into, as a path to send a visitor to, or null when the
+    /// The first site page search is answered on, as a path to send a visitor to, or null when the
     /// site has none and this route is the search page.
+    /// <para>
+    /// Either a page named in Search → Settings or the search page the site already had, which the
+    /// package recognises on its own - so a site that had search before the package keeps the one
+    /// page its links already point at.
+    /// </para>
     /// </summary>
     private string? SitePage()
     {
         try
         {
-            var path = _settings.Get().SearchPage.SitePagePaths
-                .FirstOrDefault(p => !string.IsNullOrWhiteSpace(p))
-                ?.Trim();
+            var path = _sitePages.Find().FirstOrDefault();
 
             if (string.IsNullOrEmpty(path))
-            {
-                return null;
-            }
-
-            // Only ever somewhere on this site: a path from the settings is not a place to send a
-            // visitor off to, however it was typed.
-            if (!path.StartsWith('/') || path.StartsWith("//"))
             {
                 return null;
             }
@@ -127,8 +123,9 @@ public sealed class ImobisoftSearchController : Controller
         }
         catch
         {
-            // Settings live in the database. A failed read leaves this route serving the search
-            // page itself, which is what it did before there was a setting.
+            // Settings live in the database and discovery reads the content cache. A failure in
+            // either leaves this route serving the search page itself, which is what it did before
+            // there was a setting.
             return null;
         }
     }
