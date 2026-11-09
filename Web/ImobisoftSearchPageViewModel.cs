@@ -39,6 +39,23 @@ public sealed class ImobisoftSearchPageViewModel
     public bool KeepSearchTerm { get; set; } = true;
 
     /// <summary>
+    /// What the visitor typed, before AI query understanding rewrote it. Null when nothing was
+    /// rewritten.
+    /// <para>
+    /// Kept apart from <see cref="Term"/> so the page can say which words it actually searched for
+    /// and offer the original back. <see cref="Term"/> is what ran, because that is what the box
+    /// and the paging links have to carry.
+    /// </para>
+    /// </summary>
+    public string? OriginalTerm { get; set; }
+
+    /// <summary>
+    /// True when this search was run with the AI stages deliberately off, because the visitor asked
+    /// for their own words. Stops the page offering a link to do what it has already done.
+    /// </summary>
+    public bool AiDisabled { get; set; }
+
+    /// <summary>
     /// The layout to render the page into, or null for no layout at all - either because the site
     /// has none that can be used, or because the page is already inside one of the site's own pages.
     /// </summary>

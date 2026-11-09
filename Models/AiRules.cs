@@ -28,6 +28,128 @@ public enum AiAction
     /// </para>
     /// </summary>
     Ask,
+
+    /// <summary>
+    /// A direct answer to the search itself, shown above the results rather than offered on a
+    /// button.
+    /// <para>
+    /// Not part of <see cref="AiRules.Actions"/>: that list is the buttons a visitor can press, and
+    /// this one is not pressed. It is governed by <see cref="AiSearchRules.AnswerCard"/> instead.
+    /// </para>
+    /// </summary>
+    Overview,
+
+    /// <summary>
+    /// Searches worth trying next, drawn from what the site actually holds.
+    /// <para>
+    /// Also not a button. Governed by <see cref="AiSearchRules.RelatedSearches"/>, and returned as
+    /// one search per line so the site can render them as links.
+    /// </para>
+    /// </summary>
+    RelatedSearches,
+}
+
+/// <summary>
+/// AI inside the search itself, as opposed to the text tools a visitor presses a button for.
+/// <para>
+/// Three distinct things, each switched on separately because each costs money on a different
+/// schedule. Query understanding and re-ranking run <em>during</em> a search, so they are the two
+/// that can make a visitor wait - both are bounded by <see cref="TimeoutMilliseconds"/> and a search
+/// that outruns it is served exactly as it would have been without any of this. The answer card is
+/// fetched by the browser after the results are already on screen, so it never delays them.
+/// </para>
+/// <para>
+/// All off by default. Installing the package must not start spending money at a provider, and these
+/// spend it per search rather than per button press.
+/// </para>
+/// </summary>
+public sealed class AiSearchRules
+{
+    /// <summary>
+    /// Reads the query before it runs: corrects the spelling, adds the words the site itself uses
+    /// for the same thing, and lifts filters and a sort order out of a sentence - so "3 bed houses
+    /// in Leeds added this month, cheapest first" becomes a term, two filters and a sort.
+    /// <para>
+    /// This is the one that changes what a search finds rather than how it is ordered. Everything
+    /// it produces is checked against the profile first: a filter it invents that the profile does
+    /// not define is dropped, and so is a sort option that is not enabled.
+    /// </para>
+    /// </summary>
+    public bool UnderstandQuery { get; set; }
+
+    /// <summary>
+    /// Lets query understanding correct the spelling of the term. Separate from the "did you mean"
+    /// suggestion below the box: this one rewrites the query that actually runs.
+    /// </summary>
+    public bool CorrectSpelling { get; set; } = true;
+
+    /// <summary>
+    /// Lets query understanding add words the site uses for the same thing, which are searched
+    /// alongside what the visitor typed rather than instead of it.
+    /// </summary>
+    public bool ExpandSynonyms { get; set; } = true;
+
+    /// <summary>
+    /// Lets query understanding select the profile's own filters and sort order from the query.
+    /// Nothing is selected that the profile does not already offer a visitor.
+    /// </summary>
+    public bool ExtractFilters { get; set; } = true;
+
+    /// <summary>
+    /// Re-orders the best matches by how well they actually answer the query, rather than by how
+    /// many times its words appear. This is the fix for a page that is plainly the right answer and
+    /// ranks eighth because it says the word once.
+    /// <para>
+    /// Applies to the first page only, and only when the visitor has not chosen a sort order of
+    /// their own - a "Sort by: newest" dropdown is an instruction, and reordering underneath it
+    /// would be ignoring it. Best bets stay pinned where the profile pinned them.
+    /// </para>
+    /// </summary>
+    public bool Rerank { get; set; }
+
+    /// <summary>
+    /// How many of the top matches are re-ordered. The cost of one re-rank is roughly this many
+    /// titles and extracts, so it is the cost lever: 20 is deep enough to pull up a result keyword
+    /// scoring buried and cheap enough to leave on.
+    /// </summary>
+    public int RerankDepth { get; set; } = 20;
+
+    /// <summary>
+    /// Answers the search above the results, with links to the pages the answer came from.
+    /// <para>
+    /// Fetched by the browser once the results are rendered, so the page is never held up waiting
+    /// for it. Cached per term like every other answer, so a popular search is paid for once.
+    /// </para>
+    /// </summary>
+    public bool AnswerCard { get; set; }
+
+    /// <summary>
+    /// Offers searches to try next, drawn from the pages this search found rather than from a list
+    /// someone maintains. Fetched alongside the answer card and cached the same way.
+    /// </summary>
+    public bool RelatedSearches { get; set; }
+
+    /// <summary>
+    /// How long a search will wait for the stages that run inside it. Past this the search carries
+    /// on without them: a slow provider must cost a visitor nothing but the AI, and a search that
+    /// returns late is worse than one that returns unaided.
+    /// </summary>
+    public int TimeoutMilliseconds { get; set; } = 2500;
+
+    /// <summary>
+    /// Calls each stage may make per minute, counted across the whole site.
+    /// <para>
+    /// This is the one that matters most on a public site, and it is not the same thing as the
+    /// per-visitor limit on the text tools. A visitor presses a button; a search just happens. A
+    /// crawler walking the search page with a different term every time is not one caller hitting a
+    /// limit, and a term nobody has searched before cannot come from the cache - so without a
+    /// ceiling here, how much a site spends is decided by how often it is crawled.
+    /// </para>
+    /// <para>
+    /// Past the ceiling, searches are served exactly as they would be with this switched off.
+    /// </para>
+    /// </summary>
+    public int MaxCallsPerMinute { get; set; } = 60;
 }
 
 /// <summary>
@@ -100,7 +222,13 @@ public sealed class AiRules
     /// </summary>
     public string BaseUrl { get; set; } = string.Empty;
 
-    /// <summary>Which actions appear on a result. An empty list offers none of them.</summary>
+    /// <summary>
+    /// Which actions appear on a result. An empty list offers none of them.
+    /// <para>
+    /// The buttons only. <see cref="AiAction.Overview"/> and <see cref="AiAction.RelatedSearches"/>
+    /// are not pressed by anyone and are governed by <see cref="Search"/>.
+    /// </para>
+    /// </summary>
     public IList<AiAction> Actions { get; set; } = new List<AiAction>
     {
         AiAction.Summarise,
@@ -109,6 +237,12 @@ public sealed class AiRules
         AiAction.Translate,
         AiAction.Ask,
     };
+
+    /// <summary>
+    /// AI inside the search itself: reading the query, re-ordering the results, and answering above
+    /// them. All off until switched on - see <see cref="AiSearchRules"/>.
+    /// </summary>
+    public AiSearchRules Search { get; set; } = new();
 
     /// <summary>
     /// Longest question a visitor may ask. Short on purpose: a question about one page needs a

@@ -97,6 +97,22 @@ public sealed class ImobisoftSearchOptions
     public bool EnableAiTextTools { get; set; } = true;
 
     /// <summary>
+    /// Allows AI inside the search itself - reading the query before it runs, re-ordering the
+    /// results, and answering above them.
+    /// <para>
+    /// Separate from <see cref="EnableAiTextTools"/>, which governs the buttons a visitor presses.
+    /// These stages spend money per search rather than per press, so a site may well want one
+    /// without the other.
+    /// </para>
+    /// <para>
+    /// This is the deployment-level switch and it is on, but every stage behind it is off until an
+    /// editor switches it on per profile (the profile editor's AI tab). Setting this to
+    /// <c>false</c> takes them out of the site altogether, whatever the backoffice says.
+    /// </para>
+    /// </summary>
+    public bool EnableAiSearch { get; set; } = true;
+
+    /// <summary>
     /// Reads filter selections straight off the query string, so a search page needs no code to
     /// support filtering - the links the package generates are enough.
     /// </summary>

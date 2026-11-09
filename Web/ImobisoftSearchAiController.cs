@@ -51,17 +51,23 @@ public sealed class ImobisoftSearchAiController : Controller
     private readonly IAiTextService _ai;
     private readonly ISearchProfileService _profiles;
     private readonly IImobisoftSearchService _search;
+    private readonly IAiQueryPlanner _queryPlanner;
+    private readonly IAiCredentialStore _credentials;
     private readonly ImobisoftSearchOptions _options;
 
     public ImobisoftSearchAiController(
         IAiTextService ai,
         ISearchProfileService profiles,
         IImobisoftSearchService search,
+        IAiQueryPlanner queryPlanner,
+        IAiCredentialStore credentials,
         IOptions<ImobisoftSearchOptions> options)
     {
         _ai = ai;
         _profiles = profiles;
         _search = search;
+        _queryPlanner = queryPlanner;
+        _credentials = credentials;
         _options = options.Value;
     }
 
@@ -110,6 +116,119 @@ public sealed class ImobisoftSearchAiController : Controller
             // server sent to the model, not one parsed back out of the answer.
             sources = result.Sources.Select(s => new { title = s.Title, url = s.Url }),
         });
+    }
+
+    /// <summary>
+    /// What AI is switched on for this search, as the script asks for it.
+    /// <para>
+    /// This exists because the search page is a view a site is invited to take over - Search →
+    /// Templates writes an editable copy into the project - and a site's own copy carries whichever
+    /// data attributes it was copied with. Wiring a new feature through a new attribute therefore
+    /// turns it off for every site that has ever customised the page: the script arrives, finds
+    /// nothing it recognises, and does nothing. Asking the server instead means a feature switched
+    /// on in the backoffice works on the page as it stands.
+    /// </para>
+    /// <para>
+    /// Safe to leave open. It reports which buttons a profile offers and whether the answer card is
+    /// on - the same things the markup it replaces said in plain sight - and reaches no paid
+    /// service: the interpretation it reports is read from the cache the search itself filled, never
+    /// worked out here.
+    /// </para>
+    /// </summary>
+    [HttpGet("~/" + ImobisoftSearchConstants.Web.SearchPagePath + "/ai/state")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public IActionResult State([FromQuery] string? q, [FromQuery] string? profile)
+    {
+        var alias = string.IsNullOrWhiteSpace(profile) ? null : profile;
+
+        AiRules? rules = _ai.RulesFor(alias);
+
+        // "AI is on for this profile and there is a key", which is what every feature below needs.
+        // Deliberately not IAiTextService.IsAvailable: that asks whether some button or card is
+        // switched on, and a profile running only query understanding has neither while still
+        // having something to report - the interpretation it applied to the visitor's query.
+        if (rules is null || !rules.Enabled || !_credentials.Describe().HasKey)
+        {
+            // Not a 404: the script asks on every search page, and "nothing is on" is a perfectly
+            // ordinary answer that should not read as a broken endpoint in a browser console.
+            return Ok(new { enabled = false });
+        }
+
+        return Ok(new
+        {
+            enabled = true,
+
+            // Each feature gated by its own deployment switch, the same way TransformAsync gates
+            // the request that follows - so the page is never offered something the endpoint would
+            // then refuse.
+            actions = _options.EnableAiTextTools
+                ? rules.Actions.Select(Camel).ToList()
+                : new List<string>(),
+            languages = rules.Languages,
+            questionLimit = rules.MaxQuestionCharacters,
+            answer = _options.EnableAiSearch && rules.Search.AnswerCard,
+            related = _options.EnableAiSearch && rules.Search.RelatedSearches,
+            notice = Notice(q, alias),
+        });
+    }
+
+    /// <summary>
+    /// What was done to the visitor's query, for the page to state - or null when it was run as
+    /// typed.
+    /// <para>
+    /// Read from the plan the search already cached. A query nobody has searched yet has no plan
+    /// here and reports nothing, which is correct: nothing has been done to it.
+    /// </para>
+    /// </summary>
+    private object? Notice(string? term, string? profileAlias)
+    {
+        var typed = (term ?? string.Empty).Trim();
+
+        if (typed.Length == 0)
+        {
+            return null;
+        }
+
+        SearchRuleSet? rules = _profiles.ResolveForSearch(profileAlias)?.Rules;
+
+        if (rules is null)
+        {
+            return null;
+        }
+
+        AiQueryPlan? plan = _queryPlanner.Cached(typed, rules);
+
+        if (plan is null)
+        {
+            return null;
+        }
+
+        List<string> filters = plan.DescribeFilters(rules);
+
+        // An expansion only ever widens what matches, so on its own there is nothing to tell
+        // anyone: the words they typed were all searched for.
+        if (plan.Term.Length == 0 && filters.Count == 0)
+        {
+            return null;
+        }
+
+        return new
+        {
+            term = plan.Term.Length > 0 ? plan.Term : typed,
+            original = typed,
+            filters,
+        };
+    }
+
+    /// <summary>
+    /// An action as the script names it. The enum is PascalCase in C# and camelCase everywhere the
+    /// browser sees it, and the markup this replaces did the same conversion inline.
+    /// </summary>
+    private static string Camel(AiAction action)
+    {
+        var name = action.ToString();
+
+        return char.ToLowerInvariant(name[0]) + name[1..];
     }
 
     /// <summary>

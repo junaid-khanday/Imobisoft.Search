@@ -401,6 +401,22 @@
             </para>
             </summary>
         </member>
+        <member name="P:Imobisoft.Search.Configuration.ImobisoftSearchOptions.EnableAiSearch">
+            <summary>
+            Allows AI inside the search itself - reading the query before it runs, re-ordering the
+            results, and answering above them.
+            <para>
+            Separate from <see cref="P:Imobisoft.Search.Configuration.ImobisoftSearchOptions.EnableAiTextTools"/>, which governs the buttons a visitor presses.
+            These stages spend money per search rather than per press, so a site may well want one
+            without the other.
+            </para>
+            <para>
+            This is the deployment-level switch and it is on, but every stage behind it is off until an
+            editor switches it on per profile (the profile editor's AI tab). Setting this to
+            <c>false</c> takes them out of the site altogether, whatever the backoffice says.
+            </para>
+            </summary>
+        </member>
         <member name="P:Imobisoft.Search.Configuration.ImobisoftSearchOptions.ReadFiltersFromQueryString">
             <summary>
             Reads filter selections straight off the query string, so a search page needs no code to
@@ -653,6 +669,127 @@
             </para>
             </summary>
         </member>
+        <member name="F:Imobisoft.Search.Models.AiAction.Overview">
+            <summary>
+            A direct answer to the search itself, shown above the results rather than offered on a
+            button.
+            <para>
+            Not part of <see cref="P:Imobisoft.Search.Models.AiRules.Actions"/>: that list is the buttons a visitor can press, and
+            this one is not pressed. It is governed by <see cref="P:Imobisoft.Search.Models.AiSearchRules.AnswerCard"/> instead.
+            </para>
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Models.AiAction.RelatedSearches">
+            <summary>
+            Searches worth trying next, drawn from what the site actually holds.
+            <para>
+            Also not a button. Governed by <see cref="P:Imobisoft.Search.Models.AiSearchRules.RelatedSearches"/>, and returned as
+            one search per line so the site can render them as links.
+            </para>
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Models.AiSearchRules">
+            <summary>
+            AI inside the search itself, as opposed to the text tools a visitor presses a button for.
+            <para>
+            Three distinct things, each switched on separately because each costs money on a different
+            schedule. Query understanding and re-ranking run <em>during</em> a search, so they are the two
+            that can make a visitor wait - both are bounded by <see cref="P:Imobisoft.Search.Models.AiSearchRules.TimeoutMilliseconds"/> and a search
+            that outruns it is served exactly as it would have been without any of this. The answer card is
+            fetched by the browser after the results are already on screen, so it never delays them.
+            </para>
+            <para>
+            All off by default. Installing the package must not start spending money at a provider, and these
+            spend it per search rather than per button press.
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.AiSearchRules.UnderstandQuery">
+            <summary>
+            Reads the query before it runs: corrects the spelling, adds the words the site itself uses
+            for the same thing, and lifts filters and a sort order out of a sentence - so "3 bed houses
+            in Leeds added this month, cheapest first" becomes a term, two filters and a sort.
+            <para>
+            This is the one that changes what a search finds rather than how it is ordered. Everything
+            it produces is checked against the profile first: a filter it invents that the profile does
+            not define is dropped, and so is a sort option that is not enabled.
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.AiSearchRules.CorrectSpelling">
+            <summary>
+            Lets query understanding correct the spelling of the term. Separate from the "did you mean"
+            suggestion below the box: this one rewrites the query that actually runs.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.AiSearchRules.ExpandSynonyms">
+            <summary>
+            Lets query understanding add words the site uses for the same thing, which are searched
+            alongside what the visitor typed rather than instead of it.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.AiSearchRules.ExtractFilters">
+            <summary>
+            Lets query understanding select the profile's own filters and sort order from the query.
+            Nothing is selected that the profile does not already offer a visitor.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.AiSearchRules.Rerank">
+            <summary>
+            Re-orders the best matches by how well they actually answer the query, rather than by how
+            many times its words appear. This is the fix for a page that is plainly the right answer and
+            ranks eighth because it says the word once.
+            <para>
+            Applies to the first page only, and only when the visitor has not chosen a sort order of
+            their own - a "Sort by: newest" dropdown is an instruction, and reordering underneath it
+            would be ignoring it. Best bets stay pinned where the profile pinned them.
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.AiSearchRules.RerankDepth">
+            <summary>
+            How many of the top matches are re-ordered. The cost of one re-rank is roughly this many
+            titles and extracts, so it is the cost lever: 20 is deep enough to pull up a result keyword
+            scoring buried and cheap enough to leave on.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.AiSearchRules.AnswerCard">
+            <summary>
+            Answers the search above the results, with links to the pages the answer came from.
+            <para>
+            Fetched by the browser once the results are rendered, so the page is never held up waiting
+            for it. Cached per term like every other answer, so a popular search is paid for once.
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.AiSearchRules.RelatedSearches">
+            <summary>
+            Offers searches to try next, drawn from the pages this search found rather than from a list
+            someone maintains. Fetched alongside the answer card and cached the same way.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.AiSearchRules.TimeoutMilliseconds">
+            <summary>
+            How long a search will wait for the stages that run inside it. Past this the search carries
+            on without them: a slow provider must cost a visitor nothing but the AI, and a search that
+            returns late is worse than one that returns unaided.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.AiSearchRules.MaxCallsPerMinute">
+            <summary>
+            Calls each stage may make per minute, counted across the whole site.
+            <para>
+            This is the one that matters most on a public site, and it is not the same thing as the
+            per-visitor limit on the text tools. A visitor presses a button; a search just happens. A
+            crawler walking the search page with a different term every time is not one caller hitting a
+            limit, and a term nobody has searched before cannot come from the cache - so without a
+            ceiling here, how much a site spends is decided by how often it is crawled.
+            </para>
+            <para>
+            Past the ceiling, searches are served exactly as they would be with this switched off.
+            </para>
+            </summary>
+        </member>
         <member name="T:Imobisoft.Search.Models.AiProvider">
             <summary>
             Which service answers. <see cref="F:Imobisoft.Search.Models.AiProvider.Auto"/> works out the provider from the shape of the key that
@@ -711,7 +848,19 @@
             </summary>
         </member>
         <member name="P:Imobisoft.Search.Models.AiRules.Actions">
-            <summary>Which actions appear on a result. An empty list offers none of them.</summary>
+            <summary>
+            Which actions appear on a result. An empty list offers none of them.
+            <para>
+            The buttons only. <see cref="F:Imobisoft.Search.Models.AiAction.Overview"/> and <see cref="F:Imobisoft.Search.Models.AiAction.RelatedSearches"/>
+            are not pressed by anyone and are governed by <see cref="P:Imobisoft.Search.Models.AiRules.Search"/>.
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.AiRules.Search">
+            <summary>
+            AI inside the search itself: reading the query, re-ordering the results, and answering above
+            them. All off until switched on - see <see cref="T:Imobisoft.Search.Models.AiSearchRules"/>.
+            </summary>
         </member>
         <member name="P:Imobisoft.Search.Models.AiRules.MaxQuestionCharacters">
             <summary>
@@ -1505,6 +1654,21 @@
             term still has to clear the profile's minimum query length.
             </summary>
         </member>
+        <member name="P:Imobisoft.Search.Models.SearchRequest.DisableAi">
+            <summary>
+            Runs this search with the AI stages off, however the profile is configured.
+            <para>
+            This is what the "search for X instead" link on the results page sets. A feature that reads
+            a query and quietly searches for something else has to be undoable by the person who typed
+            it - otherwise a visitor whose query was misread has no way to insist, and no way to tell
+            that insisting is even possible.
+            </para>
+            <para>
+            Only the stages that change the query or the order. It does not touch the text tools, which
+            nothing runs without being asked.
+            </para>
+            </summary>
+        </member>
         <member name="P:Imobisoft.Search.Models.SearchRequest.IncludeDiagnostics">
             <summary>
             Populates <see cref="P:Imobisoft.Search.Models.SearchResponse.Diagnostics"/> with the queries that ran and the rules
@@ -1626,6 +1790,36 @@
             <summary>
             A corrected term to offer as "did you mean", set when the query returned little or nothing
             and a close alternative exists in the index.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchResponse.AiQuery">
+            <summary>
+            What AI query understanding made of the query, in a few words - "term rewritten to "3
+            bedroom house"; filter location=Leeds" - or null when the stage did not run or found nothing
+            to change.
+            <para>
+            Here rather than only in the diagnostics because a visitor should be able to see that their
+            search was interpreted, and undo it. A search silently answering a different question than
+            the one typed is the failure mode of this feature, and the fix for it is saying so.
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchResponse.AiFilters">
+            <summary>
+            Filters AI query understanding selected, in the words a visitor reads - "Location: Leeds".
+            Empty when it selected none.
+            <para>
+            These narrow the results without appearing in the URL, so the filter bar does not show them
+            as ticked and "Clear active filters" does not reach them - both read the query string, which
+            is the visitor's own record of what they asked for and not a place for this to write. So the
+            page states them instead, beside the one link that undoes the whole interpretation. A
+            narrowing nobody can see and nobody can lift is the failure mode of this feature.
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SearchResponse.AiReranked">
+            <summary>
+            True when the results were re-ordered by AI rather than by the profile's ranking alone.
             </summary>
         </member>
         <member name="P:Imobisoft.Search.Models.SearchResponse.Diagnostics">
@@ -2003,6 +2197,37 @@
             </para>
             </summary>
         </member>
+        <member name="T:Imobisoft.Search.Services.Ai.AiCallBudget">
+            <summary>
+            A ceiling on how many provider calls the search pipeline may make per minute, counted across the
+            whole site rather than per visitor.
+            <para>
+            The visitor-facing text tools are rate limited per caller, which is the right shape for them: a
+            visitor has to press a button, so one caller pressing it repeatedly is the thing to stop. The
+            pipeline stages have no button. They run because a search ran, and a crawler walking a site's
+            search page with a different term each time is not one caller hitting a limit - it is a bill.
+            Cached answers make a popular search free, but a stream of terms nobody has searched before
+            cannot be served from a cache by definition.
+            </para>
+            <para>
+            So this is a site-wide fixed window. Rough on purpose, and in-process: it needs no schema and no
+            dependency, and on a load-balanced site each server enforces its own share. Once the window is
+            full, searches are served exactly as they would be with the AI switched off - which is the same
+            thing that happens when the provider is slow.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiCallBudget.TryTake(System.String,System.Int32)">
+            <summary>
+            Takes one call from this minute's allowance, or false when it is spent.
+            </summary>
+            <param name="stage">
+            Which stage is asking. Counted separately so a busy answer card cannot starve the
+            re-ranking, and so one stage being hammered is visible in what stops rather than everything
+            degrading at once.
+            </param>
+            <param name="perMinute">The allowance. Zero or less refuses everything.</param>
+        </member>
         <member name="T:Imobisoft.Search.Services.Ai.IAiContentReader">
             <summary>Reads a page's text out of the search index, by node key.</summary>
         </member>
@@ -2082,6 +2307,117 @@
         <member name="M:Imobisoft.Search.Services.Ai.AiCredentialStore.Describe">
             <inheritdoc />
         </member>
+        <member name="T:Imobisoft.Search.Services.Ai.AiGatewayRequest">
+            <summary>One call to the configured provider, as the search pipeline makes it.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiGatewayRequest.Rules">
+            <summary>The profile's AI rules, which carry the provider, the model and the endpoint.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiGatewayRequest.SystemPrompt">
+            <summary>Instructions. Built by the package; never supplied by a visitor.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiGatewayRequest.UserText">
+            <summary>The content to work on, already fenced and capped by the caller.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiGatewayRequest.Timeout">
+            <summary>
+            How long to wait. The pipeline stages pass the profile's own figure, because a stage that
+            runs inside a search is spending a visitor's patience rather than only money.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.IAiGateway">
+            <summary>
+            The one place the package turns a profile's AI rules into an actual provider call.
+            <para>
+            It exists because everything in front of a provider is the same every time - read the key,
+            resolve which service and model the key and rules point at, pick the client that speaks that
+            wire format, hold it to a deadline, and turn a failure into something a caller can act on. The
+            search pipeline has three stages that need all of that and nothing else.
+            </para>
+            <para>
+            Deliberately knows nothing about searching. The services above it do the retrieval and build the
+            prompt; this only makes the call.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.IAiGateway.IsConfigured(Imobisoft.Search.Models.AiRules)">
+            <summary>
+            Whether a provider call can be made at all: the deployment allows it, and a key has been
+            added. Checked before any retrieval work, so a site with no key spends nothing - not even
+            the search a stage would have run to build its prompt.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.IAiGateway.Fingerprint(Imobisoft.Search.Models.AiRules)">
+            <summary>
+            Identifies the provider and model for a cache key, so changing model serves fresh answers
+            rather than the previous model's.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.AiGateway">
+            <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiGateway.IsConfigured(Imobisoft.Search.Models.AiRules)">
+            <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiGateway.Fingerprint(Imobisoft.Search.Models.AiRules)">
+            <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiGateway.RunAsync(Imobisoft.Search.Services.Ai.AiGatewayRequest,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.AiJson">
+            <summary>
+            Pulls a JSON object out of a model's reply.
+            <para>
+            A model asked for JSON and nothing else will still, often enough to matter, wrap it in a
+            ```json fence or introduce it with a sentence. The pipeline stages cannot fall back to reading
+            prose - they need a term, a list of ids, an ordering - so the object is found in whatever came
+            back rather than the whole reply being thrown away for having a preamble.
+            </para>
+            <para>
+            Everything here returns null rather than throwing. A stage that cannot read the reply carries on
+            without it, which is the same thing it does when the provider is slow or down.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiJson.Object(System.String)">
+            <summary>
+            The first JSON object in the text, parsed, or null when there is not one that parses.
+            <para>
+            Caller owns the document and must dispose it.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiJson.String(System.Text.Json.JsonElement,System.String,System.Int32)">
+            <summary>
+            A string property, trimmed, or null when it is absent, empty, or not a string. Also null for
+            a value longer than <paramref name="maximumLength"/>, because every string read here lands
+            in a query or a cache key and none of them has a use for an essay.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiJson.Strings(System.Text.Json.JsonElement,System.String,System.Int32,System.Int32)">
+            <summary>
+            A property holding an array of strings, trimmed and de-duplicated without case, capped at
+            <paramref name="maximum"/> entries and <paramref name="maximumLength"/> characters each.
+            Empty when the property is missing or is not an array.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiJson.Int(System.Text.Json.JsonElement,System.String)">
+            <summary>
+            An integer property, however the model wrote it - a number, or a number inside a string.
+            Null when it is neither.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiJson.Extract(System.String)">
+            <summary>
+            The outermost JSON object in the text, as a string, by matching braces.
+            <para>
+            Braces are counted rather than the first and last being taken, so a reply holding an object
+            followed by a sentence does not swallow the sentence. Braces inside strings are skipped, so
+            a term containing one does not end the object early.
+            </para>
+            </summary>
+        </member>
         <member name="T:Imobisoft.Search.Services.Ai.AiPrompts">
             <summary>
             The instructions behind each action.
@@ -2153,6 +2489,41 @@
             <summary>
             Replaces angle brackets with look-alikes, so no block can be closed from inside its own
             content. The substitutes read identically to a human and carry no markup meaning.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiPrompts.QueryPlan(Imobisoft.Search.Models.AiSearchRules)">
+            <summary>
+            Reading a query into the parts the search engine already understands.
+            <para>
+            Asks for JSON because every field of the answer is checked against the profile before
+            anything is applied, and checking needs named fields rather than a sentence. The instructions
+            are explicit that an empty object is a good answer: the common case on a real site is a query
+            with nothing to correct and no filter hiding in it, and a model that feels obliged to produce
+            something will invent a filter rather than say so.
+            </para>
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Ai.AiPrompts.Rerank">
+            <summary>
+            Re-ordering results by how well they answer the query rather than by how often its words
+            appear.
+            <para>
+            Asks for ids rather than a rewritten list, so the model cannot alter, invent or drop a
+            result - the worst it can return is an order the caller then checks against what it sent.
+            </para>
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Ai.AiPrompts.OverviewPreamble">
+            <summary>
+            Answering the search itself, above the results. The one prompt here that is read by a visitor
+            as the site's own voice, so it is told to answer rather than to describe the site answering.
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Ai.AiPrompts.RelatedPreamble">
+            <summary>
+            Suggesting what to search for next. Constrained to what the sources support, because a
+            suggested search that returns nothing is worse than no suggestion - it reads as the site
+            having a page it does not have.
             </summary>
         </member>
         <member name="T:Imobisoft.Search.Services.Ai.AiProtocol">
@@ -2246,6 +2617,229 @@
             <summary>
             Why this target cannot be called yet, or null when it can. Checked before a request is
             built, so a misconfiguration reads as a sentence rather than a provider's own 404.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.AiQueryPlan">
+            <summary>
+            What the model made of a query, after everything it proposed has been checked against the
+            profile.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiQueryPlan.Term">
+            <summary>
+            The term to run, corrected and stripped of the words that were describing a filter rather
+            than naming a thing. Empty leaves the visitor's own term alone.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiQueryPlan.Expansions">
+            <summary>
+            Words the site uses for the same thing, searched alongside the term rather than instead of
+            it. Applied as synonyms, so they widen what matches without outranking the real term.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiQueryPlan.Filters">
+            <summary>
+            Filter selections lifted out of the query, keyed by facet alias. Only ever facets the
+            profile defines and has enabled.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiQueryPlan.Sort">
+            <summary>Alias of a sort option the query asked for, or null. Only ever an enabled one.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Services.Ai.AiQueryPlan.IsEmpty">
+            <summary>True when nothing survived validation, so there is nothing to apply.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiQueryPlan.DescribeFilters(Imobisoft.Search.Models.SearchRuleSet)">
+            <summary>
+            The filters this plan selected, written the way the profile labels them rather than by alias
+            - "Location: Leeds" rather than "location=Leeds". This goes on the page for a visitor to
+            read, so it uses the facet's own label, and a range bucket's own label where there is one.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiQueryPlan.Describe">
+            <summary>Short description of what was changed, for the dashboard's diagnostics.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.IAiQueryPlanner">
+            <summary>
+            Reads a query before it runs.
+            <para>
+            A keyword engine does what it is told: "3 bed houses in Leeds added this month, cheapest first"
+            is nine words to match, and the pages that match most of them are rarely the three-bedroom
+            houses in Leeds. This turns that sentence into the parts the engine already understands - a
+            term, the site's own words for it, two filter selections and a sort order - so the profile's
+            existing rules do the work.
+            </para>
+            <para>
+            Nothing the model proposes is trusted. A filter is applied only if the profile defines it and
+            has it enabled, a range bucket only if it is one of the buckets configured on that facet, and a
+            sort only if it is an enabled option. Anything else is dropped. The widest thing it can do is
+            add words to search for.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.IAiQueryPlanner.PlanAsync(System.String,Imobisoft.Search.Models.SearchRuleSet,System.Threading.CancellationToken)">
+            <summary>
+            The plan for this query, or null when there is nothing to do - the stage is off, no key has
+            been added, the budget is spent, the provider was slow, or the model found nothing to change.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.IAiQueryPlanner.Cached(System.String,Imobisoft.Search.Models.SearchRuleSet)">
+            <summary>
+            The plan already worked out for this query, or null when there is not one to hand.
+            <para>
+            Reads the cache and nothing else - it never calls a provider and so never spends anything.
+            That is the whole point of it: the page needs to say what was done to a visitor's query, and
+            the search that rendered the page has already put the answer here. An endpoint that could
+            trigger the work instead would be a way to run up a bill by asking politely.
+            </para>
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.AiQueryPlanner">
+            <inheritdoc />
+        </member>
+        <member name="F:Imobisoft.Search.Services.Ai.AiQueryPlanner.NothingToApply">
+            <summary>Stands in for "asked, nothing to change", which cannot be cached as a null.</summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Ai.AiQueryPlanner.MaxTermLength">
+            <summary>
+            Longest query this is worth running on. A long query is usually pasted text rather than a
+            question, and reading it costs more than the search it would improve.
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Ai.AiQueryPlanner.MaxExpansions">
+            <summary>
+            Most expansion words accepted. Each one widens the query, and past a handful they stop
+            adding recall and start adding noise.
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Ai.AiQueryPlanner.MaxFilters">
+            <summary>Most filters accepted from one query.</summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Ai.AiQueryPlanner.MaxFilterValues">
+            <summary>Most values accepted within one filter.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiQueryPlanner.PlanAsync(System.String,Imobisoft.Search.Models.SearchRuleSet,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiQueryPlanner.Cached(System.String,Imobisoft.Search.Models.SearchRuleSet)">
+            <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiQueryPlanner.Read(System.String,Imobisoft.Search.Models.SearchRuleSet,Imobisoft.Search.Models.AiSearchRules)">
+            <summary>
+            Turns the model's reply into a plan, keeping only what the profile actually offers. Null when
+            nothing survives.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiQueryPlanner.Filters(System.Text.Json.JsonElement,Imobisoft.Search.Models.SearchRuleSet)">
+            <summary>
+            Filter selections the profile recognises. A facet it does not define, has disabled, or - for
+            a range facet - a bucket it does not configure, is dropped without comment: the model is
+            proposing, and this is the only thing deciding.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiQueryPlanner.Values(System.Text.Json.JsonElement)">
+            <summary>
+            The values proposed for one facet, however the model wrote them - a single string or an
+            array of them.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiQueryPlanner.Sort(System.Text.Json.JsonElement,Imobisoft.Search.Models.SearchRuleSet)">
+            <summary>The sort option the query asked for, when it is one the profile has enabled.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiQueryPlanner.Catalogue(Imobisoft.Search.Models.SearchRuleSet,Imobisoft.Search.Models.AiRules)">
+            <summary>
+            What the profile offers, written out for the model: the filters it may select and the sort
+            orders it may ask for, by the aliases this package will accept back.
+            <para>
+            Only ever the enabled ones, so the model is never told about a dimension a visitor cannot
+            use. A field facet's own buckets are not listed because they are whatever the index happens
+            to hold - the model proposes a value there, and a selection that matches nothing is caught
+            by the retry in the search service rather than guessed at here.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiQueryPlanner.CacheKey(Imobisoft.Search.Models.AiRules,Imobisoft.Search.Models.SearchRuleSet,System.String)">
+            <summary>
+            Keyed on the query and on everything that would change the answer to it: which provider and
+            model is answering, which parts of the stage are switched on, and the filters and sort
+            orders the profile was offering when it was asked.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.IAiReranker">
+            <summary>
+            Re-orders the best matches by how well they answer the query.
+            <para>
+            Keyword scoring measures how often a query's words appear, which is a good proxy for relevance
+            and not the same thing as it. The page that plainly answers "do you deliver to Scotland" may say
+            "Scotland" once, while a page listing every county says it four times and wins. This reads the
+            titles and extracts of the top matches and puts them in the order a person would.
+            </para>
+            <para>
+            It cannot invent, alter or remove a result. The model is given ids and returns ids; anything it
+            returns that was not sent is discarded, anything it omits keeps the order it already had, and
+            the whole stage is skipped if the reply cannot be read. The worst case is the order the engine
+            produced on its own.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.IAiReranker.RerankAsync(System.String,System.Collections.Generic.IReadOnlyList{Imobisoft.Search.Models.SearchResultItem},Imobisoft.Search.Models.AiRules,System.Threading.CancellationToken)">
+            <summary>
+            Orders <paramref name="candidates"/> best first, or returns null when there is nothing to do
+            - the stage is off, no key has been added, the budget is spent, the provider was slow, or
+            the reply could not be read.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Ai.AiReranker">
+            <inheritdoc />
+        </member>
+        <member name="F:Imobisoft.Search.Services.Ai.AiReranker.Unorderable">
+            <summary>Stands in for "asked, could not be ordered", which cannot be cached as a null.</summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Ai.AiReranker.ExtractCharacters">
+            <summary>
+            How much of each candidate the model is shown. Enough to tell what the page is about, and
+            small enough that twenty of them is still a cheap request - this is multiplied by the depth,
+            so it is the real cost lever of the stage.
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Ai.AiReranker.MinimumCandidates">
+            <summary>
+            Fewest candidates worth the call. Ordering two results is not worth a round trip, and the
+            first page of a search that found three things is not where ranking goes wrong.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiReranker.RerankAsync(System.String,System.Collections.Generic.IReadOnlyList{Imobisoft.Search.Models.SearchResultItem},Imobisoft.Search.Models.AiRules,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiReranker.Apply(System.String,System.Collections.Generic.List{Imobisoft.Search.Models.SearchResultItem},System.Collections.Generic.List{Imobisoft.Search.Models.SearchResultItem})">
+            <summary>
+            The candidates in the order the model gave, with the pinned results first and anything it did
+            not mention following in the order it already had. Null when the reply carried no usable
+            order, which leaves the engine's own ranking in place.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiReranker.Order(System.String,System.Int32)">
+            <summary>
+            The ids from the reply as zero-based indexes into the candidates, keeping only the ones that
+            were actually sent. Null when the reply is not an order at all.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiReranker.Candidates(System.Collections.Generic.List{Imobisoft.Search.Models.SearchResultItem})">
+            <summary>
+            The candidates as numbered blocks. Title first, then whatever the result already carries to
+            describe itself - the sentence that matched, or what the page says about itself. Nothing is
+            read from the index here: this stage works from what the search already returned, which is
+            what keeps it to one provider call and no extra index work.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiReranker.CacheKey(Imobisoft.Search.Models.AiRules,System.String,System.Collections.Generic.List{Imobisoft.Search.Models.SearchResultItem})">
+            <summary>
+            Keyed on the query and on exactly which results are being ordered, in the order they came in.
+            <para>
+            The result ids are part of the key because an order is only meaningful for the set it was
+            asked about: the same query on a site whose content has changed is a different question, and
+            reusing the old answer would reorder results that are no longer there.
+            </para>
             </summary>
         </member>
         <member name="T:Imobisoft.Search.Services.Ai.AiTextRequest">
@@ -2345,8 +2939,41 @@
         <member name="M:Imobisoft.Search.Services.Ai.AiTextService.Compose(Imobisoft.Search.Services.Ai.AiContentText,System.Int32)">
             <summary>Title first, then the body: the title is the strongest hint about what the page is.</summary>
         </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiTextService.IsAllowed(Imobisoft.Search.Models.AiRules,Imobisoft.Search.Models.AiAction)">
+            <summary>
+            Whether this action may run on this profile.
+            <para>
+            The buttons are governed by the <see cref="P:Imobisoft.Search.Models.AiRules.Actions"/> list, which is what an editor
+            ticks. The two actions nobody presses are governed by the search rules instead: they are not
+            offered on a result, so having them in that list would put a button on the page for
+            something that is not a button.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiTextService.Automatic(Imobisoft.Search.Models.AiAction)">
+            <summary>
+            Whether this action runs on its own rather than because someone pressed something. The two
+            that do are the ones the results page fetches for itself.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Ai.AiTextService.Nothing(Imobisoft.Search.Models.AiAction)">
+            <summary>
+            What to say when the site holds no answer.
+            <para>
+            A visitor who typed a question is owed a reply, even a negative one. An answer card and a
+            row of suggested searches were never asked for, so the right answer there is to show
+            nothing at all - a panel announcing that it has nothing to say is worse than no panel.
+            </para>
+            </summary>
+        </member>
         <member name="F:Imobisoft.Search.Services.Ai.AiTextService.NotFound">
             <summary>Shown when nothing on the site answers the question.</summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Ai.AiTextService.Silent">
+            <summary>
+            Cached in place of an empty answer. The cache reports a miss for a blank value, so silence
+            needs something to be stored as or it would be paid for on every single visit.
+            </summary>
         </member>
         <member name="M:Imobisoft.Search.Services.Ai.AiTextService.WithinRateLimit(System.String,System.Int32)">
             <summary>
@@ -2572,6 +3199,62 @@
         </member>
         <member name="M:Imobisoft.Search.Services.ImobisoftSearchService.SearchAsync(Imobisoft.Search.Models.SearchRequest,System.Threading.CancellationToken)">
             <inheritdoc />
+        </member>
+        <member name="M:Imobisoft.Search.Services.ImobisoftSearchService.RunAsync(Imobisoft.Search.Models.SearchRuleSet,Imobisoft.Search.Models.SearchRequest,System.String,System.Int32,Imobisoft.Search.Services.Ai.AiQueryPlan,System.Diagnostics.Stopwatch,System.Threading.CancellationToken)">
+            <summary>
+            One pass of the engine with a plan applied: the sort the visitor or the plan asked for, a
+            deeper first page when the results are to be re-ordered, and the re-ordering itself.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.ImobisoftSearchService.AiRulesOf(Imobisoft.Search.Models.SearchRuleSet)">
+            <summary>
+            A rule set's AI rules, never null.
+            <para>
+            The property is declared non-nullable and a saved profile always has it, but an ad-hoc rule
+            set is posted as JSON by the dashboard and can carry an explicit null - which would read as
+            a missing section everywhere else and as a crash here. Defaults mean every AI stage is off,
+            which is the right answer for a rule set that did not mention them.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.ImobisoftSearchService.RerankDepth(Imobisoft.Search.Models.SearchRuleSet,Imobisoft.Search.Models.SearchRequest,System.String)">
+            <summary>
+            How many results to re-rank, or 0 when the stage should not run for this request.
+            <para>
+            The first page only: an order produced for the top twenty says nothing about what belongs on
+            page three, and re-ranking each page independently would move results between pages as a
+            visitor paged through them. And only on relevance - a visitor who picked "newest first" has
+            given an instruction, and reordering underneath it would be ignoring it.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.ImobisoftSearchService.RerankAsync(Imobisoft.Search.Models.SearchResponse,Imobisoft.Search.Models.SearchRuleSet,Imobisoft.Search.Models.SearchRequest,System.Int32,System.Threading.CancellationToken)">
+            <summary>
+            Replaces the response's results with the AI's ordering, or leaves them exactly as they were.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.ImobisoftSearchService.PlanQueryAsync(Imobisoft.Search.Models.SearchRuleSet,Imobisoft.Search.Models.SearchRequest,System.Threading.CancellationToken)">
+            <summary>
+            Asks the AI to read the query, swallowing anything that goes wrong. A stage that runs inside
+            a search is never allowed to be the reason a search fails.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.ImobisoftSearchService.ApplyPlan(Imobisoft.Search.Models.SearchRuleSet,Imobisoft.Search.Models.SearchRequest,Imobisoft.Search.Services.Ai.AiQueryPlan)">
+            <summary>
+            Applies a plan to the request and the rules: the corrected term and any filters and sort go
+            onto the request, while the expansion words become synonyms of the term.
+            <para>
+            Synonyms rather than extra words in the term, because the query planner already knows how to
+            expand a synonym into an OR group of its own. Added to the term the visitor actually typed,
+            so the expansions widen what matches without being ranked as though the visitor had asked
+            for them.
+            </para>
+            <para>
+            The rules are cloned rather than edited. A saved profile is cached and shared by every
+            request on the server, so writing one visitor's expansions into its synonym list would put
+            them in everyone else's searches.
+            </para>
+            </summary>
         </member>
         <member name="M:Imobisoft.Search.Services.ImobisoftSearchService.ApplyRequestedSort(Imobisoft.Search.Models.SearchRuleSet,Imobisoft.Search.Models.SearchRequest)">
             <summary>
@@ -3281,6 +3964,12 @@
         <member name="M:Imobisoft.Search.Services.SearchPageModelBuilder.BuildAsync(System.String,System.Int32,System.Threading.CancellationToken)">
             <inheritdoc />
         </member>
+        <member name="M:Imobisoft.Search.Services.SearchPageModelBuilder.IsOff(System.String)">
+            <summary>
+            Whether a query string value reads as "off". Accepts the spellings people actually type into
+            a URL rather than only the one this package writes.
+            </summary>
+        </member>
         <member name="M:Imobisoft.Search.Services.SearchPageModelBuilder.TermParameter(Microsoft.AspNetCore.Http.IQueryCollection,Imobisoft.Search.Models.SearchProfile)">
             <summary>
             The parameter on this request that carries the term: the configured one if it is there, then
@@ -3816,6 +4505,41 @@
             </para>
             </summary>
         </member>
+        <member name="M:Imobisoft.Search.Web.ImobisoftSearchAiController.State(System.String,System.String)">
+            <summary>
+            What AI is switched on for this search, as the script asks for it.
+            <para>
+            This exists because the search page is a view a site is invited to take over - Search →
+            Templates writes an editable copy into the project - and a site's own copy carries whichever
+            data attributes it was copied with. Wiring a new feature through a new attribute therefore
+            turns it off for every site that has ever customised the page: the script arrives, finds
+            nothing it recognises, and does nothing. Asking the server instead means a feature switched
+            on in the backoffice works on the page as it stands.
+            </para>
+            <para>
+            Safe to leave open. It reports which buttons a profile offers and whether the answer card is
+            on - the same things the markup it replaces said in plain sight - and reaches no paid
+            service: the interpretation it reports is read from the cache the search itself filled, never
+            worked out here.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Web.ImobisoftSearchAiController.Notice(System.String,System.String)">
+            <summary>
+            What was done to the visitor's query, for the page to state - or null when it was run as
+            typed.
+            <para>
+            Read from the plan the search already cached. A query nobody has searched yet has no plan
+            here and reports nothing, which is correct: nothing has been done to it.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Web.ImobisoftSearchAiController.Camel(Imobisoft.Search.Models.AiAction)">
+            <summary>
+            An action as the script names it. The enum is PascalCase in C# and camelCase everywhere the
+            browser sees it, and the markup this replaces did the same conversion inline.
+            </summary>
+        </member>
         <member name="M:Imobisoft.Search.Web.ImobisoftSearchAiController.Box(System.String,System.String)">
             <summary>
             The header search box, rendered from <c>Views/Partials/Search/HeaderSearchBox.cshtml</c>.
@@ -4015,6 +4739,23 @@
             <summary>
             Whether the search box still holds what was searched for, from the profile's matching rules.
             Off, the box is cleared after a search.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Web.ImobisoftSearchPageViewModel.OriginalTerm">
+            <summary>
+            What the visitor typed, before AI query understanding rewrote it. Null when nothing was
+            rewritten.
+            <para>
+            Kept apart from <see cref="P:Imobisoft.Search.Web.ImobisoftSearchPageViewModel.Term"/> so the page can say which words it actually searched for
+            and offer the original back. <see cref="P:Imobisoft.Search.Web.ImobisoftSearchPageViewModel.Term"/> is what ran, because that is what the box
+            and the paging links have to carry.
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Web.ImobisoftSearchPageViewModel.AiDisabled">
+            <summary>
+            True when this search was run with the AI stages deliberately off, because the visitor asked
+            for their own words. Stops the page offering a link to do what it has already done.
             </summary>
         </member>
         <member name="P:Imobisoft.Search.Web.ImobisoftSearchPageViewModel.LayoutPath">

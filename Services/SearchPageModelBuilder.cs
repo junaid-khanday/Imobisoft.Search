@@ -137,6 +137,11 @@ public sealed class SearchPageModelBuilder : ISearchPageModelBuilder
             // "Keep the searched term" lives on the profile's matching rules, so the box on this
             // page behaves the same way as the header box.
             KeepSearchTerm = profile?.Rules.Matching.KeepSearchTerm ?? true,
+
+            // "ai=0" on the URL, which is what the page's own "search for X instead" link sets.
+            // Read here rather than in the search service so that one visitor insisting on their
+            // own words is a property of this request and nothing else.
+            AiDisabled = IsOff(query?["ai"].ToString()),
         };
 
         // With Load More disabled the profile serves exactly one page of PageSize items: later
@@ -172,11 +177,37 @@ public sealed class SearchPageModelBuilder : ISearchPageModelBuilder
                     Page = model.Page,
                     AllowEmptyTerm = string.IsNullOrWhiteSpace(searchFor),
                     Sort = string.IsNullOrWhiteSpace(selectedSort) ? null : selectedSort,
+                    DisableAi = model.AiDisabled,
                 },
                 cancellationToken);
+
+            // The search may not be the one the visitor typed - different words, or narrowed by a
+            // filter read out of them. Their own words are kept so the page can offer them back,
+            // whichever of those happened; the box and the paging links carry what actually ran,
+            // because anything else would page through a different search.
+            if (model.Response.AiQuery is not null)
+            {
+                model.OriginalTerm = searchFor;
+                model.Term = model.Response.Term;
+            }
         }
 
         return model;
+    }
+
+    /// <summary>
+    /// Whether a query string value reads as "off". Accepts the spellings people actually type into
+    /// a URL rather than only the one this package writes.
+    /// </summary>
+    private static bool IsOff(string? value)
+    {
+        var text = (value ?? string.Empty).Trim();
+
+        return text.Length > 0
+               && (text.Equals("0", StringComparison.Ordinal)
+                   || text.Equals("off", StringComparison.OrdinalIgnoreCase)
+                   || text.Equals("false", StringComparison.OrdinalIgnoreCase)
+                   || text.Equals("no", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

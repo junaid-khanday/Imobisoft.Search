@@ -1,9 +1,15 @@
 /*
-    Live text tools on a search: summarise, shorten, key points, translate, and ask.
+    AI on a search: the text tool buttons, the answer card above the results, and the suggested
+    searches below them.
 
     The package renders the results list with its AI settings on it as data attributes; this script
-    reads those and puts one row of buttons above the results. The page the visitor is on is never
-    left.
+    reads those and builds from them. The page the visitor is on is never left.
+
+    Where the markup does not mention a feature at all, the server is asked instead. That is not
+    belt and braces - the search page is a view sites are invited to take over, and a site's own
+    copy carries whichever attributes it was copied with. Reading configuration only from the markup
+    would mean every new AI feature arrived switched off on every site that has ever customised the
+    page, with no way to tell from the backoffice that it had.
 
     Every action is about the search, not about one result: the browser sends the action and the
     search term, the server searches the site with it, reads the pages that match, and works on
@@ -39,14 +45,123 @@
     }
 
     function configFor(list) {
+        // The two the page asks for by itself. Absent is not the same as false: the search page is
+        // a view sites are invited to take over, and a site's own copy carries whichever attributes
+        // it was copied with. Absent means "this markup predates these features, ask the server";
+        // false means "the server said no".
+        var answerAttr = list.getAttribute('data-imobisoft-ai-answer');
+        var relatedAttr = list.getAttribute('data-imobisoft-ai-related');
+
         return {
             endpoint: list.getAttribute('data-imobisoft-ai-endpoint') || '',
             actions: split(list.getAttribute('data-imobisoft-ai-actions')),
             languages: split(list.getAttribute('data-imobisoft-ai-languages')),
             profile: list.getAttribute('data-imobisoft-ai-profile') || '',
             term: list.getAttribute('data-imobisoft-ai-term') || '',
-            questionLimit: parseInt(list.getAttribute('data-imobisoft-ai-question-limit'), 10) || 300
+            questionLimit: parseInt(list.getAttribute('data-imobisoft-ai-question-limit'), 10) || 300,
+
+            answer: answerAttr === 'true',
+            related: relatedAttr === 'true',
+            askServer: answerAttr === null && relatedAttr === null,
+
+            // Where a suggested search goes. The page's own form posts here, so a suggestion has
+            // to as well or it would leave the page the visitor is searching on.
+            page: list.getAttribute('data-imobisoft-ai-page') || window.location.pathname
         };
+    }
+
+    /*
+        Asks the server what is switched on, for a page whose markup is too old to say.
+
+        Resolves to null on any failure. Nothing here is load bearing: a page that cannot reach this
+        keeps the buttons its own markup asked for, which is what it had before.
+    */
+    function fetchState(config) {
+        var url = config.endpoint + '/state?q=' + encodeURIComponent(config.term)
+            + '&profile=' + encodeURIComponent(config.profile);
+
+        return fetch(url, { headers: { 'Accept': 'application/json' } })
+            .then(function (response) { return response.ok ? response.json() : null; })
+            .catch(function () { return null; });
+    }
+
+    /*
+        States what was done to the visitor's query, and links to the search they actually typed.
+
+        Normally the page renders this itself. This is for a site whose own copy of the page has no
+        markup for it: a query quietly answered as a different query is the failure mode of query
+        understanding, and the way out of it must not depend on which version of a view a site
+        happens to have copied.
+    */
+    function noticeFor(slot, config, notice) {
+        if (!notice || !notice.original) {
+            return;
+        }
+
+        // The page may already have said it. Two notices saying the same thing is worse than one.
+        if (document.querySelector('.imobisoft-ai-notice, .imai-notice')) {
+            return;
+        }
+
+        var rewritten = notice.term && notice.term !== notice.original;
+        var filters = notice.filters || [];
+
+        if (!rewritten && filters.length === 0) {
+            return;
+        }
+
+        var wrap = document.createElement('div');
+        wrap.className = 'imai-notice';
+
+        var said = document.createElement('span');
+
+        if (rewritten) {
+            said.appendChild(document.createTextNode('Showing results for “'));
+
+            var shown = document.createElement('strong');
+            shown.textContent = notice.term;
+            said.appendChild(shown);
+
+            said.appendChild(document.createTextNode('”'));
+        } else {
+            said.appendChild(document.createTextNode('Showing results narrowed from your search'));
+        }
+
+        filters.forEach(function (applied) {
+            said.appendChild(document.createTextNode(' · '));
+
+            var strong = document.createElement('strong');
+            strong.textContent = applied;
+            said.appendChild(strong);
+        });
+
+        wrap.appendChild(said);
+
+        var undo = document.createElement('a');
+        undo.className = 'imai-notice-undo';
+        undo.href = config.page + '?q=' + encodeURIComponent(notice.original) + '&ai=0';
+        undo.textContent = 'Search instead for “' + notice.original + '”';
+        wrap.appendChild(undo);
+
+        slot.appendChild(wrap);
+    }
+
+    /*
+        One call to the endpoint. Shared by the buttons and by the two panels the page fetches for
+        itself, so there is one place that knows the shape of the request and of the reply.
+    */
+    function ask(config, body, signal) {
+        return fetch(config.endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify(body),
+            signal: signal
+        })
+            .then(function (response) {
+                return response.json()
+                    .catch(function () { return {}; })
+                    .then(function (data) { return { ok: response.ok, data: data }; });
+            });
     }
 
     // Rendered as text, never as markup: the answer is third-party output, so it is written with
@@ -405,6 +520,148 @@
     }
 
 
+    /*
+        The answer card: this site's answer to the search, above the results.
+
+        Fetched rather than rendered with the page, so the results are never held up by a provider.
+        It removes itself when the server has nothing to say - an empty reply is the server agreeing
+        that the list of results is the better answer, and a panel announcing that it has no answer
+        is worse than no panel.
+    */
+    function answerCard(slot, config) {
+        var card = document.createElement('section');
+        card.className = 'imai-answer is-loading';
+        card.setAttribute('aria-live', 'polite');
+        card.setAttribute('aria-busy', 'true');
+
+        var heading = document.createElement('div');
+        heading.className = 'imai-answer-head';
+        heading.textContent = 'AI answer';
+        card.appendChild(heading);
+
+        var panel = document.createElement('div');
+        panel.className = 'imai-answer-body';
+
+        var waiting = document.createElement('p');
+        waiting.className = 'imai-waiting';
+        waiting.textContent = 'Looking for an answer on this site…';
+        panel.appendChild(waiting);
+
+        card.appendChild(panel);
+        slot.appendChild(card);
+
+        ask(config, { action: 'overview', term: config.term, profile: config.profile })
+            .then(function (result) {
+                card.classList.remove('is-loading');
+                card.removeAttribute('aria-busy');
+
+                if (!result.ok || !result.data || !result.data.text) {
+                    card.remove();
+                    return;
+                }
+
+                render(panel, result.data.text);
+
+                if (result.data.sources && result.data.sources.length > 0) {
+                    panel.appendChild(sourceList(result.data.sources));
+                }
+
+                var foot = document.createElement('div');
+                foot.className = 'imai-answer-foot';
+                foot.textContent = result.data.cached
+                    ? 'AI generated from pages on this site · reused from an earlier search'
+                    : 'AI generated from pages on this site · may contain mistakes';
+                card.appendChild(foot);
+            })
+            .catch(function () {
+                // Nothing is broken from the visitor's point of view: the results are on the page
+                // and this was an extra. It goes away rather than reporting itself.
+                card.remove();
+            });
+    }
+
+    /*
+        Searches worth trying next, as links back into this same page. Drawn from the pages this
+        search actually found, so a suggestion leads somewhere rather than to an empty result list.
+    */
+    function relatedSearches(list, config) {
+        ask(config, { action: 'relatedSearches', term: config.term, profile: config.profile })
+            .then(function (result) {
+                if (!result.ok || !result.data || !result.data.text) {
+                    return;
+                }
+
+                var terms = String(result.data.text)
+                    .split('\n')
+                    .map(function (line) {
+                        // A model told not to use bullets or numbering will occasionally use them
+                        // anyway, and a stray "- " in a link is worse than a wasted character.
+                        return line.replace(/^\s*[-*•\d.)\s]+/, '').replace(/^["']|["']$/g, '').trim();
+                    })
+                    .filter(function (line) {
+                        return line.length > 1 && line.length <= 80;
+                    })
+                    .slice(0, 5);
+
+                if (terms.length === 0) {
+                    return;
+                }
+
+                var wrap = document.createElement('nav');
+                wrap.className = 'imai-related';
+                wrap.setAttribute('aria-label', 'Related searches');
+
+                var caption = document.createElement('span');
+                caption.className = 'imai-related-label';
+                caption.textContent = 'Try searching for';
+                wrap.appendChild(caption);
+
+                terms.forEach(function (term) {
+                    var link = document.createElement('a');
+                    link.className = 'imai-related-link';
+                    link.href = config.page + '?q=' + encodeURIComponent(term);
+                    link.textContent = term;
+                    wrap.appendChild(link);
+                });
+
+                // After the results: these are where to go once this list has been read, not
+                // instead of reading it.
+                list.parentNode.insertBefore(wrap, list.nextSibling);
+            })
+            .catch(function () {
+                // Same as the answer card - an extra that quietly does not appear.
+            });
+    }
+
+    /*
+        Three empty slots above the results, in reading order, created before anything is put in
+        them.
+
+        Without them the order on the page would depend on what arrives first: the notice, the card
+        and the button bar are each inserted immediately before the results list, so whichever is
+        built last would end up nearest it. On a page whose markup predates these features the card
+        and the notice arrive a round trip after the bar, which would put them underneath it. Fixed
+        slots mean the page reads the same whatever order things turn up in.
+    */
+    function slotsAbove(list) {
+        var top = document.createElement('div');
+        top.className = 'imai-top';
+
+        var slots = {
+            notice: document.createElement('div'),
+            answer: document.createElement('div'),
+            bar: document.createElement('div')
+        };
+
+        top.appendChild(slots.notice);
+        top.appendChild(slots.answer);
+        top.appendChild(slots.bar);
+
+        list.parentNode.insertBefore(top, list);
+
+        return slots;
+    }
+
     function init(list) {
         if (list.dataset.imobisoftAiReady) {
             return;
@@ -414,18 +671,56 @@
 
         var config = configFor(list);
 
-        if (!config.endpoint || config.actions.length === 0) {
+        if (!config.endpoint) {
             return;
         }
 
-        // One bar for the search, placed above the results. Every action now answers about the
-        // search term across the whole site, so a bar on each result would repeat itself - and it
-        // needs no re-scan when Load More appends more results.
-        var mount = document.createElement('div');
-        mount.className = 'imai-bar';
-        list.parentNode.insertBefore(mount, list);
+        var slots = slotsAbove(list);
 
-        decorate(mount, config);
+        // The buttons the markup asked for are built straight away. They worked before the state
+        // endpoint existed and must not start depending on it.
+        if (config.actions.length > 0) {
+            var mount = document.createElement('div');
+            mount.className = 'imai-bar';
+            slots.bar.appendChild(mount);
+
+            decorate(mount, config);
+        }
+
+        if (!config.askServer) {
+            if (config.answer && config.term) {
+                answerCard(slots.answer, config);
+            }
+
+            if (config.related && config.term) {
+                relatedSearches(list, config);
+            }
+
+            return;
+        }
+
+        // This page's markup predates the answer card, so it cannot say whether one is wanted.
+        fetchState(config).then(function (state) {
+            if (!state || !state.enabled) {
+                // AI is off for this profile, or no key has been added. The buttons the markup
+                // asked for stay as they are; there is simply nothing further to add.
+                return;
+            }
+
+            if (state.questionLimit) {
+                config.questionLimit = state.questionLimit;
+            }
+
+            if (state.answer && config.term) {
+                answerCard(slots.answer, config);
+            }
+
+            noticeFor(slots.notice, config, state.notice);
+
+            if (state.related && config.term) {
+                relatedSearches(list, config);
+            }
+        });
     }
 
     function run() {

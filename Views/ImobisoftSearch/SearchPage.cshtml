@@ -252,6 +252,27 @@ else
             text-decoration: underline;
         }
 
+        /* "Showing results for X - search instead for Y". Quieter than the did-you-mean line above
+           it: that one is an offer, and this is a notice about something already done. */
+        .imobisoft-ai-notice {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: baseline;
+            gap: 4px 12px;
+            margin-bottom: 20px;
+            font-size: 15px;
+            color: var(--imobisoft-muted);
+        }
+
+        .imobisoft-ai-notice strong {
+            color: var(--imobisoft-text);
+        }
+
+        .imobisoft-ai-notice a {
+            color: var(--imobisoft-title);
+            text-decoration: underline;
+        }
+
         .imobisoft-stats-bar {
             display: flex;
             flex-wrap: wrap;
@@ -588,6 +609,48 @@ else
                     </div>
                 }
 
+                @* What the AI made of the query, and the way back out of it.
+
+                   Shown whenever the query that ran was not the query that was typed. A feature
+                   that silently searches for something else is indistinguishable from a broken
+                   search when it gets it wrong, so this says what happened and links to the
+                   unaltered search - ai=0, which turns both AI stages off for that one request. *@
+                @if (!string.IsNullOrWhiteSpace(Model.OriginalTerm))
+                {
+                    var rewritten = !string.Equals(response.Term, Model.OriginalTerm, StringComparison.Ordinal);
+
+                    @* Nothing to say when the interpretation changed neither the words nor the
+                       results - an expansion only ever widens what matches, and a notice about it
+                       would be the page explaining itself for no reason. *@
+                    @if (rewritten || response.AiFilters.Count > 0)
+                    {
+                        <div class="imobisoft-ai-notice">
+                            <span>
+                                @if (rewritten)
+                                {
+                                    <text>Showing results for &ldquo;<strong>@response.Term</strong>&rdquo;</text>
+                                }
+                                else
+                                {
+                                    <text>Showing results narrowed from your search</text>
+                                }
+
+                                @* One at a time rather than joined into a string: a field facet's
+                                   value is whatever the model proposed, so it is printed as an
+                                   encoded expression and never as markup. *@
+                                @foreach (var applied in response.AiFilters)
+                                {
+                                    <text> &middot; </text>
+                                    <strong>@applied</strong>
+                                }
+                            </span>
+                            <a href="@Model.PagePath?q=@Uri.EscapeDataString(Model.OriginalTerm)&amp;ai=0">
+                                Search instead for &ldquo;@Model.OriginalTerm&rdquo;
+                            </a>
+                        </div>
+                    }
+                }
+
                 <div class="imobisoft-stats-bar">
                     <div>
                         Found <strong>@response.TotalResults</strong> result@(response.TotalResults == 1 ? "" : "s")
@@ -648,6 +711,16 @@ else
                         ? string.Empty
                         : string.Join(',', ai.Actions.Select(a => char.ToLowerInvariant(a.ToString()[0]) + a.ToString()[1..]));
 
+                    @* The answer card and the suggested searches are fetched by the browser once
+                       this page is on screen, rather than rendered here. Both are a provider round
+                       trip, and nothing a visitor is reading should wait on one: the results are
+                       the answer, and these are an improvement on having to read them.
+
+                       Neither is offered when the visitor asked for their own words back - they
+                       would be answering the query the AI read, which is the one thing they just
+                       said they did not want. *@
+                    var aiCards = ai is not null && !Model.AiDisabled && !string.IsNullOrWhiteSpace(response.Term);
+
                     @if (ai is not null)
                     {
                         <link rel="stylesheet" href="/App_Plugins/Imobisoft.Search/ai.css" />
@@ -659,6 +732,9 @@ else
                         data-imobisoft-ai-languages="@(ai is null ? null : string.Join(',', ai.Languages))"
                         data-imobisoft-ai-term="@(ai is null ? null : response.Term)"
                         data-imobisoft-ai-question-limit="@(ai is null ? null : ai.MaxQuestionCharacters.ToString())"
+                        data-imobisoft-ai-answer="@((aiCards && ai!.Search.AnswerCard).ToString().ToLowerInvariant())"
+                        data-imobisoft-ai-related="@((aiCards && ai!.Search.RelatedSearches).ToString().ToLowerInvariant())"
+                        data-imobisoft-ai-page="@Model.PagePath"
                         data-imobisoft-ai-profile="@(ai is null ? null : response.ProfileAlias)">
                         @* The result cards. Inlined for the same reason as the search bar: this file
                            is the whole page. Keep one <li> per result - Load More below copies them

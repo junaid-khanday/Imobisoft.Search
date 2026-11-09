@@ -134,6 +134,16 @@ public sealed class ImobisoftSearchComposer : IComposer
         builder.Services.AddSingleton<IAiCredentialStore, AiCredentialStore>();
         builder.Services.AddSingleton<IAiContentReader, AiContentReader>();
 
+        // The one place a profile's AI rules become an actual provider call. Singleton: it holds no
+        // per-request state, and everything it needs is a singleton already.
+        builder.Services.AddSingleton<IAiGateway, AiGateway>();
+
+        // The two stages that run inside a search. Singletons for the same reason, and deliberately
+        // free of any dependency on IImobisoftSearchService - the search service depends on these,
+        // so a reference back the other way would be a cycle the container could not build.
+        builder.Services.AddSingleton<IAiQueryPlanner, AiQueryPlanner>();
+        builder.Services.AddSingleton<IAiReranker, AiReranker>();
+
         builder.Services.AddSingleton<IAiCompletionClient, AnthropicCompletionClient>();
         builder.Services.AddSingleton<IAiCompletionClient, OpenAiCompatibleCompletionClient>();
         builder.Services.AddSingleton<IAiCompletionClient, GeminiCompletionClient>();

@@ -387,7 +387,22 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     cacheMinutes: 1440,
                     requestsPerMinutePerVisitor: 8,
                     maxQuestionCharacters: 300,
-                    maxPagesConsulted: 4
+                    maxPagesConsulted: 4,
+
+                    // AI inside the search itself. All off: a new profile must not start spending
+                    // money at a provider on every search anyone runs.
+                    search: {
+                        understandQuery: false,
+                        correctSpelling: true,
+                        expandSynonyms: true,
+                        extractFilters: true,
+                        rerank: false,
+                        rerankDepth: 20,
+                        answerCard: false,
+                        relatedSearches: false,
+                        timeoutMilliseconds: 2500,
+                        maxCallsPerMinute: 60
+                    }
                 },
                 searchBox: {
                     enabled: true,
@@ -643,6 +658,22 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         if (p.rules.ai.maxOutputTokens === undefined) p.rules.ai.maxOutputTokens = 2048;
         if (p.rules.ai.cacheMinutes === undefined) p.rules.ai.cacheMinutes = 1440;
         if (p.rules.ai.requestsPerMinutePerVisitor === undefined) p.rules.ai.requestsPerMinutePerVisitor = 8;
+
+        // AI in the search itself. A profile saved before this existed has no section at all, and
+        // every switch in it defaults off - so an upgrade changes nothing until someone turns
+        // something on, which for a feature that spends money per search is the only safe default.
+        if (!p.rules.ai.search) p.rules.ai.search = {};
+        const aiSearch = p.rules.ai.search;
+        if (aiSearch.understandQuery === undefined) aiSearch.understandQuery = false;
+        if (aiSearch.correctSpelling === undefined) aiSearch.correctSpelling = true;
+        if (aiSearch.expandSynonyms === undefined) aiSearch.expandSynonyms = true;
+        if (aiSearch.extractFilters === undefined) aiSearch.extractFilters = true;
+        if (aiSearch.rerank === undefined) aiSearch.rerank = false;
+        if (aiSearch.rerankDepth === undefined) aiSearch.rerankDepth = 20;
+        if (aiSearch.answerCard === undefined) aiSearch.answerCard = false;
+        if (aiSearch.relatedSearches === undefined) aiSearch.relatedSearches = false;
+        if (aiSearch.timeoutMilliseconds === undefined) aiSearch.timeoutMilliseconds = 2500;
+        if (aiSearch.maxCallsPerMinute === undefined) aiSearch.maxCallsPerMinute = 60;
 
         if (!p.rules.searchBox) p.rules.searchBox = {};
         if (p.rules.searchBox.enabled === undefined) p.rules.searchBox.enabled = true;
@@ -1114,6 +1145,20 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 maxOutputTokens: ai.maxOutputTokens ?? 2048,
                 cacheMinutes: ai.cacheMinutes ?? 1440,
                 requestsPerMinutePerVisitor: ai.requestsPerMinutePerVisitor ?? 8
+            };
+        } else if (type === 'editAiSearch') {
+            const s = this._currentProfile.rules?.ai?.search || {};
+            this._sidePanelData = {
+                understandQuery: !!s.understandQuery,
+                correctSpelling: s.correctSpelling !== false,
+                expandSynonyms: s.expandSynonyms !== false,
+                extractFilters: s.extractFilters !== false,
+                rerank: !!s.rerank,
+                rerankDepth: s.rerankDepth ?? 20,
+                answerCard: !!s.answerCard,
+                relatedSearches: !!s.relatedSearches,
+                timeoutMilliseconds: s.timeoutMilliseconds ?? 2500,
+                maxCallsPerMinute: s.maxCallsPerMinute ?? 60
             };
         } else if (type === 'editSearchBox') {
             const box = this._currentProfile.rules?.searchBox || {};
@@ -1743,6 +1788,22 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             const cacheParsed = parseInt(d.cacheMinutes);
             ai.cacheMinutes = Number.isFinite(cacheParsed) ? Math.min(20160, Math.max(0, cacheParsed)) : 1440;
             ai.requestsPerMinutePerVisitor = Math.min(120, Math.max(1, parseInt(d.requestsPerMinutePerVisitor) || 8));
+        } else if (this._sidePanelType === 'editAiSearch') {
+            if (!this._currentProfile.rules.ai) this._currentProfile.rules.ai = {};
+            if (!this._currentProfile.rules.ai.search) this._currentProfile.rules.ai.search = {};
+            const s = this._currentProfile.rules.ai.search;
+            s.understandQuery = !!d.understandQuery;
+            s.correctSpelling = !!d.correctSpelling;
+            s.expandSynonyms = !!d.expandSynonyms;
+            s.extractFilters = !!d.extractFilters;
+            s.rerank = !!d.rerank;
+            s.rerankDepth = Math.min(50, Math.max(5, parseInt(d.rerankDepth) || 20));
+            s.answerCard = !!d.answerCard;
+            s.relatedSearches = !!d.relatedSearches;
+            // Clamped to the same range the server clamps to, so the number shown back is the
+            // number that will be used rather than one the server will quietly change.
+            s.timeoutMilliseconds = Math.min(15000, Math.max(250, parseInt(d.timeoutMilliseconds) || 2500));
+            s.maxCallsPerMinute = Math.min(1000, Math.max(0, parseInt(d.maxCallsPerMinute) ?? 60));
         } else if (this._sidePanelType === 'editSearchBox') {
             if (!this._currentProfile.rules.searchBox) this._currentProfile.rules.searchBox = {};
             this._currentProfile.rules.searchBox.enabled = !!d.enabled;
@@ -2859,7 +2920,55 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     </div>
                 </div>
 
-                <!-- 3. Cost and abuse limits -->
+                <!-- 3. AI inside the search itself -->
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">AI In Search</div>
+                        <div class="setting-desc">
+                            AI in the search rather than on a button: reading the query before it runs,
+                            re-ordering the results by what actually answers them, and answering above
+                            them. These spend money per search rather than per click, so each one is
+                            switched on separately and all start off.
+                        </div>
+                    </div>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editAiSearch')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Pipeline</span>
+                            <span class="field-count-pill">
+                                ${(() => {
+                                    const s = ai.search || {};
+                                    const on = [s.understandQuery, s.rerank, s.answerCard, s.relatedSearches]
+                                        .filter(Boolean).length;
+                                    return on === 0 ? 'Off' : `${on} Enabled`;
+                                })()}
+                            </span>
+                        </div>
+                        <div class="field-box-content">
+                            <div class="selected-chips-wrap">
+                                ${!status.hasKey ? html`
+                                    <span class="selected-chip chip-muted">✕ Add an API key to switch these on</span>
+                                ` : nothing}
+                                ${!ai.enabled ? html`
+                                    <span class="selected-chip chip-muted">✕ AI is off for this profile</span>
+                                ` : nothing}
+                                <span class="selected-chip ${(ai.search || {}).understandQuery ? 'chip-success' : 'chip-muted'}">
+                                    ${(ai.search || {}).understandQuery ? '✓ Reads the query' : '✕ Query read as typed'}
+                                </span>
+                                <span class="selected-chip ${(ai.search || {}).rerank ? 'chip-success' : 'chip-muted'}">
+                                    ${(ai.search || {}).rerank ? `✓ Re-ranks top ${(ai.search || {}).rerankDepth ?? 20}` : '✕ No re-ranking'}
+                                </span>
+                                <span class="selected-chip ${(ai.search || {}).answerCard ? 'chip-success' : 'chip-muted'}">
+                                    ${(ai.search || {}).answerCard ? '✓ Answer above results' : '✕ No answer card'}
+                                </span>
+                                <span class="selected-chip ${(ai.search || {}).relatedSearches ? 'chip-success' : 'chip-muted'}">
+                                    ${(ai.search || {}).relatedSearches ? '✓ Suggests further searches' : '✕ No suggested searches'}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4. Cost and abuse limits -->
                 <div class="mf-field">
                     <div class="field-left-info">
                         <div class="setting-title">Cost &amp; Request Limits</div>
@@ -4762,6 +4871,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         else if (t === 'editSourceProtection') { title = "Visibility & Protection Rules"; labelTag = "VISIBILITY"; }
         else if (t === 'editAiActions') { title = "AI Text Tools On Results"; labelTag = "AI ACTIONS"; }
         else if (t === 'editAiLimits') { title = "AI Cost & Request Limits"; labelTag = "AI LIMITS"; }
+        else if (t === 'editAiSearch') { title = "AI In Search"; labelTag = "AI PIPELINE"; }
         else if (t === 'editTemplate') { title = this._template?.info?.name ? `Template: ${this._template.info.name}` : 'Template Source'; labelTag = 'TEMPLATE'; }
         else if (t === 'editSearchBox') { title = "Header Search Box"; labelTag = "SEARCH BOX"; }
         else if (t === 'editSearchBoxPages') { title = "Search Pages It Attaches To"; labelTag = "TARGET PAGES"; }
@@ -4790,6 +4900,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         ${t === 'editBlockedTerms' ? this._renderBlockedTermsSidePanelBody(d) : nothing}
                         ${t === 'editAiActions' ? this._renderAiActionsSidePanelBody(d) : nothing}
                         ${t === 'editAiLimits' ? this._renderAiLimitsSidePanelBody(d) : nothing}
+                        ${t === 'editAiSearch' ? this._renderAiSearchSidePanelBody(d) : nothing}
                         ${t === 'editTemplate' ? this._renderTemplateSidePanelBody() : nothing}
                         ${t === 'editSearchBox' ? this._renderSearchBoxSidePanelBody(d) : nothing}
                         ${t === 'editSearchBoxPages' ? this._renderSearchBoxPagesSidePanelBody(d) : nothing}
@@ -5797,6 +5908,128 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                            .value=${String(d.maxOutputTokens ?? 2048)}
                            @change=${e => { d.maxOutputTokens = parseInt(e.target.value) || 2048; this.requestUpdate(); }}>
                     <span class="sp-hint">On a model that reasons before answering this budget covers the reasoning as well as the reply, so a tight value shows up as an empty answer rather than a short one. 2048 suits the actions here.</span>
+                </div>
+            </div>
+        `;
+    }
+
+    _renderAiSearchSidePanelBody(d) {
+        const toggle = (key, title, desc) => html`
+            <div class="sp-toggle-row" style="margin-bottom: 20px;">
+                <div class="sp-toggle-info">
+                    <span class="sp-toggle-title">${title}</span>
+                    <span class="sp-toggle-desc">${desc}</span>
+                </div>
+                <label class="switch switch-sm">
+                    <input type="checkbox"
+                           .checked=${!!d[key]}
+                           @change=${e => { d[key] = e.target.checked; this.requestUpdate(); }}>
+                    <span class="slider round"></span>
+                </label>
+            </div>
+        `;
+
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-choice-header-info">
+                    <p class="sp-choice-desc">
+                        These run because a search ran, not because anyone pressed anything. The first
+                        two happen while the visitor waits, so both give up after the timeout below and
+                        the search is served exactly as it would have been without them. The last two
+                        are fetched once the results are already on screen and never delay them.
+                    </p>
+                </div>
+
+                ${toggle(
+                    'understandQuery',
+                    'Read The Query Before It Runs',
+                    'Turns a sentence into the parts this profile already understands: a term, the ' +
+                    'site\'s own words for it, filter selections and a sort order. Only filters and ' +
+                    'sort orders this profile defines and has enabled can be selected - anything else ' +
+                    'the model suggests is discarded. Where its filters match nothing, the search is ' +
+                    'run again without them rather than showing an empty page.')}
+
+                ${d.understandQuery ? html`
+                    <div class="sp-group" style="margin: -8px 0 20px 24px;">
+                        ${toggle('correctSpelling', 'Correct The Spelling',
+                            'Rewrites the query that actually runs. Separate from the "did you mean" line, which only offers.')}
+                        ${toggle('expandSynonyms', 'Add The Site\'s Own Words',
+                            'Searched alongside what the visitor typed, never instead of it, so this can only widen what matches.')}
+                        ${toggle('extractFilters', 'Select Filters And Sort Order',
+                            'Lifts "in Leeds", "added this month", "cheapest first" out of the query and applies them as this profile\'s own filters. A filter the visitor ticked themselves always wins.')}
+                    </div>
+                ` : nothing}
+
+                ${toggle(
+                    'rerank',
+                    'Re-Order The Results',
+                    'Puts the best matches in the order a person would, rather than by how often the ' +
+                    'query\'s words appear - the fix for a page that is plainly the right answer and ' +
+                    'ranks eighth. First page only, and only on relevance: a visitor who chose "newest ' +
+                    'first" has given an instruction. Best bets stay pinned.')}
+
+                ${d.rerank ? html`
+                    <div class="sp-group" style="margin: -8px 0 20px 24px;">
+                        <label class="sp-label">Results Re-Ordered</label>
+                        <input type="number"
+                               class="sp-input"
+                               min="5"
+                               max="50"
+                               .value=${String(d.rerankDepth ?? 20)}
+                               @change=${e => { d.rerankDepth = parseInt(e.target.value) || 20; this.requestUpdate(); }}>
+                        <span class="sp-hint">
+                            How deep to look. The cost of one re-ranking is roughly this many titles and
+                            extracts, so it is the cost lever: 20 is deep enough to pull up a result that
+                            keyword scoring buried, and cheap enough to leave on.
+                        </span>
+                    </div>
+                ` : nothing}
+
+                ${toggle(
+                    'answerCard',
+                    'Answer Above The Results',
+                    'A short answer to the search at the top of the page, with links to the pages it ' +
+                    'was written from. Answered only from this site\'s own content, and shows nothing ' +
+                    'at all when the site does not hold an answer - a list of results is a better ' +
+                    'answer than a vague paragraph.')}
+
+                ${toggle(
+                    'relatedSearches',
+                    'Suggest Further Searches',
+                    'A row of searches to try next, drawn from the pages this search actually found ' +
+                    'rather than from a list anyone maintains.')}
+
+                <div class="sp-group" style="margin-bottom: 20px;">
+                    <label class="sp-label">Give Up After (milliseconds)</label>
+                    <input type="number"
+                           class="sp-input"
+                           min="250"
+                           max="15000"
+                           .value=${String(d.timeoutMilliseconds ?? 2500)}
+                           @change=${e => { d.timeoutMilliseconds = parseInt(e.target.value) || 2500; this.requestUpdate(); }}>
+                    <span class="sp-hint">
+                        How long a search will wait for the two stages that run inside it. Past this it
+                        carries on without them. A search that comes back late is worse than one that
+                        comes back unaided, so this is deliberately short.
+                    </span>
+                </div>
+
+                <div class="sp-group">
+                    <label class="sp-label">Calls Per Minute, Whole Site (0 = none)</label>
+                    <input type="number"
+                           class="sp-input"
+                           min="0"
+                           max="1000"
+                           .value=${String(d.maxCallsPerMinute ?? 60)}
+                           @change=${e => { d.maxCallsPerMinute = parseInt(e.target.value) || 0; this.requestUpdate(); }}>
+                    <span class="sp-hint">
+                        The limit that matters most on a public site, and not the same thing as the
+                        per-visitor limit on the text tools. A visitor presses a button; a search just
+                        happens. A crawler walking your search page with a different term each time is
+                        not one caller hitting a limit, and a term nobody has searched before cannot come
+                        from the cache - so without a ceiling here, what you spend is decided by how
+                        often you are crawled. Past it, searches are served as though this were off.
+                    </span>
                 </div>
             </div>
         `;

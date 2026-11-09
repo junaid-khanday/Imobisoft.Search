@@ -155,15 +155,25 @@ public sealed class AiTextService : IAiTextService
     {
         AiRules? rules = RulesFor(profileAlias);
 
-        return rules is { Enabled: true }
-               && rules.Actions.Count > 0
-               && _credentials.Describe().HasKey;
+        if (rules is not { Enabled: true } || !_credentials.Describe().HasKey)
+        {
+            return false;
+        }
+
+        // Either something a visitor can press, or something the page shows without being asked.
+        // A profile with no buttons but an answer card switched on is a working configuration, and
+        // before the card existed this only had buttons to look for.
+        return (_options.EnableAiTextTools && rules.Actions.Count > 0)
+               || (_options.EnableAiSearch && (rules.Search.AnswerCard || rules.Search.RelatedSearches));
     }
 
     /// <inheritdoc />
     public AiRules? RulesFor(string? profileAlias)
     {
-        if (!_options.Enabled || !_options.EnableAiTextTools)
+        // Either deployment switch is enough to have rules: they govern different halves of this -
+        // the buttons and the search stages - and a site may well want one without the other.
+        // Which half an individual action falls under is settled by IsAllowed.
+        if (!_options.Enabled || (!_options.EnableAiTextTools && !_options.EnableAiSearch))
         {
             return null;
         }
@@ -181,7 +191,7 @@ public sealed class AiTextService : IAiTextService
             return AiTextResult.Failure("The AI text tools are switched off.", 404);
         }
 
-        if (!rules.Actions.Contains(request.Action))
+        if (!IsAllowed(rules, request.Action))
         {
             return AiTextResult.Failure("That action is not enabled.", 400);
         }
@@ -275,12 +285,23 @@ public sealed class AiTextService : IAiTextService
             && _appCaches.RuntimeCache.GetCacheItem<string>(cacheKey) is { } cached
             && !string.IsNullOrWhiteSpace(cached))
         {
-            return AiTextResult.Success(cached, cached: true);
+            return AiTextResult.Success(cached == Silent ? string.Empty : cached, cached: true);
         }
 
         if (!WithinRateLimit(request.Caller, rules.RequestsPerMinutePerVisitor))
         {
             return AiTextResult.Failure("Too many requests. Try again in a minute.", 429);
+        }
+
+        // The answer card and the related searches are not pressed by anyone - they fire because a
+        // results page was rendered. So they also answer to the site-wide ceiling, which is what
+        // caps what a crawler walking the search page with a fresh term each time can spend. The
+        // per-visitor limit above does not reach that: every term is a cache miss and every caller
+        // is within their own allowance.
+        if (Automatic(request.Action)
+            && !AiCallBudget.TryTake("card", rules.Search.MaxCallsPerMinute))
+        {
+            return AiTextResult.Success(string.Empty);
         }
 
         // Every action works from the whole site: the search engine finds the pages, and the best
@@ -296,6 +317,12 @@ public sealed class AiTextService : IAiTextService
                 Page = 1,
                 PageSize = Math.Clamp(rules.MaxPagesConsulted, 1, 10),
                 ProfileAlias = request.ProfileAlias,
+
+                // This search is retrieval for a prompt, not a search anyone is reading. With the
+                // AI stages left on it would spend a second provider call reading a query the
+                // visitor never typed, and a third re-ordering four results that are about to be
+                // concatenated into one message - paying twice over to change nothing.
+                DisableAi = true,
             },
             cancellationToken);
 
@@ -328,7 +355,7 @@ public sealed class AiTextService : IAiTextService
 
         if (extracts.Count == 0)
         {
-            return AiTextResult.Success(NotFound);
+            return AiTextResult.Success(Nothing(request.Action));
         }
 
         IAiCompletionClient? client = _clients.FirstOrDefault(c => c.Protocol == target.Protocol);
@@ -374,15 +401,20 @@ public sealed class AiTextService : IAiTextService
         // all. Cached as a refusal, so the same question is not paid for twice.
         if (completion.Text.Contains("NOT_FOUND", StringComparison.OrdinalIgnoreCase))
         {
+            var declined = Nothing(request.Action);
+
             if (rules.CacheMinutes > 0)
             {
+                // Stored as the sentinel when the answer is silence, because an empty string does
+                // not read back as a cache hit - and a search the model cannot answer is exactly
+                // the one that must not be paid for on every visit.
                 _appCaches.RuntimeCache.InsertCacheItem(
                     cacheKey,
-                    () => NotFound,
+                    () => declined.Length == 0 ? Silent : declined,
                     TimeSpan.FromMinutes(rules.CacheMinutes));
             }
 
-            return AiTextResult.Success(NotFound);
+            return AiTextResult.Success(declined);
         }
 
         if (rules.CacheMinutes > 0)
@@ -532,8 +564,48 @@ public sealed class AiTextService : IAiTextService
         return text.Length <= ceiling ? text : text[..ceiling];
     }
 
+    /// <summary>
+    /// Whether this action may run on this profile.
+    /// <para>
+    /// The buttons are governed by the <see cref="AiRules.Actions"/> list, which is what an editor
+    /// ticks. The two actions nobody presses are governed by the search rules instead: they are not
+    /// offered on a result, so having them in that list would put a button on the page for
+    /// something that is not a button.
+    /// </para>
+    /// </summary>
+    private bool IsAllowed(AiRules rules, AiAction action)
+        => action switch
+        {
+            AiAction.Overview => _options.EnableAiSearch && rules.Search.AnswerCard,
+            AiAction.RelatedSearches => _options.EnableAiSearch && rules.Search.RelatedSearches,
+            _ => _options.EnableAiTextTools && rules.Actions.Contains(action),
+        };
+
+    /// <summary>
+    /// Whether this action runs on its own rather than because someone pressed something. The two
+    /// that do are the ones the results page fetches for itself.
+    /// </summary>
+    private static bool Automatic(AiAction action)
+        => action is AiAction.Overview or AiAction.RelatedSearches;
+
+    /// <summary>
+    /// What to say when the site holds no answer.
+    /// <para>
+    /// A visitor who typed a question is owed a reply, even a negative one. An answer card and a
+    /// row of suggested searches were never asked for, so the right answer there is to show
+    /// nothing at all - a panel announcing that it has nothing to say is worse than no panel.
+    /// </para>
+    /// </summary>
+    private static string Nothing(AiAction action) => Automatic(action) ? string.Empty : NotFound;
+
     /// <summary>Shown when nothing on the site answers the question.</summary>
     private const string NotFound = "I could not find an answer to that on this site.";
+
+    /// <summary>
+    /// Cached in place of an empty answer. The cache reports a miss for a blank value, so silence
+    /// needs something to be stored as or it would be paid for on every single visit.
+    /// </summary>
+    private const string Silent = " silent";
 
     private static string CacheKey(
         AiResolvedTarget target,

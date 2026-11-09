@@ -142,6 +142,36 @@ public sealed class SearchResponse
     /// </summary>
     public string? Suggestion { get; set; }
 
+    /// <summary>
+    /// What AI query understanding made of the query, in a few words - "term rewritten to "3
+    /// bedroom house"; filter location=Leeds" - or null when the stage did not run or found nothing
+    /// to change.
+    /// <para>
+    /// Here rather than only in the diagnostics because a visitor should be able to see that their
+    /// search was interpreted, and undo it. A search silently answering a different question than
+    /// the one typed is the failure mode of this feature, and the fix for it is saying so.
+    /// </para>
+    /// </summary>
+    public string? AiQuery { get; set; }
+
+    /// <summary>
+    /// Filters AI query understanding selected, in the words a visitor reads - "Location: Leeds".
+    /// Empty when it selected none.
+    /// <para>
+    /// These narrow the results without appearing in the URL, so the filter bar does not show them
+    /// as ticked and "Clear active filters" does not reach them - both read the query string, which
+    /// is the visitor's own record of what they asked for and not a place for this to write. So the
+    /// page states them instead, beside the one link that undoes the whole interpretation. A
+    /// narrowing nobody can see and nobody can lift is the failure mode of this feature.
+    /// </para>
+    /// </summary>
+    public IList<string> AiFilters { get; set; } = new List<string>();
+
+    /// <summary>
+    /// True when the results were re-ordered by AI rather than by the profile's ranking alone.
+    /// </summary>
+    public bool AiReranked { get; set; }
+
     /// <summary>Only populated when <see cref="SearchRequest.IncludeDiagnostics"/> is set.</summary>
     public SearchDiagnostics? Diagnostics { get; set; }
 

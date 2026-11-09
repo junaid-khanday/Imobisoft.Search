@@ -186,3 +186,119 @@
 .imai-sources a {
     color: #2563eb;
 }
+
+/*
+    The answer card: this site's answer to the search, above the results.
+
+    Deliberately heavier than the text-tool panel above. That one is a reply to something the
+    visitor pressed and belongs beside its button; this one arrives unasked at the top of the page
+    and has to read as part of the page rather than as something that has landed on it.
+*/
+.imai-answer {
+    margin: 0 0 16px;
+    padding: 14px 16px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-left: 3px solid #1b264f;
+    border-radius: 10px;
+}
+
+.imai-answer-head {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: #94a3b8;
+    margin-bottom: 6px;
+}
+
+.imai-answer-body {
+    font-size: 14.5px;
+    line-height: 1.65;
+    color: #1e293b;
+}
+
+.imai-answer-body p { margin: 0 0 8px; }
+
+.imai-answer-body p:last-child { margin-bottom: 0; }
+
+.imai-answer-body ul {
+    margin: 0;
+    padding-left: 18px;
+}
+
+/* Said plainly and every time. A visitor has to be able to tell this paragraph from the pages it
+   was written out of, and the pages are what they can actually check. */
+.imai-answer-foot {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid #e2e8f0;
+    font-size: 11px;
+    color: #94a3b8;
+}
+
+/* Suggested searches, below the results: where to go once this list has been read. */
+.imai-related {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: 20px 0 0;
+}
+
+.imai-related-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #64748b;
+}
+
+.imai-related-link {
+    font-size: 12.5px;
+    font-weight: 500;
+    padding: 5px 11px;
+    color: #1e293b;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 999px;
+    text-decoration: none;
+    transition: background .12s ease, border-color .12s ease;
+}
+
+.imai-related-link:hover,
+.imai-related-link:focus-visible {
+    background: #eef2f7;
+    border-color: #cbd5e1;
+}
+
+/* Fixed slots above the results, so the notice, the answer card and the button bar read in the
+   same order whether they were rendered with the page or arrived a round trip later. */
+.imai-top:empty {
+    display: none;
+}
+
+/*
+    "Showing results for X - search instead for Y", rendered by the script.
+
+    The package's own search page renders this itself, in its own styling. This is the version for a
+    site whose copy of that page has no markup for it: without it, query understanding would change
+    what a search looked for and the visitor would have no way to see that, or to insist on their
+    own words.
+*/
+.imai-notice {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 12px;
+    margin: 0 0 16px;
+    font-size: 14px;
+    color: #64748b;
+}
+
+.imai-notice strong {
+    color: #1e293b;
+}
+
+.imai-notice-undo {
+    color: #2563eb;
+    text-decoration: underline;
+}
