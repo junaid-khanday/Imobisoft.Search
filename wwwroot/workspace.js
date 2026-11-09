@@ -512,6 +512,41 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     }
 
     // One path per line, as the stop-word and blocked-term panels take their lists.
+    /**
+     * What the catalog knows about one index field, by name, across every index in scope.
+     *
+     * Matched without case and with the culture suffix allowed to differ, so looking up
+     * "bodyText" finds what was sampled from "bodyText_en-gb" - which on a variant site is the
+     * only form the field actually exists in.
+     */
+    /**
+     * Whether the catalog has actually reported any index fields yet.
+     *
+     * Guards the "not found in the index" warning: with no catalog loaded every field is unknown,
+     * and flagging all of them would be worse than flagging none.
+     */
+    _catalogHasFields() {
+        return (this._catalog?.indexes || []).some(i => (i.fields || []).length > 0);
+    }
+
+    _fieldInfo(fieldName) {
+        const name = (fieldName || '').toLowerCase();
+
+        if (!name) return null;
+
+        for (const index of this._catalog?.indexes || []) {
+            for (const field of index.fields || []) {
+                const candidate = (field.name || '').toLowerCase();
+
+                if (candidate === name || candidate.startsWith(name + '_')) {
+                    return field;
+                }
+            }
+        }
+
+        return null;
+    }
+
     _toPathList(input, fallback) {
         const lines = typeof input === 'string' ? input.split('\n') : null;
         const values = lines ?? (fallback || []);
@@ -692,6 +727,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         if (!p.rules.sources.includeContentTypes) p.rules.sources.includeContentTypes = [];
         if (!p.rules.sources.excludeContentTypes) p.rules.sources.excludeContentTypes = [];
         if (!p.rules.sources.includeMediaTypes) p.rules.sources.includeMediaTypes = [];
+        if (!p.rules.sources.hideFromSearchFields) p.rules.sources.hideFromSearchFields = [];
         if (!p.rules.sources.excludeMediaTypes) p.rules.sources.excludeMediaTypes = [];
         if (!p.rules.results) p.rules.results = {};
         if (!Array.isArray(p.rules.results.browseNodeKeys)) p.rules.results.browseNodeKeys = [];
@@ -1026,23 +1062,33 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 indexTypes: [...(this._currentProfile.rules?.sources?.indexTypes || [])]
             };
         } else if (type === 'editSourceContentTypes') {
+            // One list in the panel, two on the profile. The panel offers document types and media
+            // types together because that is the question an editor is answering - what should be
+            // searchable - while the engine needs them apart, since a type alias only means
+            // anything inside its own index type.
             this._sidePanelData = {
-                includeContentTypes: [...(this._currentProfile.rules?.sources?.includeContentTypes || [])],
+                includeContentTypes: this._mergedIncludedTypes(),
                 _searchFilter: ''
             };
         } else if (type === 'editSourceRoots') {
             const rootKeys = this._currentProfile.rules?.sources?.rootNodeKeys || this._currentProfile.rules?.sources?.startNodeKeys || [];
             this._resolveNodeNames(rootKeys);
+            const excludedKeys = this._currentProfile.rules?.sources?.excludedNodeKeys || [];
+            this._resolveNodeNames(excludedKeys);
             this._sidePanelData = {
                 rootNodeKeys: [...rootKeys],
                 _rootsInput: rootKeys.join('\n'),
+                excludedNodeKeys: [...excludedKeys],
                 excludeDescendantsOfExcludedNodes: this._currentProfile.rules?.sources?.excludeDescendantsOfExcludedNodes !== false
             };
         } else if (type === 'editSourceProtection') {
+            const hideFields = this._currentProfile.rules?.sources?.hideFromSearchFields || [];
             this._sidePanelData = {
                 publishedOnly: this._currentProfile.rules?.sources?.publishedOnly !== false,
                 respectNaviHide: this._currentProfile.rules?.sources?.respectNaviHide !== false,
-                excludeProtected: this._currentProfile.rules?.sources?.excludeProtected !== false
+                excludeProtected: this._currentProfile.rules?.sources?.excludeProtected !== false,
+                hideFromSearchFields: [...hideFields],
+                _hideFieldsInput: hideFields.join('\n')
             };
         } else if (type === 'manageFields') {
             this._sidePanelData = {
@@ -1694,7 +1740,12 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         } else if (this._sidePanelType === 'editSourceEntityTypes') {
             this._currentProfile.rules.sources.indexTypes = [...(d.indexTypes || [])];
         } else if (this._sidePanelType === 'editSourceContentTypes') {
-            this._currentProfile.rules.sources.includeContentTypes = [...(d.includeContentTypes || [])];
+            // Split back out by what each alias actually is. Without this, ticking a media type
+            // would store it as a document type, where it is matched against the content index and
+            // so matches nothing at all - the tick would appear to work and do nothing.
+            const split = this._splitTypesByKind(d.includeContentTypes || []);
+            this._currentProfile.rules.sources.includeContentTypes = split.content;
+            this._currentProfile.rules.sources.includeMediaTypes = split.media;
         } else if (this._sidePanelType === 'editSourceRoots') {
             let keys = d.rootNodeKeys ? [...d.rootNodeKeys] : [];
             if ((!keys || keys.length === 0) && d._rootsInput) {
@@ -1702,11 +1753,14 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             }
             this._currentProfile.rules.sources.rootNodeKeys = keys;
             this._currentProfile.rules.sources.startNodeKeys = keys;
+            this._currentProfile.rules.sources.excludedNodeKeys = d.excludedNodeKeys ? [...d.excludedNodeKeys] : [];
             this._currentProfile.rules.sources.excludeDescendantsOfExcludedNodes = d.excludeDescendantsOfExcludedNodes !== false;
         } else if (this._sidePanelType === 'editSourceProtection') {
             this._currentProfile.rules.sources.publishedOnly = d.publishedOnly !== false;
             this._currentProfile.rules.sources.respectNaviHide = d.respectNaviHide !== false;
             this._currentProfile.rules.sources.excludeProtected = d.excludeProtected !== false;
+            this._currentProfile.rules.sources.hideFromSearchFields =
+                this._toPathList(d._hideFieldsInput, d.hideFromSearchFields);
         } else if (this._sidePanelType === 'manageFields') {
             this._currentProfile.rules.matching.fields = d.fields || [];
         } else if (this._sidePanelType === 'editMatchParameters') {
@@ -2744,7 +2798,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 <div class="mf-field">
                     <div class="field-left-info">
                         <div class="setting-title">AI Provider &amp; Key</div>
-                        <div class="setting-desc">Paste a key from any supported provider - Anthropic, OpenAI, Gemini, Groq, Mistral, DeepSeek, OpenRouter, Azure OpenAI, or anything that speaks the OpenAI API. The key's own shape identifies the provider, so that is usually all you need to enter. Stored encrypted and never sent back to this screen.</div>
+                        <div class="setting-desc">Paste your provider key. The key tells us which provider. Stored encrypted.</div>
                     </div>
                     <div class="field-right-box">
                         <div class="field-box-header">
@@ -2880,7 +2934,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 <div class="mf-field">
                     <div class="field-left-info">
                         <div class="setting-title">Text Tools On Results</div>
-                        <div class="setting-desc">Buttons that appear under each search result and transform it where the visitor already is. Nothing shows until a key is added and this is switched on.</div>
+                        <div class="setting-desc">Buttons under each result: summarise, shorten, key points, translate, ask.</div>
                     </div>
                     <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editAiActions')}>
                         <div class="field-box-header">
@@ -2924,12 +2978,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 <div class="mf-field">
                     <div class="field-left-info">
                         <div class="setting-title">AI In Search</div>
-                        <div class="setting-desc">
-                            AI in the search rather than on a button: reading the query before it runs,
-                            re-ordering the results by what actually answers them, and answering above
-                            them. These spend money per search rather than per click, so each one is
-                            switched on separately and all start off.
-                        </div>
+                        <div class="setting-desc">AI inside the search itself. Costs money per search, so all start off.</div>
                     </div>
                     <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editAiSearch')}>
                         <div class="field-box-header">
@@ -2972,7 +3021,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 <div class="mf-field">
                     <div class="field-left-info">
                         <div class="setting-title">Cost &amp; Request Limits</div>
-                        <div class="setting-desc">These buttons spend money at your provider on a visitor's click, from an endpoint that has to be public. Caching and the per-visitor limit are what keep that bounded.</div>
+                        <div class="setting-desc">Caps what visitors can spend at your provider.</div>
                     </div>
                     <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editAiLimits')}>
                         <div class="field-box-header">
@@ -3198,10 +3247,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                 title="Preview"
                                 style="flex: 1; min-height: 420px; width: 100%; border: 1px solid var(--uui-color-border, #e2e8f0); border-radius: 6px; background: #fff;"></iframe>
                     ` : html`
-                        <p class="sp-hint">
-                            This view is placed by the site rather than by the package, so there is no page it is
-                            known to appear on. Type the URL of a page that uses it and press Reload.
-                        </p>
+                        <p class="sp-hint">No known page for this view. Type a URL that uses it, then Reload.</p>
                     `}
 
                     <span class="sp-hint" style="margin-top: 8px;">
@@ -3253,7 +3299,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 <div class="mf-field">
                     <div class="field-left-info">
                         <div class="setting-title">Header Search Box</div>
-                        <div class="setting-desc">Turns the site's existing search link into a box that opens where the visitor already is: the first press opens it, and the next press - with a term typed - goes to the results page. Needs no change to the site.</div>
+                        <div class="setting-desc">Turns the site's search link into a box that opens in place.</div>
                     </div>
                     <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editSearchBox')}>
                         <div class="field-box-header">
@@ -3297,7 +3343,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 <div class="mf-field">
                     <div class="field-left-info">
                         <div class="setting-title">Search Pages It Attaches To</div>
-                        <div class="setting-desc">A link is recognised when the last part of its URL is the word "search" - alone or hyphenated, as in /search or /imobisoft-search. Name any page it would miss, and any it should leave alone.</div>
+                        <div class="setting-desc">Links ending in "search" are found automatically. Add any others here.</div>
                     </div>
                     <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editSearchBoxPages')}>
                         <div class="field-box-header">
@@ -3325,7 +3371,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 <div class="mf-field">
                     <div class="field-left-info">
                         <div class="setting-title">Templates &amp; Source Code</div>
-                        <div class="setting-desc">The Razor views behind the search bar, the search page and the result cards. Read the source the package ships, or save an editable copy into this site to change the markup.</div>
+                        <div class="setting-desc">The Razor views for the search bar, page and result cards. Edit a copy here.</div>
                     </div>
                     <div class="field-right-box">
                         <div class="field-box-header">
@@ -3369,7 +3415,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 <div class="mf-field">
                     <div class="field-left-info">
                         <div class="setting-title">Where To Look &amp; Query Parameter</div>
-                        <div class="setting-desc">Which part of a page is searched for those links, and the query-string parameter the typed term is submitted as.</div>
+                        <div class="setting-desc">Which part of the page holds search links, and the query parameter used.</div>
                     </div>
                     <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editSearchBoxPlacement')}>
                         <div class="field-box-header">
@@ -3392,12 +3438,32 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         `;
     }
 
+    /**
+     * Folds the specialist settings of a tab away behind a disclosure.
+     *
+     * Hidden, not removed - one click away, on the tab it was always on. A native <details> rather
+     * than a state flag and a button: it keeps its open state across a re-render, needs no
+     * bookkeeping, and is keyboard operable for free.
+     */
+    _advanced(label, content) {
+        return html`
+            <details class="mf-advanced" style="display: block; border-top: 1px solid var(--uui-color-divider, #e9e9eb); margin-top: 8px;">
+                <summary style="cursor: pointer; padding: 16px 4px; font-size: 13px; font-weight: 600; color: var(--uui-color-text-alt, #68676e); user-select: none;">
+                    Advanced &mdash; ${label}
+                </summary>
+                <div style="padding-top: 4px;">${content}</div>
+            </details>
+        `;
+    }
+
     // --- TAB: SOURCES & SCOPE ---
     _renderSourcesTab(p) {
         const sources = p.rules?.sources || {};
         const indexes = sources.indexes || [];
         const indexTypes = sources.indexTypes || [];
-        const includeContentTypes = sources.includeContentTypes || [];
+        // Both lists, because the card is reporting on one question - what is searchable - and the
+        // split into document types and media types is an implementation detail of the engine.
+        const includeContentTypes = this._mergedIncludedTypes();
         const excludeContentTypes = sources.excludeContentTypes || [];
         const rootKeys = sources.rootNodeKeys || sources.startNodeKeys || [];
         this._resolveNodeNames(rootKeys);
@@ -3408,7 +3474,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 <div class="mf-field">
                     <div class="field-left-info">
                         <div class="setting-title">Target Examine Indexes</div>
-                        <div class="setting-desc">Select which Examine indexes to search. Leave empty to query all available indexes automatically.</div>
+                        <div class="setting-desc">Which Examine indexes to search. Empty searches all of them.</div>
                     </div>
                     <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editSourceIndexes')}>
                         <div class="field-box-header">
@@ -3439,6 +3505,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     </div>
                 </div>
 
+                ${this._advanced('entity types - only needed for member search', html`
                 <!-- 2. Index Entity Types -->
                 <div class="mf-field">
                     <div class="field-left-info">
@@ -3469,11 +3536,12 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     </div>
                 </div>
 
+                `)}
                 <!-- 3. Include Document Types -->
                 <div class="mf-field">
                     <div class="field-left-info">
                         <div class="setting-title">Include Document Types</div>
-                        <div class="setting-desc">Only these document types appear in search results. Everything stays hidden until you include it here.</div>
+                        <div class="setting-desc">Tick what can appear in results. Nothing is searchable until ticked.</div>
                     </div>
                     <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editSourceContentTypes')}>
                         <div class="field-box-header">
@@ -3491,8 +3559,11 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                 </div>
                             ` : html`
                                 <div class="selected-placeholder">
-                                    <span class="placeholder-tag">All Document Types Hidden</span>
-                                    <span class="placeholder-meta">Include at least one document type to show results on the frontend.</span>
+                                    <span class="placeholder-tag">This Profile Returns Nothing</span>
+                                    <span class="placeholder-meta">
+                                        No document type is included, so every search on this profile comes
+                                        back empty. Tick at least one to switch search on.
+                                    </span>
                                 </div>
                             `}
                         </div>
@@ -3502,8 +3573,8 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 <!-- 5. Search Subtree Roots -->
                 <div class="mf-field">
                     <div class="field-left-info">
-                        <div class="setting-title">Search Subtree Roots</div>
-                        <div class="setting-desc">Scope search queries to specific root nodes or content branches. Leave empty for entire site.</div>
+                        <div class="setting-title">Search Subtree Roots &amp; Exclusions</div>
+                        <div class="setting-desc">Where to look, and which pages to skip. Empty roots means the whole site.</div>
                     </div>
                     <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editSourceRoots')}>
                         <div class="field-box-header">
@@ -3606,7 +3677,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 <div class="mf-field">
                     <div class="field-left-info">
                         <div class="setting-title">Searchable Fields &amp; Weightings</div>
-                        <div class="setting-desc">Choose which index fields are searched and how strongly each one influences ranking. Leave empty to search every text field automatically.</div>
+                        <div class="setting-desc">Which index fields are searched, and how much each one counts.</div>
                     </div>
                     <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('manageFields')}>
                         <div class="field-box-header">
@@ -3636,6 +3707,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     </div>
                 </div>
 
+                ${this._advanced('stop words and synonyms', html`
                 <!-- 3. Stop Words -->
                 <div class="mf-field">
                     <div class="field-left-info">
@@ -3700,6 +3772,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         </div>
                     </div>
                 </div>
+                `)}
             </div>
         `;
     }
@@ -3806,6 +3879,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     </div>
                 </div>
 
+                ${this._advanced('recency decay and blocked terms', html`
                 <!-- 4. Recency Boost -->
                 <div class="mf-field">
                     <div class="field-left-info">
@@ -3856,6 +3930,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         </div>
                     </div>
                 </div>
+                `)}
             </div>
         `;
     }
@@ -3871,7 +3946,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 <div class="mf-field">
                     <div class="field-left-info">
                         <div class="setting-title">Paging & Capacity Ceilings</div>
-                        <div class="setting-desc">Set default page size, load more behavior, and maximum total results window per search request.</div>
+                        <div class="setting-desc">Page size, Load More, and the most results one search may return.</div>
                     </div>
                     <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editPaging')}>
                         <div class="field-box-header">
@@ -3933,6 +4008,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     </div>
                 </div>
 
+                ${this._advanced('de-duplication and filter logic', html`
                 <!-- 3. De-duplication & Grouping -->
                 <div class="mf-field">
                     <div class="field-left-info">
@@ -3965,7 +4041,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 <div class="mf-field">
                     <div class="field-left-info">
                         <div class="setting-title">Filter Combination Logic</div>
-                        <div class="setting-desc">Control how filters work together: require a minimum number of active filters, or make a filter wait until another one is also selected.</div>
+                        <div class="setting-desc">Require a minimum number of filters, or make one wait for another.</div>
                     </div>
                     <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editFilterCombination')}>
                         <div class="field-box-header">
@@ -3991,6 +4067,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         </div>
                     </div>
                 </div>
+                `)}
             </div>
         `;
     }
@@ -4106,7 +4183,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                             <div class="setting-title" style="display: flex; align-items: center; gap: 8px;">
                                 <span>Sort by Options</span>
                             </div>
-                            <div class="setting-desc">A "Sort by" dropdown on the frontend - A-Z, Z-A, lowest, highest. Enabled options show; disabled ones don't.</div>
+                            <div class="setting-desc">A "Sort by" dropdown on the site. Only enabled options show.</div>
                         </div>
                         <div class="field-right-box clickable-box" @click=${() => this._openEditSortPanel()}>
                             <div class="field-box-header">
@@ -4764,11 +4841,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                            placeholder='form[role="search"], .search-results'
                                            .value=${p.sitePageSearchSelector ?? ''}
                                            @input=${e => { p.sitePageSearchSelector = e.target.value; this.requestUpdate(); }}>
-                                    <span class="sp-hint">
-                                        Only needed where the site's search form and results are not found by the
-                                        usual names, or where too much of the page is being hidden. Leave empty to
-                                        look for a search form and a results list the way sites usually write them.
-                                    </span>
+                                    <span class="sp-hint">Only if the usual names miss the site's own search markup.</span>
                                 </div>
                             ` : ''}
                         ` : ''}
@@ -4781,14 +4854,8 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                       .value=${p._pathsInput ?? (p.sitePagePaths ?? []).join('\n')}
                                       @input=${e => { p._pathsInput = e.target.value; this.requestUpdate(); }}></textarea>
                             <span class="sp-hint">
-                                This is how search gets the site's header, footer and navigation. Create a page in
-                                Umbraco using the document type the site already uses for an ordinary content page, so
-                                the site builds and renders it exactly as it does its own, then put its path here -
-                                the whole search page is placed into it. ${SEARCH_PAGE_PATH} then sends
-                                visitors to that page, so there is one search page rather than two. A page listed
-                                here is placed into rather than taken over: the rest of it is left exactly as the
-                                site built it. Leave this empty and search is on whatever page the takeover above
-                                found, or on ${SEARCH_PAGE_PATH} as a plain standalone page if it found none.
+                                Search is placed into these pages, so it gets the site's header and footer.
+                                ${SEARCH_PAGE_PATH} then sends visitors to the first one.
                             </span>
                         </div>
 
@@ -4800,7 +4867,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                    placeholder="main, [role=&quot;main&quot;], #main, .main-content"
                                    .value=${p.sitePageContainer ?? ''}
                                    @input=${e => { p.sitePageContainer = e.target.value; this.requestUpdate(); }}>
-                            <span class="sp-hint">Where in that page search goes - the site's main content area. Leave empty to try the usual ones. Only needed if search lands somewhere it should not.</span>
+                            <span class="sp-hint">Where in the page search is placed. Empty tries the usual spots.</span>
                         </div>
 
                         <label class="toggle-item" style="margin-bottom: 16px;">
@@ -4827,7 +4894,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                    placeholder="~/Views/Shared/_Layout.cshtml"
                                    .value=${p.layoutPath ?? ''}
                                    @input=${e => { p.layoutPath = e.target.value; this.requestUpdate(); }}>
-                            <span class="sp-hint">Leave empty to look in the usual places. A layout named here that cannot be used is not quietly replaced by a guess - the page falls back to standalone and says why in the log.</span>
+                            <span class="sp-hint">Empty looks in the usual places.</span>
                         </div>
                     </div>
                 </div>
@@ -4867,7 +4934,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         else if (t === 'editSourceIndexes') { title = "Target Examine Indexes"; labelTag = "INDEXES"; }
         else if (t === 'editSourceEntityTypes') { title = "Index Entity Types"; labelTag = "ENTITIES"; }
         else if (t === 'editSourceContentTypes') { title = "Include Document Types"; labelTag = "DOC TYPES"; }
-        else if (t === 'editSourceRoots') { title = "Search Subtree Roots"; labelTag = "ROOTS"; }
+        else if (t === 'editSourceRoots') { title = "Search Scope & Exclusions"; labelTag = "SCOPE"; }
         else if (t === 'editSourceProtection') { title = "Visibility & Protection Rules"; labelTag = "VISIBILITY"; }
         else if (t === 'editAiActions') { title = "AI Text Tools On Results"; labelTag = "AI ACTIONS"; }
         else if (t === 'editAiLimits') { title = "AI Cost & Request Limits"; labelTag = "AI LIMITS"; }
@@ -4946,9 +5013,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         return html`
             <div class="sp-multi-choice-layout">
                 <div class="sp-choice-header-info">
-                    <p class="sp-choice-desc">
-                        Select which Examine indexes to search. If none are selected, search will automatically query all available indexes on the site.
-                    </p>
+                    <p class="sp-choice-desc">Which indexes to search. None selected searches all of them.</p>
                     <div class="sp-choice-actions">
                         <button class="btn btn-secondary btn-sm" @click=${() => { d.indexes = []; this.requestUpdate(); }}>
                             Reset to All (Automatic)
@@ -4994,9 +5059,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         return html`
             <div class="sp-multi-choice-layout">
                 <div class="sp-choice-header-info">
-                    <p class="sp-choice-desc">
-                        Filter search results by Examine entity category. If none are selected, all categories are eligible.
-                    </p>
+                    <p class="sp-choice-desc">Content, media or members. None selected means all.</p>
                     <div class="sp-choice-actions">
                         <button class="btn btn-secondary btn-sm" @click=${() => { d.indexTypes = []; this.requestUpdate(); }}>
                             Reset to All Categories
@@ -5033,8 +5096,47 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         `;
     }
 
+    /**
+     * Everything this profile has included, document types and media types in one list, as the
+     * panel shows them.
+     */
+    _mergedIncludedTypes() {
+        const sources = this._currentProfile?.rules?.sources || {};
+        const merged = [...(sources.includeContentTypes || []), ...(sources.includeMediaTypes || [])];
+
+        return [...new Set(merged)];
+    }
+
+    /**
+     * Sorts aliases into document types and media types, using the catalog of what the site
+     * actually has.
+     *
+     * An alias the catalog does not recognise is kept as a document type rather than dropped: it is
+     * most likely a type that has since been renamed or removed, and silently discarding it on save
+     * would quietly rewrite a profile someone is only opening to read.
+     */
+    _splitTypesByKind(aliases) {
+        const mediaAliases = new Set((this._catalog?.mediaTypes || []).map(t => t.alias));
+
+        const content = [];
+        const media = [];
+
+        for (const alias of new Set(aliases)) {
+            if (mediaAliases.has(alias)) media.push(alias);
+            else content.push(alias);
+        }
+
+        return { content, media };
+    }
+
     _renderSourceContentTypesSidePanelBody(d, isExclude = false) {
         const contentTypes = [...(this._catalog?.contentTypes || []), ...(this._catalog?.mediaTypes || [])];
+
+        // Which rows are media, so the list can say so. The two kinds are stored apart on the
+        // profile and an alias only means anything inside its own kind, so "Image" reading as a
+        // document type is the sort of thing that has someone ticking it twice and wondering why.
+        const mediaAliases = new Set((this._catalog?.mediaTypes || []).map(t => t.alias));
+
         const q = (d._searchFilter || '').toLowerCase();
         const filtered = contentTypes.filter(ct => !q || (ct.name && ct.name.toLowerCase().includes(q)) || (ct.alias && ct.alias.toLowerCase().includes(q)));
         const targetList = isExclude ? (d.excludeContentTypes || []) : (d.includeContentTypes || []);
@@ -5053,6 +5155,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     <div class="sp-choice-actions">
                         <span class="text-muted" style="font-size: 12px; font-weight: 500;">
                             ${targetList.length} of ${contentTypes.length} ${isExclude ? 'excluded' : 'included'}
+                            ${q ? html`<span> · ${filtered.length} shown</span>` : nothing}
                         </span>
                         <div style="display: flex; gap: 8px;">
                             <button class="btn btn-secondary btn-sm" @click=${() => {
@@ -5063,11 +5166,30 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                 Clear All
                             </button>
                             <button class="btn btn-secondary btn-sm" @click=${() => {
-                                if (isExclude) d.excludeContentTypes = contentTypes.map(c => c.alias);
-                                else d.includeContentTypes = contentTypes.map(c => c.alias);
+                                // The ones actually on screen, added to what is already ticked.
+                                // It said "filtered" and selected every type on the site, which
+                                // with include-to-enable is the difference between exposing three
+                                // document types and exposing all of them.
+                                const add = filtered.map(c => c.alias);
+                                const merged = [...new Set([...targetList, ...add])];
+
+                                if (isExclude) d.excludeContentTypes = merged;
+                                else d.includeContentTypes = merged;
+
                                 this.requestUpdate();
                             }}>
-                                Select All Filtered
+                                ${q ? `Select These ${filtered.length}` : `Select All ${contentTypes.length}`}
+                            </button>
+                            <button class="btn btn-secondary btn-sm"
+                                    title="Re-read the document types from Umbraco"
+                                    @click=${async () => {
+                                        // The list is cached for a minute on the client, so a type
+                                        // created since this screen opened is not in it yet. This is
+                                        // the answer to "my document type is not in the list".
+                                        await this._loadCatalog(true);
+                                        this.requestUpdate();
+                                    }}>
+                                Refresh
                             </button>
                         </div>
                     </div>
@@ -5080,7 +5202,13 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                             <label class="sp-choice-card ${isChecked ? 'sp-choice-active' : ''}">
                                 <div class="sp-choice-info">
                                     <strong class="sp-choice-title">${ct.name}</strong>
-                                    <span class="sp-choice-meta"><code>${ct.alias}</code></span>
+                                    <span class="sp-choice-meta">
+                                        <code>${ct.alias}</code>
+                                        ${mediaAliases.has(ct.alias) ? html`<span> · media type</span>` : nothing}
+                                        ${ct.isElement ? html`
+                                            <span> · element type, searched as part of its parent page</span>
+                                        ` : nothing}
+                                    </span>
                                 </div>
                                 <input type="checkbox"
                                        class="switch-input"
@@ -5114,9 +5242,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         return html`
             <div class="sp-multi-choice-layout">
                 <div class="sp-choice-header-info">
-                    <p class="sp-choice-desc">
-                        Select root content page(s) or branches from the Umbraco tree. Search queries will be scoped strictly to these subtrees. Leave empty to search the entire site.
-                    </p>
+                    <p class="sp-choice-desc">Pick pages to search under. Empty searches the whole site.</p>
                 </div>
 
                 <div class="sp-group" style="margin-bottom: 20px; width: 100%;">
@@ -5131,11 +5257,23 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     </umb-input-document>
                 </div>
 
+                <div class="sp-group" style="margin-bottom: 20px; width: 100%;">
+                    <label class="sp-label" style="font-weight: 700; margin-bottom: 8px;">Exclude These Pages</label>
+                    <umb-input-document
+                        .selection=${d.excludedNodeKeys || []}
+                        @change=${e => {
+                            d.excludedNodeKeys = e.target.selection || [];
+                            this.requestUpdate();
+                        }}>
+                    </umb-input-document>
+                    <span class="sp-hint">Pages that must never appear in results.</span>
+                </div>
+
                 <div class="sp-group" style="margin-top: 16px;">
                     <label class="toggle-item">
                         <div class="toggle-info">
                             <strong>Exclude Descendants of Excluded Nodes</strong>
-                            <span>If an excluded document has children, automatically exclude all descendants in the tree.</span>
+                            <span>If an excluded document has children, automatically exclude all descendants in the tree. This is what turns excluding a section landing page into excluding the whole section.</span>
                         </div>
                         <input type="checkbox"
                                class="switch-input"
@@ -5172,7 +5310,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                            @change=${e => { d.respectNaviHide = e.target.checked; this.requestUpdate(); }}>
                 </label>
 
-                <label class="toggle-item">
+                <label class="toggle-item" style="margin-bottom: 16px;">
                     <div class="toggle-info">
                         <strong>Exclude Protected Content</strong>
                         <span>Exclude content restricted by Umbraco Public Access (Members Only).</span>
@@ -5182,6 +5320,16 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                            .checked=${d.excludeProtected !== false}
                            @change=${e => { d.excludeProtected = e.target.checked; this.requestUpdate(); }}>
                 </label>
+
+                <div class="sp-group">
+                    <label class="sp-label">Hide From Search Properties (one per line)</label>
+                    <textarea class="sp-textarea"
+                              style="min-height: 72px; font-family: monospace; font-size: 13px;"
+                              placeholder="hideFromSiteSearch"
+                              .value=${d._hideFieldsInput ?? (d.hideFromSearchFields || []).join('\n')}
+                              @input=${e => { d._hideFieldsInput = e.target.value; this.requestUpdate(); }}></textarea>
+                    <span class="sp-hint">Property aliases that hide a page when ticked, e.g. hideFromSiteSearch.</span>
+                </div>
             </div>
         `;
     }
@@ -5295,11 +5443,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         return html`
             <div class="sp-multi-choice-layout">
                 <div class="sp-choice-header-info">
-                    <p class="sp-choice-desc">
-                        Adds a "Sort by" dropdown next to the frontend filters - A-Z, Z-A, lowest, highest, newest...
-                        Each option sorts results by one index field; leave it as <code>score</code> for relevance order.
-                        Enabled options appear on the site, disabled ones don't.
-                    </p>
+                    <p class="sp-choice-desc">A "Sort by" dropdown. Leave the field as score for relevance order.</p>
                 </div>
 
                 <div class="sp-group" style="display: flex; gap: 8px; flex-wrap: wrap; width: 100%;">
@@ -5366,7 +5510,39 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                     <span class="badge badge-info">${f.boost}x boost</span>
                                     <span class="badge">${f.matchMode || 'prefix'}</span>
                                 </div>
-                                <span class="sp-choice-meta">Target examine document property</span>
+                                <span class="sp-choice-meta">
+                                    ${(() => {
+                                        // What the index actually holds in this field, rather than
+                                        // what its name suggests. A block property is the trap
+                                        // here: it carries every block's label and layout name as
+                                        // well as its content, so searching it matches pages that
+                                        // have nothing to do with the query and nothing in the
+                                        // results explains why.
+                                        const known = this._fieldInfo(f.name);
+
+                                        if (known?.isExtractedContent) {
+                                            return 'Clean body text. Use this one.';
+                                        }
+
+                                        if (known?.looksStructured) {
+                                            return '⚠ Block editor data — also matches layout names. Use extractedContent.';
+                                        }
+
+                                        if (known) {
+                                            return 'Target examine document property';
+                                        }
+
+                                        // Not in any index this profile searches. Worth saying
+                                        // loudly, because the consequence is the whole search going
+                                        // quiet: a field the index does not carry contributes
+                                        // nothing, and if none of a profile's fields exist, the
+                                        // index is skipped and every search returns no results at
+                                        // all. A typo and a correct name look identical otherwise.
+                                        return this._catalogHasFields()
+                                            ? '⚠ Not in the index — matches nothing. Check spelling, or rebuild the index.'
+                                            : 'Target examine document property';
+                                    })()}
+                                </span>
                             </div>
                             <div style="display: flex; align-items: center; gap: 8px;">
                                 <input type="checkbox"
@@ -5458,10 +5634,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 <div class="sp-toggle-row">
                     <div class="sp-toggle-info">
                         <span class="sp-toggle-title">Keep The Searched Term</span>
-                        <span class="sp-toggle-desc">Leaves what the visitor searched for in the search box on the results page,
-                              so it can be refined rather than retyped. Off, the box is cleared after every search.
-                              Applies to the search page and the header box; a search box in your own template
-                              shows whatever that template tells it to.</span>
+                        <span class="sp-toggle-desc">Leaves the search term in the box after a search.</span>
                     </div>
                     <label class="switch switch-sm">
                         <input type="checkbox"
@@ -5478,9 +5651,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         return html`
             <div class="sp-multi-choice-layout">
                 <div class="sp-choice-header-info">
-                    <p class="sp-choice-desc">
-                        Words that will be automatically stripped from user queries before searching Examine indexes.
-                    </p>
+                    <p class="sp-choice-desc">Words ignored in queries.</p>
                     <div style="display: flex; gap: 8px;">
                         <button class="btn btn-secondary btn-sm" @click=${() => {
                             const defaults = ["a","about","an","and","are","as","at","be","by","for","from","how","in","is","it","of","on","or","that","the","this","to","was","what","when","where","who","will","with"];
@@ -5514,9 +5685,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         return html`
             <div class="sp-multi-choice-layout">
                 <div class="sp-choice-header-info">
-                    <p class="sp-choice-desc">
-                        When users search for a term, automatically expand their search to also match equivalent synonyms.
-                    </p>
+                    <p class="sp-choice-desc">Match equivalent words too.</p>
                     <button class="btn btn-primary btn-sm" @click=${() => this._openSidePanel('editSynonym')}>
                         + Add Synonym Group
                     </button>
@@ -5553,9 +5722,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         return html`
             <div class="sp-multi-choice-layout">
                 <div class="sp-choice-header-info">
-                    <p class="sp-choice-desc">
-                        Define ordered sort rules for search results. If none are specified, results are ordered purely by calculated relevance score.
-                    </p>
+                    <p class="sp-choice-desc">What order results come back in. Empty means by relevance.</p>
                     <button class="btn btn-primary btn-sm" @click=${() => this._openSidePanel('editSort')}>
                         + Add Sort Level
                     </button>
@@ -5596,9 +5763,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         return html`
             <div class="sp-multi-choice-layout">
                 <div class="sp-choice-header-info">
-                    <p class="sp-choice-desc">
-                        Apply multiplying weights to specific Umbraco document types (e.g. boost News Articles by 2.0x, Products by 1.5x).
-                    </p>
+                    <p class="sp-choice-desc">Make some document types rank higher than others.</p>
                     <button class="btn btn-primary btn-sm" @click=${() => this._openSidePanel('editContentTypeBoost')}>
                         + Add Document Type Boost
                     </button>
@@ -5648,9 +5813,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         return html`
             <div class="sp-multi-choice-layout">
                 <div class="sp-choice-header-info">
-                    <p class="sp-choice-desc">
-                        Pin curated Umbraco content pages to the top of search results when visitors type specific trigger terms.
-                    </p>
+                    <p class="sp-choice-desc">Pin chosen pages to the top for given search terms.</p>
                     <button class="btn btn-primary btn-sm" @click=${() => this._openSidePanel('editBestBet')}>
                         + Add Best Bet (Pinned Result)
                     </button>
@@ -5835,7 +5998,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                max="1000"
                                .value=${String(d.maxQuestionCharacters ?? 300)}
                                @change=${e => { d.maxQuestionCharacters = parseInt(e.target.value) || 300; this.requestUpdate(); }}>
-                        <span class="sp-hint">A question needs a sentence. Keeping this short is a cost control, and limits what can be pasted into the one field on the site that reaches the model.</span>
+                        <span class="sp-hint">Longest question a visitor may ask.</span>
                     </div>
 
                     <div class="sp-group" style="margin-bottom: 20px;">
@@ -5846,7 +6009,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                max="10"
                                .value=${String(d.maxPagesConsulted ?? 4)}
                                @change=${e => { d.maxPagesConsulted = parseInt(e.target.value) || 4; this.requestUpdate(); }}>
-                        <span class="sp-hint">A question is answered from the whole site, not just the result it was asked from: the package searches first, then reads this many of the best matching pages. More pages answer more questions. The text budget on the Limits panel is shared between them, so this does not multiply the cost of one question.</span>
+                        <span class="sp-hint">How many pages an answer is read from.</span>
                     </div>
                 ` : nothing}
 
@@ -5857,7 +6020,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                               placeholder="e.g.&#10;English&#10;French&#10;Urdu"
                               .value=${d._languagesInput ?? ''}
                               @input=${e => { d._languagesInput = e.target.value; this.requestUpdate(); }}></textarea>
-                    <span class="sp-hint">Offered in the dropdown beside the Translate button. A visitor can only pick from this list - the language is checked against it server-side before it reaches the model, so it cannot be used to smuggle in instructions.</span>
+                    <span class="sp-hint">Languages offered beside the Translate button.</span>
                 </div>
             </div>
         `;
@@ -5874,7 +6037,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                            max="20160"
                            .value=${String(d.cacheMinutes ?? 1440)}
                            @change=${e => { d.cacheMinutes = parseInt(e.target.value) || 0; this.requestUpdate(); }}>
-                    <span class="sp-hint">The single most effective saving here: summarising a page once serves every later visitor who asks for the same thing, for free. A cached answer also skips the rate limit, because it never reaches the provider.</span>
+                    <span class="sp-hint">How long answers are reused. The biggest saving here.</span>
                 </div>
 
                 <div class="sp-group" style="margin-bottom: 20px;">
@@ -5885,7 +6048,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                            max="120"
                            .value=${String(d.requestsPerMinutePerVisitor ?? 8)}
                            @change=${e => { d.requestsPerMinutePerVisitor = parseInt(e.target.value) || 8; this.requestUpdate(); }}>
-                    <span class="sp-hint">Counted per client address, per server. This is what stops one caller running up the bill on an endpoint that has to be open to the public.</span>
+                    <span class="sp-hint">Requests one visitor may make per minute.</span>
                 </div>
 
                 <div class="sp-group" style="margin-bottom: 20px;">
@@ -5896,7 +6059,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                            max="40000"
                            .value=${String(d.maxInputCharacters ?? 6000)}
                            @change=${e => { d.maxInputCharacters = parseInt(e.target.value) || 6000; this.requestUpdate(); }}>
-                    <span class="sp-hint">A ceiling on the size of one request, and so on what one click can cost. Longer pages are cut off at this point.</span>
+                    <span class="sp-hint">How much page text is sent per request.</span>
                 </div>
 
                 <div class="sp-group">
@@ -5907,7 +6070,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                            max="8192"
                            .value=${String(d.maxOutputTokens ?? 2048)}
                            @change=${e => { d.maxOutputTokens = parseInt(e.target.value) || 2048; this.requestUpdate(); }}>
-                    <span class="sp-hint">On a model that reasons before answering this budget covers the reasoning as well as the reply, so a tight value shows up as an empty answer rather than a short one. 2048 suits the actions here.</span>
+                    <span class="sp-hint">Ceiling on the reply. 2048 suits these actions.</span>
                 </div>
             </div>
         `;
@@ -5932,12 +6095,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         return html`
             <div class="sp-multi-choice-layout">
                 <div class="sp-choice-header-info">
-                    <p class="sp-choice-desc">
-                        These run because a search ran, not because anyone pressed anything. The first
-                        two happen while the visitor waits, so both give up after the timeout below and
-                        the search is served exactly as it would have been without them. The last two
-                        are fetched once the results are already on screen and never delay them.
-                    </p>
+                    <p class="sp-choice-desc">These run on every search, not on a click.</p>
                 </div>
 
                 ${toggle(
@@ -5977,11 +6135,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                max="50"
                                .value=${String(d.rerankDepth ?? 20)}
                                @change=${e => { d.rerankDepth = parseInt(e.target.value) || 20; this.requestUpdate(); }}>
-                        <span class="sp-hint">
-                            How deep to look. The cost of one re-ranking is roughly this many titles and
-                            extracts, so it is the cost lever: 20 is deep enough to pull up a result that
-                            keyword scoring buried, and cheap enough to leave on.
-                        </span>
+                        <span class="sp-hint">How many results to re-order. This is the cost lever.</span>
                     </div>
                 ` : nothing}
 
@@ -6007,11 +6161,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                            max="15000"
                            .value=${String(d.timeoutMilliseconds ?? 2500)}
                            @change=${e => { d.timeoutMilliseconds = parseInt(e.target.value) || 2500; this.requestUpdate(); }}>
-                    <span class="sp-hint">
-                        How long a search will wait for the two stages that run inside it. Past this it
-                        carries on without them. A search that comes back late is worse than one that
-                        comes back unaided, so this is deliberately short.
-                    </span>
+                    <span class="sp-hint">How long a search waits for AI before carrying on without it.</span>
                 </div>
 
                 <div class="sp-group">
@@ -6022,14 +6172,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                            max="1000"
                            .value=${String(d.maxCallsPerMinute ?? 60)}
                            @change=${e => { d.maxCallsPerMinute = parseInt(e.target.value) || 0; this.requestUpdate(); }}>
-                    <span class="sp-hint">
-                        The limit that matters most on a public site, and not the same thing as the
-                        per-visitor limit on the text tools. A visitor presses a button; a search just
-                        happens. A crawler walking your search page with a different term each time is
-                        not one caller hitting a limit, and a term nobody has searched before cannot come
-                        from the cache - so without a ceiling here, what you spend is decided by how
-                        often you are crawled. Past it, searches are served as though this were off.
-                    </span>
+                    <span class="sp-hint">Site-wide cap, so a crawler cannot run up the bill.</span>
                 </div>
             </div>
         `;
@@ -6041,7 +6184,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 <div class="sp-toggle-row" style="margin-bottom: 20px;">
                     <div class="sp-toggle-info">
                         <span class="sp-toggle-title">Open A Search Box In Place</span>
-                        <span class="sp-toggle-desc">The site's search link opens a box on the page the visitor is already on; the next press, with a term typed, goes to the results page. Off, the link goes straight to the search page as before.</span>
+                        <span class="sp-toggle-desc">Search link opens a box in place; press again to go to results.</span>
                     </div>
                     <label class="switch switch-sm">
                         <input type="checkbox"
@@ -6122,7 +6265,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                             </button>
                         ` : nothing}
                     </div>
-                    <span class="sp-hint">Upload an image from this computer, or paste a path you already have - .svg, .png, .webp, .gif, .jpg, .ico and .avif all work, up to 512 KB. An uploaded file goes into the media library under /media/imobisoft-search. Leave it empty for the magnifier the package draws itself, which takes the colour of the button it sits on. This is not the icon on the site's own search link: that link is left exactly as the site renders it.</span>
+                    <span class="sp-hint">Upload an image or paste a path. Empty uses the built-in magnifier.</span>
                 </div>
 
                 <div class="sp-group">
@@ -6150,7 +6293,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                               placeholder="e.g.&#10;/find&#10;/knowledge-base"
                               .value=${d._extraInput ?? ''}
                               @input=${e => { d._extraInput = e.target.value; this.requestUpdate(); }}></textarea>
-                    <span class="sp-hint">One path per line. Only needed for a search page named something other than "search" - a path whose last part is the word search, such as /search or /imobisoft-search, is already recognised.</span>
+                    <span class="sp-hint">One per line. Only for search pages not named "search".</span>
                 </div>
 
                 <div class="sp-group">
@@ -6160,7 +6303,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                               placeholder="e.g.&#10;/search"
                               .value=${d._excludedInput ?? ''}
                               @input=${e => { d._excludedInput = e.target.value; this.requestUpdate(); }}></textarea>
-                    <span class="sp-hint">One path per line. These keep a plain link straight to the page - use this on a site with more than one search page to put the box on one of them only.</span>
+                    <span class="sp-hint">One per line. Keeps the box off these pages.</span>
                 </div>
             </div>
         `;
@@ -6175,7 +6318,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                            class="sp-input"
                            .value=${d.containers ?? ''}
                            @input=${e => { d.containers = e.target.value; this.requestUpdate(); }}>
-                    <span class="sp-hint">A CSS selector for the parts of a page that are searched for search links. Narrow it to keep the box out of part of the site; a single link can be opted out in the markup with data-imobisoft-search="false", or opted in with data-imobisoft-search.</span>
+                    <span class="sp-hint">CSS selector for where search links are looked for.</span>
                 </div>
 
                 <div class="sp-group">
@@ -6184,7 +6327,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                            class="sp-input"
                            .value=${d.queryName ?? ''}
                            @input=${e => { d.queryName = e.target.value; this.requestUpdate(); }}>
-                    <span class="sp-hint">The term is submitted as ?${d.queryName || 'q'}=. Change this only for a search page that expects something other than q - every view this package ships reads q.</span>
+                    <span class="sp-hint">Submitted as ?${d.queryName || 'q'}=. Every view here reads q.</span>
                 </div>
             </div>
         `;
@@ -6225,7 +6368,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                            max="100"
                            .value=${String(d.browsePageSize ?? 10)}
                            @change=${e => { d.browsePageSize = Math.min(100, Math.max(0, parseInt(e.target.value) || 0)); this.requestUpdate(); }}>
-                    <span class="sp-hint">How many results show when the page opens without a search term. Set 0 to list nothing until the visitor searches; filters still show their counts.</span>
+                    <span class="sp-hint">Results shown before anyone searches. 0 shows none.</span>
                 </div>
 
                 <div class="sp-group" style="margin-bottom: 20px;">
@@ -6236,7 +6379,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     </umb-input-document>
                     <span class="sp-hint">
                         ${(d.browseNodeKeys || []).length > 0
-                            ? html`The search page opens with these <strong>${(d.browseNodeKeys || []).length}</strong> page(s), in this order, and "Results Before Searching" above no longer applies. Drag to reorder; remove them all to go back to the automatic list.`
+                            ? html`The page opens with these <strong>${(d.browseNodeKeys || []).length}</strong> page(s), in this order. Drag to reorder.`
                             : html`Pick pages to open the search page with - a curated starting point instead of whatever the index returns first. Leave empty to use "Results Before Searching" above. Either way, as soon as a visitor searches they get the pages that actually matched.`}
                     </span>
                 </div>
@@ -6265,13 +6408,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                               placeholder="e.g.&#10;metaDescription&#10;introText"
                               .value=${d._descriptionInput ?? ''}
                               @input=${e => { d._descriptionInput = e.target.value; this.requestUpdate(); }}></textarea>
-                    <span class="sp-hint">
-                        The line under a result's name when there is no matched sentence to show there instead -
-                        on a page nobody has searched yet, and on a result that matched something other than its
-                        prose. The first of these with anything in it wins. Leave empty to use the aliases Umbraco
-                        sites normally use (metaDescription, description, summary, introText, bodyText and the
-                        like), which is why descriptions appear without setting this at all.
-                    </span>
+                    <span class="sp-hint">Where the line under a result's name comes from. Empty uses the usual aliases.</span>
                 </div>
 
                 <div class="sp-toggle-row" style="margin-bottom: 16px;">
@@ -6344,7 +6481,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                            ?disabled=${d.enableDeduplication === false}
                            .value=${d.deduplicateByField || ''}
                            @input=${e => { d.deduplicateByField = e.target.value; this.requestUpdate(); }}>
-                    <span class="sp-hint">If multiple matches have the same value for this field, only the highest ranking one is returned.</span>
+                    <span class="sp-hint">Keeps only the best match per value of this field.</span>
                 </div>
 
                 <div class="sp-group">
@@ -6369,11 +6506,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         return html`
             <div class="sp-multi-choice-layout">
                 <div class="sp-choice-header-info">
-                    <p class="sp-choice-desc">
-                        Decide when filters take effect. A minimum of 2 makes every selection inert
-                        until a second filter joins it. Dependencies make one filter wait for another,
-                        e.g. "Year" applies only once "Date" is also selected.
-                    </p>
+                    <p class="sp-choice-desc">When filters take effect. Dependencies make one wait for another.</p>
                 </div>
 
                 <div class="sp-group" style="margin-bottom: 20px;">
@@ -6426,9 +6559,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         return html`
             <div class="sp-multi-choice-layout">
                 <div class="sp-choice-header-info">
-                    <p class="sp-choice-desc">
-                        Define dynamic facet dimensions to return aggregated bucket counts for frontend search filter sidebars.
-                    </p>
+                    <p class="sp-choice-desc">Filter dimensions with counts, for the site's filter sidebar.</p>
                     <button class="btn btn-primary btn-sm" @click=${() => this._openSidePanel('editFacet')}>
                         + Add Facet Dimension
                     </button>

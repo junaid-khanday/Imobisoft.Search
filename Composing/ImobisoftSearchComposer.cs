@@ -8,6 +8,7 @@ using Imobisoft.Search.Migrations;
 using Imobisoft.Search.Persistence;
 using Imobisoft.Search.Services;
 using Imobisoft.Search.Services.Ai;
+using Imobisoft.Search.Services.Indexing;
 using Imobisoft.Search.Services.Templates;
 using Imobisoft.Search.Web;
 using Microsoft.AspNetCore.Authorization;
@@ -34,6 +35,11 @@ public sealed class ImobisoftSearchComposer : IComposer
         RegisterOpenApi(builder);
 
         builder.AddNotificationAsyncHandler<UmbracoApplicationStartingNotification, ImobisoftSearchInstaller>();
+
+        // Attaches to the content indexes while they are being written, so every document gains a
+        // clean body-text field to cut snippets from. Has to be on a start notification rather than
+        // in Compose: the indexes are resolved from the container, which does not exist yet here.
+        builder.AddNotificationHandler<UmbracoApplicationStartingNotification, SearchContentIndexEnricher>();
 
         TakeOverSiteSearch(builder);
     }

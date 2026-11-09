@@ -208,6 +208,8 @@ public sealed class IndexCatalogService : IIndexCatalogService
             _logger.LogDebug(ex, "Could not read field definitions from {IndexName}.", indexName);
         }
 
+        var samples = new Dictionary<string, string>(StringComparer.Ordinal);
+
         try
         {
             ISearchResults sample = index.Searcher.CreateQuery()
@@ -216,9 +218,19 @@ public sealed class IndexCatalogService : IIndexCatalogService
 
             foreach (ISearchResult result in sample)
             {
-                foreach (var key in result.Values.Keys)
+                foreach (KeyValuePair<string, string> value in result.Values)
                 {
-                    names.Add(key);
+                    names.Add(value.Key);
+
+                    // One value per field is kept as well as the name, so the field list can say
+                    // whether a field holds prose or block editor data. Without it, picking a
+                    // field to search is guesswork from its name - and the two fields on a
+                    // block-built page that sound most like content are the two that hold JSON.
+                    if (!string.IsNullOrWhiteSpace(value.Value)
+                        && !samples.ContainsKey(value.Key))
+                    {
+                        samples[value.Key] = value.Value;
+                    }
                 }
             }
         }
@@ -241,6 +253,8 @@ public sealed class IndexCatalogService : IIndexCatalogService
                 declaredTypes.TryGetValue(name, out var type);
                 type ??= FieldDefinitionTypes.FullText;
 
+                samples.TryGetValue(name, out var sampled);
+
                 return new IndexFieldInfo
                 {
                     Name = name,
@@ -248,12 +262,53 @@ public sealed class IndexCatalogService : IIndexCatalogService
                     IsSystemField = name.StartsWith("__", StringComparison.Ordinal),
                     IsSearchable = IsSearchableType(name, type),
                     IsSortable = sortableFields.Contains(name) || IsSortableType(type),
+                    LooksStructured = LooksStructured(sampled),
+                    IsExtractedContent = IsExtractedContent(name),
                 };
             })
             .OrderBy(x => x.IsSystemField)
             .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
+
+    /// <summary>
+    /// Whether a sampled value is block editor data rather than prose.
+    /// <para>
+    /// Judged on the value, not the field name: block properties are called whatever the site
+    /// called them, and the names that sound most like content - <c>modules</c>, <c>content</c>,
+    /// <c>banner</c> - are exactly the ones holding JSON.
+    /// </para>
+    /// </summary>
+    private static bool LooksStructured(string? sampled)
+    {
+        var value = (sampled ?? string.Empty).TrimStart();
+
+        if (value.Length == 0)
+        {
+            return false;
+        }
+
+        // A JSON document or array.
+        if (value.StartsWith('{') || value.StartsWith('['))
+        {
+            return true;
+        }
+
+        // Or the keys of one, where the value reached the index already partly flattened.
+        return value.Contains("\":", StringComparison.Ordinal)
+               || value.Contains("contentTypeKey", StringComparison.OrdinalIgnoreCase)
+               || value.Contains("umb://", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Whether this is the clean body-text field the package writes, with or without a culture
+    /// suffix.
+    /// </summary>
+    private static bool IsExtractedContent(string name)
+        => name.Equals(ImobisoftSearchConstants.IndexFields.ExtractedContent, StringComparison.OrdinalIgnoreCase)
+           || name.StartsWith(
+               ImobisoftSearchConstants.IndexFields.ExtractedContent + "_",
+               StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Free-text fields are worth searching; numbers, dates and Umbraco's internal plumbing are not.

@@ -417,6 +417,38 @@
             </para>
             </summary>
         </member>
+        <member name="P:Imobisoft.Search.Configuration.ImobisoftSearchOptions.EnableContentExtraction">
+            <summary>
+            Adds a clean body-text field (<c>extractedContent</c>) to content documents as Umbraco
+            indexes them, with block editor JSON and layout structure stripped out.
+            <para>
+            On by default, because without it a result snippet cut from a block-built page reads as
+            <c>["Home page-square text layout"] Our World Who we are</c> rather than as prose. It only
+            ever adds a field - nothing Umbraco indexed is removed, since these indexes are shared with
+            the backoffice search and with the site's own code.
+            </para>
+            <para>
+            Changing this needs the indexes rebuilt before it shows: a field is written while a document
+            is indexed, so existing documents keep whatever they were built with.
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Configuration.ImobisoftSearchOptions.ContentExtractionMinimumWords">
+            <summary>
+            Fewest words a run of text needs before it counts as body text rather than a label.
+            <para>
+            The one number that decides what the extraction keeps. Six drops "Home page-square text
+            layout" and keeps a sentence; raising it drops short real paragraphs too, and lowering it
+            lets block labels back in. 0 uses the built-in default.
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Configuration.ImobisoftSearchOptions.ContentExtractionMaxCharacters">
+            <summary>
+            Ceiling on the extracted text per document. 0 uses the built-in default. Text past the
+            ceiling is index weight no snippet will ever reach.
+            </summary>
+        </member>
         <member name="P:Imobisoft.Search.Configuration.ImobisoftSearchOptions.ReadFiltersFromQueryString">
             <summary>
             Reads filter selections straight off the query string, so a search page needs no code to
@@ -485,6 +517,18 @@
             <summary>
             Field names Umbraco/Examine writes into every document. Used for filtering and for excluding
             internal plumbing from the "searchable fields" pick-list in the dashboard.
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.ImobisoftSearchConstants.IndexFields.ExtractedContent">
+            <summary>
+            The clean body text the package adds while a document is being indexed, with block
+            editor JSON and layout structure stripped out. Culture-suffixed alongside the rest -
+            <c>extractedContent_en-gb</c> - on a variant site.
+            <para>
+            This is what result snippets and descriptions should be cut from. The fields it was
+            built from stay in the index untouched and still match; they are simply not worth
+            reading.
+            </para>
             </summary>
         </member>
         <member name="F:Imobisoft.Search.ImobisoftSearchConstants.IndexFields.Metadata">
@@ -1013,6 +1057,25 @@
         <member name="P:Imobisoft.Search.Models.IndexFieldInfo.IsSystemField">
             <summary>True for Umbraco's internal <c>__</c> plumbing fields, which the UI hides by default.</summary>
         </member>
+        <member name="P:Imobisoft.Search.Models.IndexFieldInfo.LooksStructured">
+            <summary>
+            True when the sampled values look like block editor data rather than prose - JSON, or a
+            list of block labels.
+            <para>
+            Worth knowing before picking a field to search, because the consequence is not obvious and
+            does not look like a configuration mistake. A block field carries every block's label and
+            layout name as well as its content, so a page using a block called "Home page-square text
+            layout" matches a search for "home" with nothing about home on it anywhere. The symptom is
+            results that are simply wrong, with no clue as to why.
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.IndexFieldInfo.IsExtractedContent">
+            <summary>
+            True for the clean body-text field the package writes while indexing. The one to search and
+            to cut snippets from on a site built with block editors.
+            </summary>
+        </member>
         <member name="T:Imobisoft.Search.Models.IndexInfo">
             <summary>
             An Examine index discovered at runtime. Populates the index picker in the dashboard, so a
@@ -1341,6 +1404,18 @@
             than its prose. Empty - the default - uses the aliases Umbraco sites normally use, which is
             why descriptions appear without this being configured at all. Name your own here when the
             site calls them something else.
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.ResultRules.DescriptionLength">
+            <summary>
+            How much of the description to show, in characters. 0 falls back to
+            <see cref="P:Imobisoft.Search.Models.HighlightRules.SnippetLength"/>.
+            <para>
+            Its own setting rather than borrowing the snippet length, because the two are not the same
+            measure. A snippet is the sentence a word was found in and wants to be tight; a description
+            is what a result says for itself when nothing matched its prose - on a browse page, that is
+            every result - and a couple of lines there is worth having.
             </para>
             </summary>
         </member>
@@ -1991,9 +2066,13 @@
         <member name="T:Imobisoft.Search.Models.SourceRules">
             <summary>
             Defines <em>what</em> is searchable: which indexes are queried and which documents inside them
-            are eligible. Per-type lists narrow an index that is already in scope through
-            <see cref="P:Imobisoft.Search.Models.SourceRules.IndexTypes"/>; a profile that names neither stays dark, which is the "include to
-            switch search on" model.
+            are eligible.
+            <para>
+            Include to switch on, throughout. Content and media are searchable only through
+            <see cref="P:Imobisoft.Search.Models.SourceRules.IncludeContentTypes"/> and <see cref="P:Imobisoft.Search.Models.SourceRules.IncludeMediaTypes"/>, so a profile that lists
+            neither returns nothing however its indexes and entity types are set. Members are the one
+            exception - they have no per-type list, so <see cref="P:Imobisoft.Search.Models.SourceRules.IndexTypes"/> is what admits them.
+            </para>
             </summary>
         </member>
         <member name="P:Imobisoft.Search.Models.SourceRules.Indexes">
@@ -2004,18 +2083,35 @@
         </member>
         <member name="P:Imobisoft.Search.Models.SourceRules.IndexTypes">
             <summary>
-            Restricts to documents of these Examine index types (<c>content</c>, <c>media</c>,
-            <c>member</c>). Empty means all of them.
+            Examine index types to search (<c>content</c>, <c>media</c>, <c>member</c>).
+            <para>
+            Only <c>member</c> is decided here. Content and media are decided by their own include
+            lists, which already name an index type by naming a type within it - listing <c>content</c>
+            here as well would be a second, quieter switch for the same thing, and two switches for one
+            outcome is how a profile ends up doing something nobody chose.
+            </para>
             </summary>
         </member>
         <member name="P:Imobisoft.Search.Models.SourceRules.IncludeContentTypes">
-            <summary>Document type aliases to search. Empty means every document type.</summary>
+            <summary>
+            Document type aliases to search. <strong>Empty means none</strong> - a document type appears
+            in results because it is listed here, and for no other reason.
+            <para>
+            Deliberately not "empty means all". The two readings are indistinguishable until a search
+            runs, and reading it the other way means a profile built to expose three page types quietly
+            exposes every page type on the site - including the ones nobody meant to publish to search.
+            Of the two ways to be wrong, returning nothing is the one an editor notices immediately.
+            </para>
+            </summary>
         </member>
         <member name="P:Imobisoft.Search.Models.SourceRules.ExcludeContentTypes">
             <summary>Document type aliases to skip. Applied after <see cref="P:Imobisoft.Search.Models.SourceRules.IncludeContentTypes"/>.</summary>
         </member>
         <member name="P:Imobisoft.Search.Models.SourceRules.IncludeMediaTypes">
-            <summary>Media type aliases to search. Empty means every media type.</summary>
+            <summary>
+            Media type aliases to search. Empty means none, exactly as with
+            <see cref="P:Imobisoft.Search.Models.SourceRules.IncludeContentTypes"/>.
+            </summary>
         </member>
         <member name="P:Imobisoft.Search.Models.SourceRules.ExcludeMediaTypes">
             <summary>Media type aliases to skip.</summary>
@@ -2037,6 +2133,26 @@
         </member>
         <member name="P:Imobisoft.Search.Models.SourceRules.RespectNaviHide">
             <summary>Honour the <c>umbracoNaviHide</c> property and drop hidden nodes.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.SourceRules.HideFromSearchFields">
+            <summary>
+            Property aliases that hide a page from search when ticked on that page - typically a
+            <c>hideFromSiteSearch</c> toggle the site already has on its document types.
+            <para>
+            This is the difference between "hidden from the menu" and "hidden from search", which are
+            not the same decision and which almost every real site keeps apart.
+            <see cref="P:Imobisoft.Search.Models.SourceRules.RespectNaviHide"/> covers Umbraco's own navigation toggle; this covers the one
+            the site invented, whatever it chose to call it. Without it, a page an editor has explicitly
+            marked as not-for-search is returned anyway - and an editor who has ticked a box has every
+            reason to believe it was honoured.
+            </para>
+            <para>
+            Matched against the index with and without a culture suffix, so a property that varies by
+            culture (<c>hideFromSiteSearch_en-gb</c>) is found by its plain alias. Any truthy value
+            hides the page; a page that does not carry the property at all is unaffected, so naming a
+            field no document has is harmless rather than a way to empty the results.
+            </para>
+            </summary>
         </member>
         <member name="P:Imobisoft.Search.Models.SourceRules.ExcludeProtected">
             <summary>Drop nodes behind public access (member-protected) from anonymous searches.</summary>
@@ -3342,6 +3458,25 @@
         <member name="M:Imobisoft.Search.Services.ImobisoftSearchService.Describe(Umbraco.Cms.Core.Models.PublishedContent.IPublishedContent,Imobisoft.Search.Models.ResultRules)">
             <summary>One picked page, in the shape the rest of the pipeline and the view expect.</summary>
         </member>
+        <member name="M:Imobisoft.Search.Services.ImobisoftSearchService.AddExtractedContent(Imobisoft.Search.Models.SearchResultItem,Umbraco.Cms.Core.Models.PublishedContent.IPublishedContent)">
+            <summary>
+            Builds the clean body-text field for a node read from the published cache, using the same
+            rules the indexer uses.
+            <para>
+            A curated browse result - the pages a profile opens its search page with - never passes
+            through Examine, so it cannot inherit the <c>extractedContent</c> the indexer writes. Left
+            alone it falls through the description list to <c>bodyText</c>, which on a block-built page
+            is the editor's raw JSON: the one kind of result that shows block layout data instead of a
+            sentence, on the one page where every result needs a description because none of them
+            matched anything.
+            </para>
+            <para>
+            Source values, not rendered ones, because the source is what the indexer sees and the two
+            have to agree - a browse description that read differently from the same page's search
+            description would be a puzzle for whoever noticed.
+            </para>
+            </summary>
+        </member>
         <member name="M:Imobisoft.Search.Services.ImobisoftSearchService.TrimReturnedFields(Imobisoft.Search.Models.SearchResponse,Imobisoft.Search.Services.Querying.SearchPlan)">
             <summary>
             Cuts each result down to the fields the profile asked for. Done after paging so only the
@@ -3401,11 +3536,212 @@
             contain, then marks each one searchable and/or sortable.
             </summary>
         </member>
+        <member name="M:Imobisoft.Search.Services.IndexCatalogService.LooksStructured(System.String)">
+            <summary>
+            Whether a sampled value is block editor data rather than prose.
+            <para>
+            Judged on the value, not the field name: block properties are called whatever the site
+            called them, and the names that sound most like content - <c>modules</c>, <c>content</c>,
+            <c>banner</c> - are exactly the ones holding JSON.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.IndexCatalogService.IsExtractedContent(System.String)">
+            <summary>
+            Whether this is the clean body-text field the package writes, with or without a culture
+            suffix.
+            </summary>
+        </member>
         <member name="M:Imobisoft.Search.Services.IndexCatalogService.IsSearchableType(System.String,System.String)">
             <summary>
             Free-text fields are worth searching; numbers, dates and Umbraco's internal plumbing are not.
             Document type properties are indexed as full text and have no declared definition, so an
             unknown type counts as searchable.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Indexing.ExtractedContentBuilder">
+            <summary>
+            Turns whatever a property editor put in the index into clean body text.
+            <para>
+            Block Grid, Block List and the legacy Grid all store their content as JSON, and Umbraco indexes
+            a good deal of it verbatim. Searching that JSON works well enough - the words are in there - but
+            <em>showing</em> it does not: a snippet cut from it reads
+            <c>["Home page-square text layout"] Our World Who we are Home page layout</c>, which is block
+            labels, layout names and structure rather than anything a visitor wanted to read.
+            </para>
+            <para>
+            So the words are kept and the scaffolding is dropped. Everything here is a pure function of its
+            input - no Umbraco, no Examine - because the rules are the whole substance of this and they are
+            worth being able to test one string at a time.
+            </para>
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Indexing.ExtractedContentBuilder.SkipSubtreeKeys">
+            <summary>
+            JSON property names that carry structure rather than content. Matched exactly and without
+            case, so a content property that merely happens to contain one of these words is unaffected.
+            <para>
+            This is the list that keeps block identity out of the text: a <c>contentTypeKey</c> is a
+            GUID, an <c>alias</c> is a machine name, and <c>layout</c> is where "page-square text
+            layout" comes from.
+            </para>
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Indexing.ExtractedContentBuilder.SkipValueKeys">
+            <summary>
+            JSON property names whose own value is a machine value or a label, but which say nothing
+            about their children.
+            <para>
+            Kept apart from <see cref="F:Imobisoft.Search.Services.Indexing.ExtractedContentBuilder.SkipSubtreeKeys"/> because the distinction is load bearing: the
+            legacy Grid nests its content inside <c>sections</c>, <c>rows</c>, <c>areas</c> and
+            <c>controls</c>, so treating those as scaffolding to skip would throw away the whole
+            document. They are containers to walk through, not structure to drop.
+            </para>
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Indexing.ExtractedContentBuilder.ExcludedFields">
+            <summary>
+            Index field names never read for body text. Umbraco's own bookkeeping, plus the fields that
+            hold a machine value rather than prose.
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Indexing.ExtractedContentBuilder.DefaultMinimumWords">
+            <summary>
+            Fewest words a string needs before it counts as body text.
+            <para>
+            This single threshold is what separates a paragraph from a label, and it is why
+            "Home page-square text layout" (five words) does not survive while "ECOM operates in more
+            than 40 major producing countries, working with thousands of farmers" does. A heading like
+            "Our World" goes too, which is the intended trade: the field exists to produce a readable
+            excerpt, and a run of headings is not one.
+            </para>
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Indexing.ExtractedContentBuilder.MaxDepth">
+            <summary>How deep to walk nested JSON before giving up. Blocks nest inside blocks.</summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Indexing.ExtractedContentBuilder.DefaultMaximumCharacters">
+            <summary>
+            Ceiling on what is produced for one page. A field that no snippet will ever read past is
+            only index weight.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Indexing.ExtractedContentBuilder.Build(System.Collections.Generic.IEnumerable{System.Collections.Generic.KeyValuePair{System.String,System.Collections.Generic.IEnumerable{System.Object}}},System.String,System.Int32,System.Int32)">
+            <summary>
+            The clean body text for one document, built from its indexed field values.
+            </summary>
+            <param name="values">Field name to raw indexed values, as Examine holds them.</param>
+            <param name="culture">
+            Culture to build for, or null for the invariant pass. A culture takes fields suffixed with
+            it plus the unsuffixed ones, because a page mixes variant and invariant properties and both
+            are that culture's content.
+            </param>
+            <param name="minimumWords">Override for <see cref="F:Imobisoft.Search.Services.Indexing.ExtractedContentBuilder.DefaultMinimumWords"/>.</param>
+            <param name="maximumCharacters">Override for <see cref="F:Imobisoft.Search.Services.Indexing.ExtractedContentBuilder.DefaultMaximumCharacters"/>.</param>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Indexing.ExtractedContentBuilder.IsCandidateField(System.String,System.String)">
+            <summary>
+            Whether this field is worth reading for body text, for this culture.
+            <para>
+            Umbraco's own <c>__</c>-prefixed fields and its bookkeeping are out, and so is anything for
+            a different culture - mixing languages into one excerpt would produce an excerpt in neither.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Indexing.ExtractedContentBuilder.LooksLikeCulture(System.String)">
+            <summary>
+            Whether a field name suffix reads as a culture code: <c>en</c>, <c>eng</c>, <c>en-gb</c>.
+            <para>
+            Shaped tightly on purpose. A looser test treats the suffix of a property genuinely called
+            <c>body_text</c> as the "text" culture, which then drops that property from every culture's
+            extract - a field silently missing its content. So the language part is the 2 or 3 letters
+            ISO actually uses, and the second part is a 2-letter region or a 4-letter script.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Indexing.ExtractedContentBuilder.Extract(System.Object,System.Int32)">
+            <summary>
+            Every run of body text inside one indexed value, whatever shape it arrived in: a JSON
+            document from a block editor, an HTML string from a rich text property, or a plain string.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Indexing.ExtractedContentBuilder.FromJson(System.String,System.Int32)">
+            <summary>
+            Body text found by walking a JSON document, or null when the text was not JSON after all -
+            a paragraph that merely opens with a brace, for instance, which then falls through to being
+            treated as prose.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Indexing.ExtractedContentBuilder.Walk(System.Text.Json.JsonElement,System.String,System.Int32,System.Int32,System.Collections.Generic.List{System.String})">
+            <summary>
+            Collects the body text out of a JSON element, skipping the structure.
+            <para>
+            A string is kept on its own merits - it has to read like a paragraph - and skipped outright
+            if it sits under a property name that carries structure. Both checks matter: the name alone
+            would miss a layout name stored under a content property, and the word count alone would
+            keep a long enough machine value.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Indexing.ExtractedContentBuilder.IsMachineValue(System.String)">
+            <summary>
+            Whether a string is an identifier rather than language: a GUID, a UDI, a URL, or a single
+            run of characters with no spaces at all.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Indexing.ExtractedContentBuilder.CleanText(System.String)">
+            <summary>
+            Plain readable text: markup removed, entities decoded, whitespace collapsed.
+            <para>
+            A closing tag counts as a word boundary, so <c>one&lt;/p&gt;&lt;p&gt;two</c> does not become
+            "onetwo" - which would both read wrongly and corrupt the word count this relies on.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Indexing.ExtractedContentBuilder.Words(System.String)">
+            <summary>
+            How many words a cleaned string holds. Counted on whitespace runs, which is all the word
+            count is used for - deciding whether this reads like a paragraph.
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Services.Indexing.SearchContentIndexEnricher">
+            <summary>
+            Adds a clean body-text field to every content document Umbraco indexes.
+            <para>
+            Block editors store their content as JSON and Umbraco indexes much of it verbatim, so a snippet
+            cut from those fields shows block labels and layout names rather than prose. The words are
+            there, which is why searching works; what is missing is a field worth <em>reading</em>. This adds
+            one - <c>extractedContent</c> - built by <see cref="T:Imobisoft.Search.Services.Indexing.ExtractedContentBuilder"/> from the same
+            values, with the structure stripped out.
+            </para>
+            <para>
+            It only ever adds. Nothing Umbraco indexed is removed or rewritten, because these are the
+            indexes the backoffice search, the site's own code and any other package all read: a field
+            deleted here to tidy up one search page would go missing from all of them. The noise is left in
+            place and simply not used.
+            </para>
+            <para>
+            Hooked on <c>TransformingIndexValues</c>, which is the event Examine 4 raises while a document
+            is being built - earlier versions called it <c>TransformingIndexEntry</c>. Attaching to the
+            index rather than subclassing it is what lets a package do this at all: the consuming site owns
+            its indexes, and the package is a guest.
+            </para>
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Indexing.SearchContentIndexEnricher._attached">
+            <summary>
+            Indexes already hooked, so a second start notification - Umbraco raises one per runtime
+            level - does not attach the handler twice and write the field twice.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Indexing.SearchContentIndexEnricher.Cultures(System.Collections.Generic.IEnumerable{System.String})">
+            <summary>
+            The cultures this document has fields for, plus null for the invariant pass.
+            <para>
+            Read from the field names rather than from the language service, because what matters is
+            what this document actually carries: a site with four languages and a page translated into
+            one should get one culture field, not four, three of which would repeat the invariant text.
+            </para>
             </summary>
         </member>
         <member name="T:Imobisoft.Search.Services.SearchProfileOperationStatus">
@@ -3554,6 +3890,16 @@
             would silently exclude every media item too.
             </summary>
         </member>
+        <member name="M:Imobisoft.Search.Services.Querying.SearchQueryPlanner.Branch(System.String,System.Collections.Generic.IList{System.String})">
+            <summary>
+            One index type, restricted to the aliases that were ticked for it.
+            <para>
+            Scoped to its own index type rather than applied across the query, because a document type
+            alias and a media type alias live in the same index field - without the scope, including
+            three page types would exclude every media item as a side effect.
+            </para>
+            </summary>
+        </member>
         <member name="M:Imobisoft.Search.Services.Querying.SearchQueryPlanner.BuildTermClause(System.Collections.Generic.IReadOnlyList{System.Collections.Generic.IReadOnlyList{System.String}},Imobisoft.Search.Models.FieldMatchMode,Imobisoft.Search.Models.MatchingRules)">
             <summary>
             Builds the term half of a field clause: one bracketed group per word, each holding the word
@@ -3622,6 +3968,27 @@
         </member>
         <member name="M:Imobisoft.Search.Services.Querying.SearchResultProcessor.ParsePath(System.String)">
             <summary>Splits an Umbraco path such as <c>-1,1050,1099</c> into its node ids.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Querying.SearchResultProcessor.IsHiddenFromSearch(Imobisoft.Search.Models.SearchResultItem,System.Collections.Generic.IList{System.String})">
+            <summary>
+            Whether this page carries any of the profile's "hide from search" toggles.
+            <para>
+            The site's own version of <c>umbracoNaviHide</c>, under whatever alias it chose. An editor
+            who ticks a box called "Hide from site search" has made a decision, and a search engine that
+            returns the page anyway is simply wrong.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Querying.SearchResultProcessor.IsFlagSet(Imobisoft.Search.Models.SearchResultItem,System.String)">
+            <summary>
+            Reads a boolean flag off an indexed document, by its plain alias or with a culture suffix.
+            <para>
+            A property that varies by culture is indexed as <c>alias_en-gb</c>, so looking only for the
+            plain alias would silently find nothing on exactly the sites most likely to use one - and
+            "silently finds nothing" on a hide-from-search toggle means publishing a page that was meant
+            to be held back.
+            </para>
+            </summary>
         </member>
         <member name="M:Imobisoft.Search.Services.Querying.SearchResultProcessor.IsExplicitlyUnpublished(Imobisoft.Search.Models.SearchResultItem)">
             <summary>
@@ -3729,6 +4096,22 @@
             the value that matched may be a serialized blob rather than prose. Flattening it first lets
             the snippet show the sentence a visitor actually wrote instead of JSON soup.
             </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Querying.SearchResultProcessor.IsReadable(System.String)">
+            <summary>
+            Whether a value has enough words to be read as a sentence.
+            <para>
+            A snippet exists to show a matched word <em>in context</em>. A title, a URL segment or a
+            node name has no context to offer, so cutting one produces the word back with ellipses
+            around it. Below this it is not a snippet, it is the search term.
+            </para>
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Querying.SearchResultProcessor.MinimumSnippetWords">
+            <summary>
+            Fewest words a value needs before a snippet is cut from it. Eight is about the shortest run
+            that still reads as a sentence once the matched word is marked inside it.
             </summary>
         </member>
         <member name="M:Imobisoft.Search.Services.Querying.SearchResultProcessor.FlattenStructuredValue(System.String)">
@@ -4770,6 +5153,44 @@
             <c>&lt;body&gt;</c>. False when something else is already providing them: a site layout, or
             the site page the view component is being rendered from. A second document nested inside the
             site's own would be invalid.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Web.ImobisoftSearchPageViewModel.Excerpt(Imobisoft.Search.Models.SearchResultItem)">
+            <summary>
+            The line under a result's name, or empty when there is nothing worth showing.
+            <para>
+            A last line of defence rather than the main one. The index now carries
+            <c>extractedContent</c> - clean body text with block editor structure stripped out - and a
+            profile pointed at it gets a readable excerpt without any of this. But a profile can be
+            pointed at a raw block property instead, by an older configuration or by someone picking the
+            obvious-looking field, and the result is the thing this exists to stop appearing:
+            <c>["Home page-square text layout"]</c> printed under the result name.
+            </para>
+            <para>
+            Showing nothing is the right answer when what we have is structure. A result with just a
+            name and a link tells a visitor something; a result captioned with a JSON array tells them
+            the site is broken.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Web.ImobisoftSearchPageViewModel.ShowResultType(Imobisoft.Search.Models.SearchResultItem)">
+            <summary>
+            Whether the document type and culture are worth showing on this result.
+            <para>
+            Not on a content page: <c>landing</c> is an internal alias and tells a visitor nothing. Kept
+            for media and members, where the type is the one thing that distinguishes a result from an
+            ordinary page, and for a best bet, whose badge has already marked the row as different.
+            </para>
+            <para>
+            The date is not governed by this. It sits under the description on every result, because it
+            is context for what was just read rather than a label on the result.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Web.ImobisoftSearchPageViewModel.IsStructuredLeftover(System.String)">
+            <summary>
+            Whether this text is block editor structure rather than prose: a JSON document, a JSON
+            array, or a run of words with no sentence in it that reads as a layout name.
             </summary>
         </member>
         <member name="T:Imobisoft.Search.Web.SearchContextExtensions">

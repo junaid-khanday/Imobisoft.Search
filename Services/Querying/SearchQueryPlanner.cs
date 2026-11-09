@@ -235,62 +235,60 @@ internal sealed class SearchQueryPlanner
     /// </summary>
     private static string BuildTypeClause(SourceRules sources)
     {
-        var hasContentRule = sources.IncludeContentTypes.Count > 0;
-        var hasMediaRule = sources.IncludeMediaTypes.Count > 0;
-
-        // Everything is excluded by default: content appears only through the include list, media
-        // only through its own, and members only when the profile names the member entity outright.
-        // An explicit entity-type selection also keeps its branch open. A profile that names nothing
-        // therefore matches no document type at all - the Sources tab is what turns search on.
+        // Include means include. A type appears in results because it was ticked on the Sources
+        // tab, and for no other reason - so an empty include list matches nothing rather than
+        // everything.
+        //
+        // This is the one thing about the Sources tab that has to be unambiguous, because the two
+        // readings look identical until a search runs: "I have not narrowed this yet, so show me
+        // everything" and "I have not included anything yet, so show me nothing". Reading it the
+        // first way meant a profile whose panel said "All Document Types Hidden" returned every
+        // document type on the site, which is the worse of the two mistakes by a distance - a
+        // profile built to expose three page types quietly exposed all of them.
+        //
+        // Members are the exception and keep their entity-type switch: there is no per-type list
+        // for them to be included through, so the switch is the only thing that could say yes.
         bool IndexTypesContains(string indexType)
             => sources.IndexTypes.Any(x => x.Equals(indexType, StringComparison.OrdinalIgnoreCase));
 
-        var allowed = new List<string>();
+        var clauses = new List<string>();
 
-        if (hasContentRule || IndexTypesContains(ImobisoftSearchConstants.IndexTypes.Content))
+        if (sources.IncludeContentTypes.Count > 0)
         {
-            allowed.Add(ImobisoftSearchConstants.IndexTypes.Content);
+            clauses.Add(Branch(ImobisoftSearchConstants.IndexTypes.Content, sources.IncludeContentTypes));
         }
 
-        if (hasMediaRule || IndexTypesContains(ImobisoftSearchConstants.IndexTypes.Media))
+        if (sources.IncludeMediaTypes.Count > 0)
         {
-            allowed.Add(ImobisoftSearchConstants.IndexTypes.Media);
+            clauses.Add(Branch(ImobisoftSearchConstants.IndexTypes.Media, sources.IncludeMediaTypes));
         }
 
         if (IndexTypesContains(ImobisoftSearchConstants.IndexTypes.Member))
         {
-            allowed.Add(ImobisoftSearchConstants.IndexTypes.Member);
-        }
-
-        if (allowed.Count == 0)
-        {
-            return string.Empty;
-        }
-
-        var clauses = new List<string>();
-
-        foreach (var indexType in allowed)
-        {
-            var typeClause = LuceneSyntax.FieldIn(ImobisoftSearchConstants.IndexFields.IndexType, new[] { indexType });
-
-            IList<string>? typeRestriction = indexType.Equals(ImobisoftSearchConstants.IndexTypes.Content, StringComparison.OrdinalIgnoreCase) && hasContentRule
-                ? sources.IncludeContentTypes
-                : indexType.Equals(ImobisoftSearchConstants.IndexTypes.Media, StringComparison.OrdinalIgnoreCase) && hasMediaRule
-                    ? sources.IncludeMediaTypes
-                    : null;
-
-            if (typeRestriction is null)
-            {
-                clauses.Add(typeClause);
-                continue;
-            }
-
-            var aliasClause = LuceneSyntax.FieldIn(ImobisoftSearchConstants.IndexFields.NodeTypeAlias, typeRestriction);
-            clauses.Add(LuceneSyntax.Join(new[] { typeClause, aliasClause }, "AND"));
+            clauses.Add(LuceneSyntax.FieldIn(
+                ImobisoftSearchConstants.IndexFields.IndexType,
+                new[] { ImobisoftSearchConstants.IndexTypes.Member }));
         }
 
         return LuceneSyntax.Join(clauses, "OR");
     }
+
+    /// <summary>
+    /// One index type, restricted to the aliases that were ticked for it.
+    /// <para>
+    /// Scoped to its own index type rather than applied across the query, because a document type
+    /// alias and a media type alias live in the same index field - without the scope, including
+    /// three page types would exclude every media item as a side effect.
+    /// </para>
+    /// </summary>
+    private static string Branch(string indexType, IList<string> aliases)
+        => LuceneSyntax.Join(
+            new[]
+            {
+                LuceneSyntax.FieldIn(ImobisoftSearchConstants.IndexFields.IndexType, new[] { indexType }),
+                LuceneSyntax.FieldIn(ImobisoftSearchConstants.IndexFields.NodeTypeAlias, aliases),
+            },
+            "AND");
 
     /// <summary>
     /// Builds the term half of a field clause: one bracketed group per word, each holding the word

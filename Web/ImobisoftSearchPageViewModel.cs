@@ -68,4 +68,107 @@ public sealed class ImobisoftSearchPageViewModel
     /// site's own would be invalid.
     /// </summary>
     public bool RenderDocumentShell { get; set; } = true;
+
+    /// <summary>
+    /// The line under a result's name, or empty when there is nothing worth showing.
+    /// <para>
+    /// A last line of defence rather than the main one. The index now carries
+    /// <c>extractedContent</c> - clean body text with block editor structure stripped out - and a
+    /// profile pointed at it gets a readable excerpt without any of this. But a profile can be
+    /// pointed at a raw block property instead, by an older configuration or by someone picking the
+    /// obvious-looking field, and the result is the thing this exists to stop appearing:
+    /// <c>["Home page-square text layout"]</c> printed under the result name.
+    /// </para>
+    /// <para>
+    /// Showing nothing is the right answer when what we have is structure. A result with just a
+    /// name and a link tells a visitor something; a result captioned with a JSON array tells them
+    /// the site is broken.
+    /// </para>
+    /// </summary>
+    public string Excerpt(SearchResultItem item)
+    {
+        var text = (item.Summary ?? string.Empty).Trim();
+
+        return IsStructuredLeftover(text) ? string.Empty : text;
+    }
+
+    /// <summary>
+    /// Whether the document type and culture are worth showing on this result.
+    /// <para>
+    /// Not on a content page: <c>landing</c> is an internal alias and tells a visitor nothing. Kept
+    /// for media and members, where the type is the one thing that distinguishes a result from an
+    /// ordinary page, and for a best bet, whose badge has already marked the row as different.
+    /// </para>
+    /// <para>
+    /// The date is not governed by this. It sits under the description on every result, because it
+    /// is context for what was just read rather than a label on the result.
+    /// </para>
+    /// </summary>
+    public bool ShowResultType(SearchResultItem item)
+    {
+        if (item.IsBestBet)
+        {
+            return true;
+        }
+
+        return !string.Equals(
+            item.IndexType,
+            ImobisoftSearchConstants.IndexTypes.Content,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Whether this text is block editor structure rather than prose: a JSON document, a JSON
+    /// array, or a run of words with no sentence in it that reads as a layout name.
+    /// </summary>
+    private static bool IsStructuredLeftover(string text)
+    {
+        if (text.Length == 0)
+        {
+            return true;
+        }
+
+        // Anything that still looks like JSON never reads as a sentence.
+        if ((text.StartsWith('[') && text.EndsWith(']'))
+            || (text.StartsWith('{') && text.EndsWith('}')))
+        {
+            return true;
+        }
+
+        // Unbalanced quotes and braces survive a snippet being cut out of a JSON blob mid-way.
+        if (text.Contains("\":", StringComparison.Ordinal)
+            || text.Contains("umb://", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // A floor low enough to keep a genuinely terse meta description - "Our worldwide
+        // operations" is a real description someone wrote - and high enough to drop a single
+        // stray token. Labels and layout names are kept out at index time now, so this no longer
+        // has to be the thing that catches them.
+        return CountWords(text) < 2;
+    }
+
+    private static int CountWords(string value)
+    {
+        var count = 0;
+        var inWord = false;
+
+        foreach (var c in value)
+        {
+            if (char.IsWhiteSpace(c))
+            {
+                inWord = false;
+                continue;
+            }
+
+            if (!inWord)
+            {
+                count++;
+                inWord = true;
+            }
+        }
+
+        return count;
+    }
 }

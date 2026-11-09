@@ -113,6 +113,18 @@ public static class ImobisoftSearchConstants
         public const string Raw = "__Raw_";
         public const string SortPrefix = "__Sort_";
 
+        /// <summary>
+        /// The clean body text the package adds while a document is being indexed, with block
+        /// editor JSON and layout structure stripped out. Culture-suffixed alongside the rest -
+        /// <c>extractedContent_en-gb</c> - on a variant site.
+        /// <para>
+        /// This is what result snippets and descriptions should be cut from. The fields it was
+        /// built from stay in the index untouched and still match; they are simply not worth
+        /// reading.
+        /// </para>
+        /// </summary>
+        public const string ExtractedContent = "extractedContent";
+
         public const string CreateDate = "createDate";
         public const string UpdateDate = "updateDate";
         public const string NaviHide = "umbracoNaviHide";

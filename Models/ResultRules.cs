@@ -109,6 +109,18 @@ public sealed class ResultRules
     public IList<string> DescriptionFields { get; set; } = new List<string>();
 
     /// <summary>
+    /// How much of the description to show, in characters. 0 falls back to
+    /// <see cref="HighlightRules.SnippetLength"/>.
+    /// <para>
+    /// Its own setting rather than borrowing the snippet length, because the two are not the same
+    /// measure. A snippet is the sentence a word was found in and wants to be tight; a description
+    /// is what a result says for itself when nothing matched its prose - on a browse page, that is
+    /// every result - and a couple of lines there is worth having.
+    /// </para>
+    /// </summary>
+    public int DescriptionLength { get; set; } = 320;
+
+    /// <summary>
     /// Index fields copied into each result. Empty means the package returns a useful default set
     /// (name, url, content type, dates) plus whatever fields were searched.
     /// </summary>

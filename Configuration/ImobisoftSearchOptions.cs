@@ -113,6 +113,38 @@ public sealed class ImobisoftSearchOptions
     public bool EnableAiSearch { get; set; } = true;
 
     /// <summary>
+    /// Adds a clean body-text field (<c>extractedContent</c>) to content documents as Umbraco
+    /// indexes them, with block editor JSON and layout structure stripped out.
+    /// <para>
+    /// On by default, because without it a result snippet cut from a block-built page reads as
+    /// <c>["Home page-square text layout"] Our World Who we are</c> rather than as prose. It only
+    /// ever adds a field - nothing Umbraco indexed is removed, since these indexes are shared with
+    /// the backoffice search and with the site's own code.
+    /// </para>
+    /// <para>
+    /// Changing this needs the indexes rebuilt before it shows: a field is written while a document
+    /// is indexed, so existing documents keep whatever they were built with.
+    /// </para>
+    /// </summary>
+    public bool EnableContentExtraction { get; set; } = true;
+
+    /// <summary>
+    /// Fewest words a run of text needs before it counts as body text rather than a label.
+    /// <para>
+    /// The one number that decides what the extraction keeps. Six drops "Home page-square text
+    /// layout" and keeps a sentence; raising it drops short real paragraphs too, and lowering it
+    /// lets block labels back in. 0 uses the built-in default.
+    /// </para>
+    /// </summary>
+    public int ContentExtractionMinimumWords { get; set; }
+
+    /// <summary>
+    /// Ceiling on the extracted text per document. 0 uses the built-in default. Text past the
+    /// ceiling is index weight no snippet will ever reach.
+    /// </summary>
+    public int ContentExtractionMaxCharacters { get; set; }
+
+    /// <summary>
     /// Reads filter selections straight off the query string, so a search page needs no code to
     /// support filtering - the links the package generates are enough.
     /// </summary>

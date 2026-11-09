@@ -77,9 +77,14 @@ public sealed class SearchProfile
         {
             Sources = new SourceRules
             {
-                // Without an explicit entity-type selection the engine treats the profile as
-                // "nothing included yet", so the seeded profile names the two indexes every
-                // Umbraco site ships with.
+                // The two index types every Umbraco site ships with, so the Sources tab opens on
+                // something rather than on nothing.
+                //
+                // This profile still returns no results until document types are included: that is
+                // what including means, and it is the one place the package asks for a decision
+                // before it will do anything. The alternative - searching every document type on
+                // the site by default - puts settings nodes and internal pages in front of
+                // visitors on day one, which is not a default anyone should inherit silently.
                 IndexTypes =
                 {
                     ImobisoftSearchConstants.IndexTypes.Content,

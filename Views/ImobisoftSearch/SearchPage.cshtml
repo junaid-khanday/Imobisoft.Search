@@ -64,6 +64,11 @@
                - #fef08a, say - to have it marked out instead. */
             --imobisoft-highlight: transparent;
 
+            /* And the colour it is bolded in: dark green, so a match stands out in a paragraph
+               without a block of fill behind every one of them. Recolour the matched term by
+               setting this alone. */
+            --imobisoft-highlight-text: #15803d;
+
             --imobisoft-font: Calibri, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
 
             /* The search field, and the filter row above it, are held to a readable width rather
@@ -367,18 +372,31 @@ else
             color: var(--imobisoft-text);
         }
 
+        /*
+            The matched term inside a snippet.
+
+            Every tag the highlight rules can be set to is covered - mark, b, strong, and a
+            span.highlight - so changing the start tag in Search → Results → Highlighting restyles
+            nothing and still looks right. Dark green and bold rather than a yellow fill: the fill
+            reads as a marker pen across a paragraph, which is heavy when most results have several
+            matches in them.
+        */
         .imobisoft-result-snippet mark,
-        .imobisoft-result-snippet strong {
-            background: var(--imobisoft-highlight);
-            color: inherit;
+        .imobisoft-result-snippet b,
+        .imobisoft-result-snippet strong,
+        .imobisoft-result-snippet .highlight {
+            background: none;
+            color: var(--imobisoft-highlight-text);
             font-weight: 700;
         }
 
+        /* A clear line between the description and the date, so the date reads as a footnote to
+           the result rather than as the last clause of the sentence above it. */
         .imobisoft-result-meta {
             display: flex;
             flex-wrap: wrap;
             gap: 4px 24px;
-            margin-top: 16px;
+            margin-top: 1.5em;
             font-size: 16px;
             color: var(--imobisoft-muted);
         }
@@ -778,29 +796,56 @@ else
                                        configured highlight tag intact, so this is safe as markup. *@
                                     <div class="imobisoft-result-snippet">@Html.Raw(item.Highlight)</div>
                                 }
-                                else if (!string.IsNullOrWhiteSpace(item.Summary))
+                                else if (Model.Excerpt(item) is { Length: > 0 } excerpt)
                                 {
                                     @* Plain text by the time it reaches here - markup stripped,
-                                       structured values flattened - so it is printed, not raw. *@
-                                    <div class="imobisoft-result-snippet">@item.Summary</div>
+                                       structured values flattened - so it is printed, not raw.
+
+                                       Read through Excerpt rather than straight off Summary, which
+                                       is what keeps block editor leftovers off the page: a profile
+                                       pointed at a raw block property would otherwise print
+                                       ["Home page-square text layout"] under the result name. *@
+                                    <div class="imobisoft-result-snippet">@excerpt</div>
                                 }
 
-                                <div class="imobisoft-result-meta">
-                                    @* The parsed date, never the index's own value for it: that is
-                                       written as a tick count and reads as an id. *@
-                                    @if (item.CreateDate is { } created)
-                                    {
-                                        <span class="imobisoft-result-date">@created.ToString("dd MMM yyyy")</span>
-                                    }
-                                    @if (!string.IsNullOrWhiteSpace(item.ContentTypeAlias) || !string.IsNullOrWhiteSpace(item.IndexType))
-                                    {
-                                        <span class="imobisoft-result-type">@(item.ContentTypeAlias ?? item.IndexType)</span>
-                                    }
-                                    @if (!string.IsNullOrWhiteSpace(item.Culture))
-                                    {
-                                        <span class="imobisoft-result-culture">@item.Culture</span>
-                                    }
-                                </div>
+                                @* Below the description, on a line of its own: the date is context
+                                   for what was just read, not a label on the result. The document
+                                   type stays off a content page - "landing" is an internal alias
+                                   and means nothing to a visitor - but is kept for media and
+                                   members, where it is the one thing that tells a result apart
+                                   from a page. *@
+                                @{
+                                    var showType = Model.ShowResultType(item);
+
+                                    // Decided before the element is opened, because Razor leaves
+                                    // whitespace inside it - so an empty row would not match
+                                    // :empty and would show as a blank gap under the description.
+                                    var hasMeta = item.CreateDate is not null
+                                                  || (showType && (!string.IsNullOrWhiteSpace(item.ContentTypeAlias)
+                                                                   || !string.IsNullOrWhiteSpace(item.IndexType)))
+                                                  || (showType && !string.IsNullOrWhiteSpace(item.Culture));
+                                }
+
+                                @if (hasMeta)
+                                {
+                                    <div class="imobisoft-result-meta">
+                                        @* The parsed date, never the index's own value for it: that
+                                           is written as a tick count and reads as an id. *@
+                                        @if (item.CreateDate is { } created)
+                                        {
+                                            <span class="imobisoft-result-date">@created.ToString("dd MMM yyyy")</span>
+                                        }
+                                        @if (showType
+                                             && (!string.IsNullOrWhiteSpace(item.ContentTypeAlias) || !string.IsNullOrWhiteSpace(item.IndexType)))
+                                        {
+                                            <span class="imobisoft-result-type">@(item.ContentTypeAlias ?? item.IndexType)</span>
+                                        }
+                                        @if (showType && !string.IsNullOrWhiteSpace(item.Culture))
+                                        {
+                                            <span class="imobisoft-result-culture">@item.Culture</span>
+                                        }
+                                    </div>
+                                }
                             </li>
                         }
                     </ol>

@@ -5,6 +5,7 @@ using Examine.Search;
 using Imobisoft.Search.Configuration;
 using Imobisoft.Search.Models;
 using Imobisoft.Search.Services.Ai;
+using Imobisoft.Search.Services.Indexing;
 using Imobisoft.Search.Services.Querying;
 using Imobisoft.Search.Web;
 using Microsoft.AspNetCore.Http;
@@ -1036,7 +1037,57 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
             }
         }
 
+        AddExtractedContent(item, node);
+
         return item;
+    }
+
+    /// <summary>
+    /// Builds the clean body-text field for a node read from the published cache, using the same
+    /// rules the indexer uses.
+    /// <para>
+    /// A curated browse result - the pages a profile opens its search page with - never passes
+    /// through Examine, so it cannot inherit the <c>extractedContent</c> the indexer writes. Left
+    /// alone it falls through the description list to <c>bodyText</c>, which on a block-built page
+    /// is the editor's raw JSON: the one kind of result that shows block layout data instead of a
+    /// sentence, on the one page where every result needs a description because none of them
+    /// matched anything.
+    /// </para>
+    /// <para>
+    /// Source values, not rendered ones, because the source is what the indexer sees and the two
+    /// have to agree - a browse description that read differently from the same page's search
+    /// description would be a puzzle for whoever noticed.
+    /// </para>
+    /// </summary>
+    private static void AddExtractedContent(SearchResultItem item, IPublishedContent node)
+    {
+        var field = ImobisoftSearchConstants.IndexFields.ExtractedContent;
+
+        if (item.Fields.ContainsKey(field))
+        {
+            return;
+        }
+
+        try
+        {
+            var values = node.Properties
+                .Select(p => new KeyValuePair<string, IEnumerable<object>>(
+                    p.Alias,
+                    new object[] { p.GetSourceValue() ?? string.Empty }))
+                .ToList();
+
+            var text = ExtractedContentBuilder.Build(values);
+
+            if (text.Length > 0)
+            {
+                item.Fields[field] = text;
+            }
+        }
+        catch
+        {
+            // A property that throws on read leaves this result without a description rather than
+            // without a search page. The name and the link still work.
+        }
     }
 
     private static SearchResultItem MapResult(ISearchResult result, string indexName)
