@@ -468,7 +468,19 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         snippetLength: 200,
                         sentenceContext: 0,
                         startTag: '<mark>',
-                        endTag: '</mark>'
+                        endTag: '</mark>',
+                        useStyleSettings: false,
+                        style: {
+                            textColour: '#15803d',
+                            backgroundColour: '',
+                            bold: true,
+                            italic: false,
+                            underline: false,
+                            fontScalePercent: 100,
+                            cornerRadius: 0,
+                            paddingX: 0,
+                            paddingY: 0
+                        }
                     },
                     facets: []
                 }
@@ -766,6 +778,22 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         if (p.rules.results.groupByContentType === undefined) p.rules.results.groupByContentType = false;
         if (!p.rules.results.deduplicateByField) p.rules.results.deduplicateByField = '';
         if (!p.rules.results.highlight) p.rules.results.highlight = { enabled: false, highlightMatches: true, mode: 'sentence', field: '', snippetLength: 200, sentenceContext: 0, startTag: '<mark>', endTag: '</mark>' };
+        const hl = p.rules.results.highlight;
+        if (hl.highlightMatches === undefined) hl.highlightMatches = true;
+        if (hl.useStyleSettings === undefined) hl.useStyleSettings = false;
+        if (hl.startTag === undefined) hl.startTag = '<mark>';
+        if (hl.endTag === undefined) hl.endTag = '</mark>';
+        if (!hl.style) hl.style = {};
+        if (hl.style.textColour === undefined) hl.style.textColour = '#15803d';
+        if (hl.style.backgroundColour === undefined) hl.style.backgroundColour = '';
+        if (hl.style.bold === undefined) hl.style.bold = true;
+        if (hl.style.italic === undefined) hl.style.italic = false;
+        if (hl.style.underline === undefined) hl.style.underline = false;
+        if (hl.style.fontScalePercent === undefined) hl.style.fontScalePercent = 100;
+        if (hl.style.cornerRadius === undefined) hl.style.cornerRadius = 0;
+        if (hl.style.paddingX === undefined) hl.style.paddingX = 0;
+        if (hl.style.paddingY === undefined) hl.style.paddingY = 0;
+
         if (!p.rules.results.facets) p.rules.results.facets = [];
         if (!Array.isArray(p.rules.results.sortOptions)) p.rules.results.sortOptions = [];
     }
@@ -1145,13 +1173,30 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 enableLoadMore: !!this._currentProfile.rules?.results?.enableLoadMore
             };
         } else if (type === 'editHighlighting') {
+            const hl = this._currentProfile.rules?.results?.highlight || {};
+            const st = hl.style || {};
             this._sidePanelData = {
-                enabled: this._currentProfile.rules?.results?.highlight?.enabled || false,
-                mode: this._currentProfile.rules?.results?.highlight?.mode || 'sentence',
-                snippetLength: this._currentProfile.rules?.results?.highlight?.snippetLength ?? 200,
-                sentenceContext: this._currentProfile.rules?.results?.highlight?.sentenceContext ?? 0,
+                enabled: hl.enabled || false,
+                highlightMatches: hl.highlightMatches !== false,
+                mode: hl.mode || 'sentence',
+                snippetLength: hl.snippetLength ?? 200,
+                sentenceContext: hl.sentenceContext ?? 0,
                 descriptionFields: [...(this._currentProfile.rules?.results?.descriptionFields ?? [])],
-                _descriptionInput: (this._currentProfile.rules?.results?.descriptionFields ?? []).join('\n')
+                _descriptionInput: (this._currentProfile.rules?.results?.descriptionFields ?? []).join('\n'),
+                useStyleSettings: !!hl.useStyleSettings,
+                startTag: hl.startTag ?? '<mark>',
+                endTag: hl.endTag ?? '</mark>',
+                style: {
+                    textColour: st.textColour ?? '#15803d',
+                    backgroundColour: st.backgroundColour ?? '',
+                    bold: st.bold !== false,
+                    italic: !!st.italic,
+                    underline: !!st.underline,
+                    fontScalePercent: st.fontScalePercent ?? 100,
+                    cornerRadius: st.cornerRadius ?? 0,
+                    paddingX: st.paddingX ?? 0,
+                    paddingY: st.paddingY ?? 0
+                }
             };
         } else if (type === 'editResultShaping') {
             this._sidePanelData = {
@@ -1809,6 +1854,26 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             this._currentProfile.rules.results.highlight.mode = d.mode || 'sentence';
             this._currentProfile.rules.results.highlight.snippetLength = parseInt(d.snippetLength) || 200;
             this._currentProfile.rules.results.highlight.sentenceContext = parseInt(d.sentenceContext) || 0;
+            this._currentProfile.rules.results.highlight.highlightMatches = d.highlightMatches !== false;
+            this._currentProfile.rules.results.highlight.useStyleSettings = !!d.useStyleSettings;
+            this._currentProfile.rules.results.highlight.startTag = (d.startTag || '').trim() || '<mark>';
+            this._currentProfile.rules.results.highlight.endTag = (d.endTag || '').trim() || '</mark>';
+
+            const st = d.style || {};
+            this._currentProfile.rules.results.highlight.style = {
+                // Clamped to the same ranges the server clamps to, so the preview beside these
+                // inputs is what the site will actually render.
+                textColour: (st.textColour || '').trim(),
+                backgroundColour: (st.backgroundColour || '').trim(),
+                bold: !!st.bold,
+                italic: !!st.italic,
+                underline: !!st.underline,
+                fontScalePercent: Math.min(300, Math.max(50, parseInt(st.fontScalePercent) || 100)),
+                cornerRadius: Math.min(40, Math.max(0, parseInt(st.cornerRadius) || 0)),
+                paddingX: Math.min(40, Math.max(0, parseInt(st.paddingX) || 0)),
+                paddingY: Math.min(40, Math.max(0, parseInt(st.paddingY) || 0))
+            };
+
             this._currentProfile.rules.results.descriptionFields = this._toPathList(d._descriptionInput, d.descriptionFields);
         } else if (this._sidePanelType === 'editResultShaping') {
             if (!this._currentProfile.rules.results) this._currentProfile.rules.results = {};
@@ -2394,11 +2459,11 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         <select class="header-select"
                                 .value=${String(this._insightsDays)}
                                 @change=${e => { this._insightsDays = parseInt(e.target.value); this._loadInsights(this._insightsDays, true); }}>
-                            <option value="7">Last 7 Days</option>
-                            <option value="30">Last 30 Days</option>
-                            <option value="60">Last 60 Days</option>
-                            <option value="90">Last 90 Days</option>
-                            <option value="365">Last 1 Year</option>
+                            <option value="7" ?selected=${String(String(this._insightsDays)) === '7'}>Last 7 Days</option>
+                            <option value="30" ?selected=${String(String(this._insightsDays)) === '30'}>Last 30 Days</option>
+                            <option value="60" ?selected=${String(String(this._insightsDays)) === '60'}>Last 60 Days</option>
+                            <option value="90" ?selected=${String(String(this._insightsDays)) === '90'}>Last 90 Days</option>
+                            <option value="365" ?selected=${String(String(this._insightsDays)) === '365'}>Last 1 Year</option>
                         </select>
                         <button class="btn btn-secondary" @click=${() => this._loadInsights(this._insightsDays, true)}>
                             <i class="icon-refresh"></i> Refresh
@@ -2806,7 +2871,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                             <span class="field-count-pill">${status.hasKey ? `Key set ${status.hint || ''}` : 'No key yet'}</span>
                         </div>
                         <div class="field-box-content">
-                            <div class="form-group" style="margin-bottom: 12px;">
+                            <div class="form-group">
                                 <label class="sp-label">API Key</label>
                                 <div style="display: flex; gap: 8px;">
                                     <input type="password"
@@ -3196,7 +3261,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
 
         return html`
             <div class="sp-multi-choice-layout" style="display: flex; flex-direction: column; height: 100%;">
-                <div class="sp-group" style="margin-bottom: 12px;">
+                <div class="sp-group">
                     <span class="sp-hint">${t.info?.description || ''}</span>
                     <span class="sp-hint" style="display: block; margin-top: 6px;">
                         <strong>${t.hasOverride ? 'This site has its own copy' : "Using the package's version"}</strong>
@@ -3447,11 +3512,9 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
      */
     _advanced(label, content) {
         return html`
-            <details class="mf-advanced" style="display: block; border-top: 1px solid var(--uui-color-divider, #e9e9eb); margin-top: 8px;">
-                <summary style="cursor: pointer; padding: 16px 4px; font-size: 13px; font-weight: 600; color: var(--uui-color-text-alt, #68676e); user-select: none;">
-                    Advanced &mdash; ${label}
-                </summary>
-                <div style="padding-top: 4px;">${content}</div>
+            <details class="mf-advanced">
+                <summary>Advanced &mdash; ${label}</summary>
+                <div class="mf-advanced-body">${content}</div>
             </details>
         `;
     }
@@ -4258,7 +4321,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                     .value=${this._testProfileAlias}
                                     @change=${e => { this._testProfileAlias = e.target.value; this._runTestSearch(); }}>
                                 ${this._profiles.map(p => html`
-                                    <option value="${p.alias}">${p.name} (${p.alias})</option>
+                                    <option value="${p.alias}" ?selected=${String(this._testProfileAlias) === '${p.alias}'}>${p.name} (${p.alias})</option>
                                 `)}
                             </select>
                         </div>
@@ -4268,9 +4331,9 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                             <select class="sp-select-sm"
                                     .value=${this._testCulture}
                                     @change=${e => { this._testCulture = e.target.value; this._runTestSearch(); }}>
-                                <option value="">All Cultures</option>
+                                <option value="" ?selected=${String(this._testCulture) === ''}>All Cultures</option>
                                 ${(this._catalog.languages || []).map(l => html`
-                                    <option value="${l.isoCode}">${l.name} (${l.isoCode})</option>
+                                    <option value="${l.isoCode}" ?selected=${String(this._testCulture) === '${l.isoCode}'}>${l.name} (${l.isoCode})</option>
                                 `)}
                             </select>
                         </div>
@@ -4518,7 +4581,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
 
                 <!-- Daily Volume Bars -->
                 ${(this._insights.volume || []).length > 0 ? html`
-                    <div class="card" style="margin-top: 20px;">
+                    <div class="card">
                         <div class="card-header">
                             <h4>Daily Search Volume</h4>
                         </div>
@@ -4725,7 +4788,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                 </label>
                             </div>
 
-                            <div class="form-row-2col" style="margin-top: 16px;">
+                            <div class="form-row-2col">
                                 <div class="form-group">
                                     <label class="sp-label">Log Retention (Days, 0 = Forever)</label>
                                     <input type="number"
@@ -4751,7 +4814,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                             <h4>Suggestions & Autocomplete Engine</h4>
                         </div>
                         <div class="card-body">
-                            <label class="toggle-item" style="margin-bottom: 16px;">
+                            <label class="toggle-item">
                                 <div class="toggle-info">
                                     <strong>Enable Spelling Suggestions & Type-Ahead</strong>
                                     <span>Provide 'Did you mean' corrections and autocomplete endpoints.</span>
@@ -4793,12 +4856,12 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 </div>
 
                 <!-- Search Page: how the page gets the site's header and footer -->
-                <div class="card" style="margin-top: 16px;">
+                <div class="card">
                     <div class="card-header">
                         <h4>Search Page</h4>
                     </div>
                     <div class="card-body">
-                        <label class="toggle-item" style="margin-bottom: 16px;">
+                        <label class="toggle-item">
                             <div class="toggle-info">
                                 <strong>Take Over The Search Page This Site Already Has</strong>
                                 <span>
@@ -4817,7 +4880,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         </label>
 
                         ${(p.takeOverSitePage ?? true) ? html`
-                            <label class="toggle-item" style="margin-bottom: 16px;">
+                            <label class="toggle-item">
                                 <div class="toggle-info">
                                     <strong>Hide The Site's Own Search On A Page That Was Taken Over</strong>
                                     <span>
@@ -4833,7 +4896,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                             </label>
 
                             ${(p.replaceSitePageSearch ?? true) ? html`
-                                <div class="sp-group" style="margin-bottom: 20px;">
+                                <div class="sp-group">
                                     <label class="sp-label">The Site's Own Search Is (CSS selector)</label>
                                     <input type="text"
                                            class="sp-input"
@@ -4846,7 +4909,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                             ` : ''}
                         ` : ''}
 
-                        <div class="sp-group" style="margin-bottom: 20px;">
+                        <div class="sp-group">
                             <label class="sp-label">Render Search Into These Site Pages (one per line)</label>
                             <textarea class="sp-textarea"
                                       style="min-height: 90px; font-family: monospace; font-size: 13px;"
@@ -4859,7 +4922,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                             </span>
                         </div>
 
-                        <div class="sp-group" style="margin-bottom: 20px;">
+                        <div class="sp-group">
                             <label class="sp-label">Place It Inside (CSS selector)</label>
                             <input type="text"
                                    class="sp-input"
@@ -4870,7 +4933,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                             <span class="sp-hint">Where in the page search is placed. Empty tries the usual spots.</span>
                         </div>
 
-                        <label class="toggle-item" style="margin-bottom: 16px;">
+                        <label class="toggle-item">
                             <div class="toggle-info">
                                 <strong>Use The Site's Layout On ${SEARCH_PAGE_PATH}</strong>
                                 <span>
@@ -5245,7 +5308,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     <p class="sp-choice-desc">Pick pages to search under. Empty searches the whole site.</p>
                 </div>
 
-                <div class="sp-group" style="margin-bottom: 20px; width: 100%;">
+                <div class="sp-group">
                     <label class="sp-label" style="font-weight: 700; margin-bottom: 8px;">Content Tree / URL Picker</label>
                     <umb-input-document
                         .selection=${d.rootNodeKeys || []}
@@ -5257,7 +5320,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     </umb-input-document>
                 </div>
 
-                <div class="sp-group" style="margin-bottom: 20px; width: 100%;">
+                <div class="sp-group">
                     <label class="sp-label" style="font-weight: 700; margin-bottom: 8px;">Exclude These Pages</label>
                     <umb-input-document
                         .selection=${d.excludedNodeKeys || []}
@@ -5269,7 +5332,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     <span class="sp-hint">Pages that must never appear in results.</span>
                 </div>
 
-                <div class="sp-group" style="margin-top: 16px;">
+                <div class="sp-group">
                     <label class="toggle-item">
                         <div class="toggle-info">
                             <strong>Exclude Descendants of Excluded Nodes</strong>
@@ -5288,7 +5351,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     _renderSourceProtectionSidePanelBody(d) {
         return html`
             <div class="sp-group">
-                <label class="toggle-item" style="margin-bottom: 16px;">
+                <label class="toggle-item">
                     <div class="toggle-info">
                         <strong>Published Content Only</strong>
                         <span>Only return content that is currently in a published state.</span>
@@ -5299,7 +5362,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                            @change=${e => { d.publishedOnly = e.target.checked; this.requestUpdate(); }}>
                 </label>
 
-                <label class="toggle-item" style="margin-bottom: 16px;">
+                <label class="toggle-item">
                     <div class="toggle-info">
                         <strong>Respect Navigation Hide (umbracoNaviHide)</strong>
                         <span>Exclude content where the umbracoNaviHide property is set to True.</span>
@@ -5310,7 +5373,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                            @change=${e => { d.respectNaviHide = e.target.checked; this.requestUpdate(); }}>
                 </label>
 
-                <label class="toggle-item" style="margin-bottom: 16px;">
+                <label class="toggle-item">
                     <div class="toggle-info">
                         <strong>Exclude Protected Content</strong>
                         <span>Exclude content restricted by Umbraco Public Access (Members Only).</span>
@@ -5422,8 +5485,8 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         <select class="sp-select-sm" style="width: 100%;"
                                 .value=${s.direction === 'descending' ? 'descending' : 'ascending'}
                                 @change=${e => { s.direction = e.target.value; this.requestUpdate(); }}>
-                            <option value="ascending">Ascending (A-Z / low-high)</option>
-                            <option value="descending">Descending (Z-A / high-low)</option>
+                            <option value="ascending" ?selected=${String(s.direction === 'descending' ? 'descending' : 'ascending') === 'ascending'}>Ascending (A-Z / low-high)</option>
+                            <option value="descending" ?selected=${String(s.direction === 'descending' ? 'descending' : 'ascending') === 'descending'}>Descending (Z-A / high-low)</option>
                         </select>
                     </div>
                 </div>
@@ -5575,18 +5638,18 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     _renderMatchParametersSidePanelBody(d) {
         return html`
             <div class="sp-multi-choice-layout">
-                <div class="sp-group" style="margin-bottom: 16px;">
+                <div class="sp-group">
                     <label class="sp-label">Default Combine Operator</label>
                     <select class="sp-select"
                             .value=${d.defaultOperator}
                             @change=${e => { d.defaultOperator = e.target.value; this.requestUpdate(); }}>
-                        <option value="or">OR (Any field/term matches - Broadest results)</option>
-                        <option value="and">AND (All terms must match - Strict results)</option>
+                        <option value="or" ?selected=${String(d.defaultOperator) === 'or'}>OR (Any field/term matches - Broadest results)</option>
+                        <option value="and" ?selected=${String(d.defaultOperator) === 'and'}>AND (All terms must match - Strict results)</option>
                     </select>
                     <span class="sp-hint">Defines how multiple search words are joined in the underlying query parser.</span>
                 </div>
 
-                <div class="sp-group" style="margin-bottom: 16px;">
+                <div class="sp-group">
                     <label class="sp-label">Fuzziness Tolerance (0.0 - 1.0)</label>
                     <div class="sp-slider-row">
                         <input type="range"
@@ -5607,7 +5670,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     <span class="sp-hint">Controls typo tolerance when fuzzy matching is engaged. 0.8 is standard.</span>
                 </div>
 
-                <div class="sp-group" style="margin-bottom: 16px;">
+                <div class="sp-group">
                     <label class="sp-label">Minimum Query Length (Characters)</label>
                     <input type="number"
                            class="sp-input"
@@ -5849,7 +5912,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     _renderRecencySidePanelBody(d) {
         return html`
             <div class="sp-multi-choice-layout">
-                <div class="sp-toggle-row" style="margin-bottom: 16px;">
+                <div class="sp-toggle-row">
                     <div class="sp-toggle-info">
                         <span class="sp-toggle-title">Enable Recency Boost</span>
                         <span class="sp-toggle-desc">Lift freshly published or updated documents above older pages.</span>
@@ -5862,7 +5925,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     </label>
                 </div>
 
-                <div class="sp-group" style="margin-bottom: 16px;">
+                <div class="sp-group">
                     <label class="sp-label">Half-Life (Days)</label>
                     <input type="number"
                            class="sp-input"
@@ -5987,10 +6050,10 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     </div>
                 `)}
 
-                <div style="margin-bottom: 20px;"></div>
+                <div></div>
 
                 ${(d.actions || []).includes('ask') ? html`
-                    <div class="sp-group" style="margin-bottom: 20px;">
+                    <div class="sp-group">
                         <label class="sp-label">Longest Question (characters)</label>
                         <input type="number"
                                class="sp-input"
@@ -6001,7 +6064,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         <span class="sp-hint">Longest question a visitor may ask.</span>
                     </div>
 
-                    <div class="sp-group" style="margin-bottom: 20px;">
+                    <div class="sp-group">
                         <label class="sp-label">Pages Consulted Per Question</label>
                         <input type="number"
                                class="sp-input"
@@ -6029,7 +6092,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     _renderAiLimitsSidePanelBody(d) {
         return html`
             <div class="sp-multi-choice-layout">
-                <div class="sp-group" style="margin-bottom: 20px;">
+                <div class="sp-group">
                     <label class="sp-label">Reuse Answers For (minutes, 0 = never)</label>
                     <input type="number"
                            class="sp-input"
@@ -6040,7 +6103,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     <span class="sp-hint">How long answers are reused. The biggest saving here.</span>
                 </div>
 
-                <div class="sp-group" style="margin-bottom: 20px;">
+                <div class="sp-group">
                     <label class="sp-label">Requests Per Minute Per Visitor</label>
                     <input type="number"
                            class="sp-input"
@@ -6051,7 +6114,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     <span class="sp-hint">Requests one visitor may make per minute.</span>
                 </div>
 
-                <div class="sp-group" style="margin-bottom: 20px;">
+                <div class="sp-group">
                     <label class="sp-label">Characters Of Page Text Sent</label>
                     <input type="number"
                            class="sp-input"
@@ -6078,7 +6141,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
 
     _renderAiSearchSidePanelBody(d) {
         const toggle = (key, title, desc) => html`
-            <div class="sp-toggle-row" style="margin-bottom: 20px;">
+            <div class="sp-toggle-row">
                 <div class="sp-toggle-info">
                     <span class="sp-toggle-title">${title}</span>
                     <span class="sp-toggle-desc">${desc}</span>
@@ -6153,7 +6216,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     'A row of searches to try next, drawn from the pages this search actually found ' +
                     'rather than from a list anyone maintains.')}
 
-                <div class="sp-group" style="margin-bottom: 20px;">
+                <div class="sp-group">
                     <label class="sp-label">Give Up After (milliseconds)</label>
                     <input type="number"
                            class="sp-input"
@@ -6181,7 +6244,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     _renderSearchBoxSidePanelBody(d) {
         return html`
             <div class="sp-multi-choice-layout">
-                <div class="sp-toggle-row" style="margin-bottom: 20px;">
+                <div class="sp-toggle-row">
                     <div class="sp-toggle-info">
                         <span class="sp-toggle-title">Open A Search Box In Place</span>
                         <span class="sp-toggle-desc">Search link opens a box in place; press again to go to results.</span>
@@ -6194,7 +6257,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     </label>
                 </div>
 
-                <div class="sp-group" style="margin-bottom: 20px;">
+                <div class="sp-group">
                     <label class="sp-label">Placeholder Text</label>
                     <input type="text"
                            class="sp-input"
@@ -6204,7 +6267,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     <span class="sp-hint">Shown inside the empty box. Left blank, "Search..." is used.</span>
                 </div>
 
-                <div class="sp-group" style="margin-bottom: 20px;">
+                <div class="sp-group">
                     <label class="sp-label">Search Button Label</label>
                     <input type="text"
                            class="sp-input"
@@ -6214,7 +6277,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     <span class="sp-hint">The accessible name screen readers announce for the box's own search button.</span>
                 </div>
 
-                <div class="sp-group" style="margin-bottom: 20px;">
+                <div class="sp-group">
                     <label class="sp-label">Search Icon</label>
                     <div style="display: flex; align-items: center; gap: 10px;">
                         <div style="display: flex; align-items: center; justify-content: center; width: 42px; height: 42px; flex: 0 0 auto; background: var(--uui-color-surface-alt, #f3f4f6); border: 1px solid var(--uui-color-border, #e2e8f0); border-radius: 6px;"
@@ -6286,7 +6349,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     _renderSearchBoxPagesSidePanelBody(d) {
         return html`
             <div class="sp-multi-choice-layout">
-                <div class="sp-group" style="margin-bottom: 20px;">
+                <div class="sp-group">
                     <label class="sp-label">Also Treat These Paths As Search Pages (one per line)</label>
                     <textarea class="sp-textarea"
                               style="min-height: 110px; font-family: monospace; font-size: 13px;"
@@ -6312,7 +6375,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     _renderSearchBoxPlacementSidePanelBody(d) {
         return html`
             <div class="sp-multi-choice-layout">
-                <div class="sp-group" style="margin-bottom: 20px;">
+                <div class="sp-group">
                     <label class="sp-label">Where To Look For Search Links</label>
                     <input type="text"
                            class="sp-input"
@@ -6336,7 +6399,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     _renderPagingSidePanelBody(d) {
         return html`
             <div class="sp-multi-choice-layout">
-                <div class="sp-toggle-row" style="margin-bottom: 20px;">
+                <div class="sp-toggle-row">
                     <div class="sp-toggle-info">
                         <span class="sp-toggle-title">Enable "Load More" Pagination</span>
                         <span class="sp-toggle-desc">Use incremental "Load More" button pagination instead of standard numbered pages.</span>
@@ -6349,7 +6412,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     </label>
                 </div>
 
-                <div class="sp-group" style="margin-bottom: 20px;">
+                <div class="sp-group">
                     <label class="sp-label">Default Page Size</label>
                     <input type="number"
                            class="sp-input"
@@ -6360,7 +6423,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     <span class="sp-hint">Number of results per page or per "Load More" click - any value from 1 to 100.</span>
                 </div>
 
-                <div class="sp-group" style="margin-bottom: 20px;">
+                <div class="sp-group">
                     <label class="sp-label">Results Before Searching</label>
                     <input type="number"
                            class="sp-input"
@@ -6371,7 +6434,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     <span class="sp-hint">Results shown before anyone searches. 0 shows none.</span>
                 </div>
 
-                <div class="sp-group" style="margin-bottom: 20px;">
+                <div class="sp-group">
                     <label class="sp-label">Or Choose Exactly What Shows Before Searching</label>
                     <umb-input-document
                         .selection=${d.browseNodeKeys || []}
@@ -6401,7 +6464,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     _renderHighlightingSidePanelBody(d) {
         return html`
             <div class="sp-multi-choice-layout">
-                <div class="sp-group" style="margin-bottom: 20px;">
+                <div class="sp-group">
                     <label class="sp-label">Description Fields (one per line)</label>
                     <textarea class="sp-textarea"
                               style="min-height: 90px; font-family: monospace; font-size: 13px;"
@@ -6411,7 +6474,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     <span class="sp-hint">Where the line under a result's name comes from. Empty uses the usual aliases.</span>
                 </div>
 
-                <div class="sp-toggle-row" style="margin-bottom: 16px;">
+                <div class="sp-toggle-row">
                     <div class="sp-toggle-info">
                         <span class="sp-toggle-title">Enable Snippet Highlights</span>
                         <span class="sp-toggle-desc">Extract snippet text with matched query terms highlighted in bold/markup.</span>
@@ -6424,17 +6487,17 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     </label>
                 </div>
 
-                <div class="sp-group" style="margin-bottom: 16px;">
+                <div class="sp-group">
                     <label class="sp-label">Snippet Mode</label>
                     <select class="sp-select"
                             .value=${d.mode || 'sentence'}
                             @change=${e => { d.mode = e.target.value; this.requestUpdate(); }}>
-                        <option value="sentence">Full Sentence (Natural cut)</option>
-                        <option value="characters">Fixed Characters (Truncated)</option>
+                        <option value="sentence" ?selected=${String(d.mode || 'sentence') === 'sentence'}>Full Sentence (Natural cut)</option>
+                        <option value="characters" ?selected=${String(d.mode || 'sentence') === 'characters'}>Fixed Characters (Truncated)</option>
                     </select>
                 </div>
 
-                <div class="sp-group" style="margin-bottom: 16px;">
+                <div class="sp-group">
                     <label class="sp-label">Max Snippet Length (Characters)</label>
                     <input type="number"
                            class="sp-input"
@@ -6453,14 +6516,209 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                            .value=${String(d.sentenceContext)}
                            @input=${e => { d.sentenceContext = parseInt(e.target.value) || 0; this.requestUpdate(); }}>
                 </div>
+
+                ${this._renderHighlightAppearance(d)}
             </div>
         `;
+    }
+
+    /**
+     * How a matched term looks. Colour, weight and shape, with a preview.
+     *
+     * The preview matters more than it looks like it should: these values are emitted as an inline
+     * style on the search page, so without one the only way to see a colour choice is to save the
+     * profile and go and search the site.
+     */
+    _renderHighlightAppearance(d) {
+        const st = d.style || (d.style = {});
+        const set = (k, v) => { st[k] = v; this.requestUpdate(); };
+
+        return html`
+            <div class="sp-toggle-row">
+                <div class="sp-toggle-info">
+                    <span class="sp-toggle-title">Mark Matches</span>
+                    <span class="sp-toggle-desc">Wrap matched words so they stand out.</span>
+                </div>
+                <label class="switch switch-sm">
+                    <input type="checkbox"
+                           .checked=${d.highlightMatches !== false}
+                           @change=${e => { d.highlightMatches = e.target.checked; this.requestUpdate(); }}>
+                    <span class="slider round"></span>
+                </label>
+            </div>
+
+            ${d.highlightMatches !== false ? html`
+                <div class="sp-toggle-row">
+                    <div class="sp-toggle-info">
+                        <span class="sp-toggle-title">Style It Here</span>
+                        <span class="sp-toggle-desc">Off uses your own tag instead.</span>
+                    </div>
+                    <label class="switch switch-sm">
+                        <input type="checkbox"
+                               .checked=${!!d.useStyleSettings}
+                               @change=${e => { d.useStyleSettings = e.target.checked; this.requestUpdate(); }}>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <div class="sp-group">
+                    <label class="sp-label">Preview</label>
+                    <div style="padding: 14px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); font-size: 14px; line-height: 1.6;">
+                        …operates in more than 40 ${this._highlightPreview(d)} producing countries…
+                    </div>
+                </div>
+
+                ${d.useStyleSettings ? html`
+                    <div class="form-row-2col">
+                        <div class="form-group">
+                            <label class="sp-label">Text Colour</label>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <input type="color"
+                                       class="sp-input"
+                                       style="flex: 0 0 48px; padding: 2px; height: 34px;"
+                                       .value=${this._safeColour(st.textColour) || '#15803d'}
+                                       @input=${e => set('textColour', e.target.value)}>
+                                <input type="text"
+                                       class="sp-input"
+                                       style="flex: 1; font-family: monospace;"
+                                       placeholder="inherit"
+                                       .value=${st.textColour ?? ''}
+                                       @input=${e => set('textColour', e.target.value)}>
+                            </div>
+                            <span class="sp-hint">Empty keeps the surrounding colour.</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="sp-label">Background</label>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <input type="color"
+                                       class="sp-input"
+                                       style="flex: 0 0 48px; padding: 2px; height: 34px;"
+                                       .value=${this._safeColour(st.backgroundColour) || '#fef08a'}
+                                       @input=${e => set('backgroundColour', e.target.value)}>
+                                <input type="text"
+                                       class="sp-input"
+                                       style="flex: 1; font-family: monospace;"
+                                       placeholder="none"
+                                       .value=${st.backgroundColour ?? ''}
+                                       @input=${e => set('backgroundColour', e.target.value)}>
+                            </div>
+                            <span class="sp-hint">Empty draws no background.</span>
+                        </div>
+                    </div>
+
+                    <div class="sp-group">
+                        <label class="sp-label">Emphasis</label>
+                        <div class="sp-choice-actions">
+                            ${[['bold', 'Bold'], ['italic', 'Italic'], ['underline', 'Underline']].map(([key, label]) => html`
+                                <button class="btn ${st[key] ? 'btn-primary' : 'btn-secondary'} btn-sm"
+                                        @click=${() => set(key, !st[key])}>
+                                    ${label}
+                                </button>
+                            `)}
+                        </div>
+                    </div>
+
+                    <div class="form-row-3col">
+                        <div class="form-group">
+                            <label class="sp-label">Size (%)</label>
+                            <input type="number" class="sp-input" min="50" max="300" step="5"
+                                   .value=${String(st.fontScalePercent ?? 100)}
+                                   @input=${e => set('fontScalePercent', parseInt(e.target.value) || 100)}>
+                        </div>
+                        <div class="form-group">
+                            <label class="sp-label">Corner Radius (px)</label>
+                            <input type="number" class="sp-input" min="0" max="40"
+                                   .value=${String(st.cornerRadius ?? 0)}
+                                   @input=${e => set('cornerRadius', parseInt(e.target.value) || 0)}>
+                        </div>
+                        <div class="form-group">
+                            <label class="sp-label">Padding X / Y (px)</label>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <input type="number" class="sp-input" style="flex: 1;" min="0" max="40"
+                                       .value=${String(st.paddingX ?? 0)}
+                                       @input=${e => set('paddingX', parseInt(e.target.value) || 0)}>
+                                <input type="number" class="sp-input" style="flex: 1;" min="0" max="40"
+                                       .value=${String(st.paddingY ?? 0)}
+                                       @input=${e => set('paddingY', parseInt(e.target.value) || 0)}>
+                            </div>
+                        </div>
+                    </div>
+                ` : html`
+                    <div class="form-row-2col">
+                        <div class="form-group">
+                            <label class="sp-label">Opening Tag</label>
+                            <input type="text" class="sp-input" style="font-family: monospace;"
+                                   placeholder="&lt;mark&gt;"
+                                   .value=${d.startTag ?? ''}
+                                   @input=${e => { d.startTag = e.target.value; this.requestUpdate(); }}>
+                        </div>
+                        <div class="form-group">
+                            <label class="sp-label">Closing Tag</label>
+                            <input type="text" class="sp-input" style="font-family: monospace;"
+                                   placeholder="&lt;/mark&gt;"
+                                   .value=${d.endTag ?? ''}
+                                   @input=${e => { d.endTag = e.target.value; this.requestUpdate(); }}>
+                        </div>
+                    </div>
+                `}
+            ` : nothing}
+        `;
+    }
+
+    /**
+     * The preview word, styled exactly as the server will style it.
+     *
+     * Deliberately rebuilds the same declarations BuildStartTag does rather than rendering the
+     * server's tag: an unvalidated colour must never reach markup, here or anywhere.
+     */
+    _highlightPreview(d) {
+        if (!d.useStyleSettings) {
+            return html`<strong>major</strong>`;
+        }
+
+        const st = d.style || {};
+        const parts = [];
+        const text = this._safeColour(st.textColour);
+        const back = this._safeColour(st.backgroundColour);
+
+        if (text) parts.push('color:' + text);
+        parts.push('background:' + (back || 'transparent'));
+        parts.push('font-weight:' + (st.bold ? '700' : 'inherit'));
+        if (st.italic) parts.push('font-style:italic');
+        parts.push('text-decoration:' + (st.underline ? 'underline' : 'none'));
+
+        const scale = Math.min(300, Math.max(50, st.fontScalePercent || 100));
+        if (scale !== 100) parts.push('font-size:' + scale + '%');
+
+        const radius = Math.min(40, Math.max(0, st.cornerRadius || 0));
+        if (radius) parts.push('border-radius:' + radius + 'px');
+
+        const px = Math.min(40, Math.max(0, st.paddingX || 0));
+        const py = Math.min(40, Math.max(0, st.paddingY || 0));
+        if (px || py) parts.push('padding:' + py + 'px ' + px + 'px');
+
+        return html`<mark style=${parts.join(';')}>major</mark>`;
+    }
+
+    /**
+     * A colour safe to put in markup, or empty. The same allowlist the server applies - hex or a
+     * letters-only keyword - so the preview cannot show something the site would refuse.
+     */
+    _safeColour(value) {
+        const text = (value || '').trim();
+        if (!text || text.length > 32) return '';
+        if (text[0] === '#') {
+            const d = text.slice(1);
+            return /^[0-9a-fA-F]+$/.test(d) && [3, 6, 8].includes(d.length) ? text.toLowerCase() : '';
+        }
+        return /^[a-zA-Z]{1,24}$/.test(text) ? text.toLowerCase() : '';
     }
 
     _renderResultShapingSidePanelBody(d) {
         return html`
             <div class="sp-multi-choice-layout">
-                <div class="sp-group" style="margin-bottom: 20px;">
+                <div class="sp-group">
                     <label class="toggle-item" style="margin-bottom: 14px;">
                         <div class="toggle-info">
                             <strong>De-Duplicate Results</strong>
@@ -6473,7 +6731,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     </label>
                 </div>
 
-                <div class="sp-group" style="margin-bottom: 20px;">
+                <div class="sp-group">
                     <label class="sp-label">De-Duplicate Results by Field</label>
                     <input type="text"
                            class="sp-input"
@@ -6509,7 +6767,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     <p class="sp-choice-desc">When filters take effect. Dependencies make one wait for another.</p>
                 </div>
 
-                <div class="sp-group" style="margin-bottom: 20px;">
+                <div class="sp-group">
                     <label class="sp-label">Minimum Active Filters</label>
                     <input type="number"
                            class="sp-input"
@@ -6615,10 +6873,10 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 <select class="sp-select"
                         .value=${d.matchMode}
                         @change=${e => { d.matchMode = e.target.value; this.requestUpdate(); }}>
-                    <option value="prefix">Prefix (term* - Default)</option>
-                    <option value="exact">Exact Match</option>
-                    <option value="fuzzy">Fuzzy (term~ typo tolerant)</option>
-                    <option value="wildcard">Wildcard (*term*)</option>
+                    <option value="prefix" ?selected=${String(d.matchMode) === 'prefix'}>Prefix (term* - Default)</option>
+                    <option value="exact" ?selected=${String(d.matchMode) === 'exact'}>Exact Match</option>
+                    <option value="fuzzy" ?selected=${String(d.matchMode) === 'fuzzy'}>Fuzzy (term~ typo tolerant)</option>
+                    <option value="wildcard" ?selected=${String(d.matchMode) === 'wildcard'}>Wildcard (*term*)</option>
                 </select>
             </div>
 
@@ -6858,12 +7116,12 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                                         }
                                                         this.requestUpdate();
                                                     }}>
-                                                <option value="">-- Choose Document Type --</option>
+                                                <option value="" ?selected=${String(opt.alias || opt.from || '') === ''}>-- Choose Document Type --</option>
                                                 ${(this._catalog?.contentTypes || []).map(ct => html`
                                                     <option value="${ct.alias}" ?selected=${opt.alias === ct.alias || opt.from === ct.alias}>${ct.name} (${ct.alias})</option>
                                                 `)}
                                                 ${opt.alias && !(this._catalog?.contentTypes || []).some(ct => ct.alias === opt.alias) ? html`
-                                                    <option value="${opt.alias}" selected>${opt.alias}</option>
+                                                    <option value="${opt.alias}" ?selected=${String(opt.alias || opt.from || '') === '${opt.alias}'} selected>${opt.alias}</option>
                                                 ` : nothing}
                                             </select>
                                         ` : html`
@@ -6998,8 +7256,8 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 <select class="sp-select"
                         .value=${d.direction}
                         @change=${e => { d.direction = e.target.value; this.requestUpdate(); }}>
-                    <option value="descending">Descending (Highest / Newest first)</option>
-                    <option value="ascending">Ascending (Lowest / Oldest first)</option>
+                    <option value="descending" ?selected=${String(d.direction) === 'descending'}>Descending (Highest / Newest first)</option>
+                    <option value="ascending" ?selected=${String(d.direction) === 'ascending'}>Ascending (Lowest / Oldest first)</option>
                 </select>
             </div>
         `;
@@ -7012,9 +7270,9 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 <select class="sp-select"
                         .value=${d.contentType}
                         @change=${e => { d.contentType = e.target.value; this.requestUpdate(); }}>
-                    <option value="">Select Document Type...</option>
+                    <option value="" ?selected=${String(d.contentType) === ''}>Select Document Type...</option>
                     ${(this._catalog.contentTypes || []).map(ct => html`
-                        <option value="${ct.alias}">${ct.name} (${ct.alias})</option>
+                        <option value="${ct.alias}" ?selected=${String(d.contentType) === '${ct.alias}'}>${ct.name} (${ct.alias})</option>
                     `)}
                 </select>
                 ${this._sidePanelErrors.contentType ? html`<span class="sp-error">${this._sidePanelErrors.contentType}</span>` : nothing}
@@ -7695,9 +7953,41 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             border-color: var(--error);
         }
 
+        /* A panel is a stack of settings whichever element it happens to be rooted on - about a
+           third of them root on .sp-group rather than the multi-choice layout. Both get the same
+           20px rhythm here, so no panel needs a margin of its own and none of them can drift.
+           Scoped to the direct child so a nested .sp-group keeps its tight label-to-input gap. */
+        .sp-body > .sp-group {
+            gap: 20px;
+        }
+
+        .mf-advanced {
+            display: block;
+            border-top: 1px solid var(--border-light);
+            padding-top: 4px;
+        }
+
+        .mf-advanced > summary {
+            cursor: pointer;
+            padding: 8px 2px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            user-select: none;
+        }
+
+        /* Folded-open content keeps the same rhythm as the cards above it. */
+        .mf-advanced-body {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            padding-top: 20px;
+        }
+
         .btn-sm {
-            padding: 5px 10px;
-            font-size: 12px;
+            height: 30px;
+            padding: 0 12px;
+            font-size: 12.5px;
         }
 
         .btn-icon {
@@ -9087,6 +9377,9 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         .sp-multi-choice-layout {
             display: flex;
             flex-direction: column;
+            /* The same 20px rhythm .source-settings-container uses, so a panel and a tab are
+               spaced identically and no element needs a margin of its own. */
+            gap: 20px;
             flex: 1;
             height: 100%;
             width: 100%;

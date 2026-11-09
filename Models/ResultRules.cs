@@ -55,6 +55,171 @@ public sealed class HighlightRules
     public string StartTag { get; set; } = "<mark>";
 
     public string EndTag { get; set; } = "</mark>";
+
+    /// <summary>
+    /// Builds the wrapping tag from <see cref="Style"/> instead of using
+    /// <see cref="StartTag"/>/<see cref="EndTag"/> as written.
+    /// <para>
+    /// Off by default, so a profile that already names its own tag keeps it. On, the colour, weight
+    /// and shape are set in the backoffice and emitted as an inline style - which is what makes
+    /// them work without a stylesheet change, on the package's own page and on a site's own copy
+    /// of it alike.
+    /// </para>
+    /// </summary>
+    public bool UseStyleSettings { get; set; }
+
+    /// <summary>How a highlighted term looks, when <see cref="UseStyleSettings"/> is on.</summary>
+    public HighlightStyleRules Style { get; set; } = new();
+
+    /// <summary>
+    /// The opening tag to wrap a matched term in: either the configured tag, or one built from
+    /// <see cref="Style"/>.
+    /// </summary>
+    public string ResolvedStartTag()
+        => UseStyleSettings ? Style.BuildStartTag() : StartTag;
+
+    /// <summary>The matching closing tag.</summary>
+    public string ResolvedEndTag()
+        => UseStyleSettings ? HighlightStyleRules.CloseTag : EndTag;
+}
+
+/// <summary>
+/// How a highlighted search term looks: its colour, its weight, and the shape of the mark behind
+/// it.
+/// <para>
+/// Emitted as an inline style rather than a class, because the snippet is written into a page this
+/// package does not own - often a site's own copy of the search view - and a class would only work
+/// if that site happened to define it. An inline style works everywhere or nowhere.
+/// </para>
+/// <para>
+/// Every value here is validated before it reaches the markup. That is not belt and braces: the
+/// snippet is rendered with <c>Html.Raw</c> - it has to be, or the highlight tag would show as
+/// text - so a colour of <c>red"&gt;&lt;script&gt;</c> saved by an editor would otherwise be a
+/// script tag on the search page of every site running this profile. Nothing is passed through.
+/// </para>
+/// </summary>
+public sealed class HighlightStyleRules
+{
+    /// <summary>The closing tag that matches what <see cref="BuildStartTag"/> opens.</summary>
+    public const string CloseTag = "</mark>";
+
+    /// <summary>Text colour of the matched term. Empty keeps the surrounding text's colour.</summary>
+    public string TextColour { get; set; } = "#15803d";
+
+    /// <summary>
+    /// Colour behind the matched term. Empty draws no background, which reads as bold coloured
+    /// text rather than a marker pen across the sentence.
+    /// </summary>
+    public string BackgroundColour { get; set; } = string.Empty;
+
+    public bool Bold { get; set; } = true;
+
+    public bool Italic { get; set; }
+
+    public bool Underline { get; set; }
+
+    /// <summary>
+    /// Size of the matched term relative to the text around it, as a percentage. 100 leaves it
+    /// alone; much above that and the line spacing of the snippet starts to jump around it.
+    /// </summary>
+    public int FontScalePercent { get; set; } = 100;
+
+    /// <summary>Corner rounding of the background, in pixels. 0 is square; a large value is a pill.</summary>
+    public int CornerRadius { get; set; }
+
+    /// <summary>Space between the term and the edge of its background, in pixels.</summary>
+    public int PaddingX { get; set; }
+
+    public int PaddingY { get; set; }
+
+    /// <summary>
+    /// The opening tag, with every value validated and anything unrecognised dropped.
+    /// <para>
+    /// A <c>mark</c> element rather than a <c>span</c>: it is what the element is for, and it
+    /// carries the meaning to a screen reader even when the styling says nothing.
+    /// </para>
+    /// </summary>
+    public string BuildStartTag()
+    {
+        var declarations = new List<string>();
+
+        if (Colour(TextColour) is { } text)
+        {
+            declarations.Add("color:" + text);
+        }
+
+        // Always stated, so the browser's own yellow <mark> default never shows through a profile
+        // that deliberately asked for no background.
+        declarations.Add("background:" + (Colour(BackgroundColour) ?? "transparent"));
+
+        declarations.Add("font-weight:" + (Bold ? "700" : "inherit"));
+
+        if (Italic)
+        {
+            declarations.Add("font-style:italic");
+        }
+
+        declarations.Add("text-decoration:" + (Underline ? "underline" : "none"));
+
+        var scale = Math.Clamp(FontScalePercent <= 0 ? 100 : FontScalePercent, 50, 300);
+
+        if (scale != 100)
+        {
+            declarations.Add("font-size:" + scale + "%");
+        }
+
+        var radius = Math.Clamp(CornerRadius, 0, 40);
+
+        if (radius > 0)
+        {
+            declarations.Add("border-radius:" + radius + "px");
+        }
+
+        var padX = Math.Clamp(PaddingX, 0, 40);
+        var padY = Math.Clamp(PaddingY, 0, 40);
+
+        if (padX > 0 || padY > 0)
+        {
+            declarations.Add("padding:" + padY + "px " + padX + "px");
+        }
+
+        return "<mark style=\"" + string.Join(";", declarations) + "\">";
+    }
+
+    /// <summary>
+    /// A colour the markup can safely carry, or null.
+    /// <para>
+    /// An allowlist, not an escape: only <c>#rgb</c>, <c>#rrggbb</c>, <c>#rrggbbaa</c> and the CSS
+    /// colour keywords get through, so there is no sequence a value could take that would end the
+    /// attribute or the tag. Anything else is dropped rather than corrected - a colour that does
+    /// not apply is a visible, harmless mistake, and guessing what someone meant is how a sanitiser
+    /// ends up passing something through.
+    /// </para>
+    /// </summary>
+    public static string? Colour(string? value)
+    {
+        var text = (value ?? string.Empty).Trim();
+
+        if (text.Length is 0 or > 32)
+        {
+            return null;
+        }
+
+        if (text[0] == '#')
+        {
+            var digits = text[1..];
+
+            return digits.Length is 3 or 6 or 8 && digits.All(Uri.IsHexDigit)
+                ? text.ToLowerInvariant()
+                : null;
+        }
+
+        // A keyword is letters only, which rules out every character that could matter: no quotes,
+        // no angle brackets, no semicolons, no parentheses, so no rgb() or url() either.
+        return text.All(char.IsAsciiLetter) && text.Length <= 24
+            ? text.ToLowerInvariant()
+            : null;
+    }
 }
 
 /// <summary>Defines the <em>shape</em> of what comes back: paging, fields and post-processing.</summary>

@@ -1359,6 +1359,92 @@
         <member name="P:Imobisoft.Search.Models.HighlightRules.StartTag">
             <summary>Wraps the matched term when <see cref="P:Imobisoft.Search.Models.HighlightRules.HighlightMatches"/> is on.</summary>
         </member>
+        <member name="P:Imobisoft.Search.Models.HighlightRules.UseStyleSettings">
+            <summary>
+            Builds the wrapping tag from <see cref="P:Imobisoft.Search.Models.HighlightRules.Style"/> instead of using
+            <see cref="P:Imobisoft.Search.Models.HighlightRules.StartTag"/>/<see cref="P:Imobisoft.Search.Models.HighlightRules.EndTag"/> as written.
+            <para>
+            Off by default, so a profile that already names its own tag keeps it. On, the colour, weight
+            and shape are set in the backoffice and emitted as an inline style - which is what makes
+            them work without a stylesheet change, on the package's own page and on a site's own copy
+            of it alike.
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.HighlightRules.Style">
+            <summary>How a highlighted term looks, when <see cref="P:Imobisoft.Search.Models.HighlightRules.UseStyleSettings"/> is on.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Models.HighlightRules.ResolvedStartTag">
+            <summary>
+            The opening tag to wrap a matched term in: either the configured tag, or one built from
+            <see cref="P:Imobisoft.Search.Models.HighlightRules.Style"/>.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Models.HighlightRules.ResolvedEndTag">
+            <summary>The matching closing tag.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Models.HighlightStyleRules">
+            <summary>
+            How a highlighted search term looks: its colour, its weight, and the shape of the mark behind
+            it.
+            <para>
+            Emitted as an inline style rather than a class, because the snippet is written into a page this
+            package does not own - often a site's own copy of the search view - and a class would only work
+            if that site happened to define it. An inline style works everywhere or nowhere.
+            </para>
+            <para>
+            Every value here is validated before it reaches the markup. That is not belt and braces: the
+            snippet is rendered with <c>Html.Raw</c> - it has to be, or the highlight tag would show as
+            text - so a colour of <c>red"&gt;&lt;script&gt;</c> saved by an editor would otherwise be a
+            script tag on the search page of every site running this profile. Nothing is passed through.
+            </para>
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Models.HighlightStyleRules.CloseTag">
+            <summary>The closing tag that matches what <see cref="M:Imobisoft.Search.Models.HighlightStyleRules.BuildStartTag"/> opens.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.HighlightStyleRules.TextColour">
+            <summary>Text colour of the matched term. Empty keeps the surrounding text's colour.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.HighlightStyleRules.BackgroundColour">
+            <summary>
+            Colour behind the matched term. Empty draws no background, which reads as bold coloured
+            text rather than a marker pen across the sentence.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.HighlightStyleRules.FontScalePercent">
+            <summary>
+            Size of the matched term relative to the text around it, as a percentage. 100 leaves it
+            alone; much above that and the line spacing of the snippet starts to jump around it.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.HighlightStyleRules.CornerRadius">
+            <summary>Corner rounding of the background, in pixels. 0 is square; a large value is a pill.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.HighlightStyleRules.PaddingX">
+            <summary>Space between the term and the edge of its background, in pixels.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Models.HighlightStyleRules.BuildStartTag">
+            <summary>
+            The opening tag, with every value validated and anything unrecognised dropped.
+            <para>
+            A <c>mark</c> element rather than a <c>span</c>: it is what the element is for, and it
+            carries the meaning to a screen reader even when the styling says nothing.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Models.HighlightStyleRules.Colour(System.String)">
+            <summary>
+            A colour the markup can safely carry, or null.
+            <para>
+            An allowlist, not an escape: only <c>#rgb</c>, <c>#rrggbb</c>, <c>#rrggbbaa</c> and the CSS
+            colour keywords get through, so there is no sequence a value could take that would end the
+            attribute or the tag. Anything else is dropped rather than corrected - a colour that does
+            not apply is a visible, harmless mistake, and guessing what someone meant is how a sanitiser
+            ends up passing something through.
+            </para>
+            </summary>
+        </member>
         <member name="T:Imobisoft.Search.Models.ResultRules">
             <summary>Defines the <em>shape</em> of what comes back: paging, fields and post-processing.</summary>
         </member>

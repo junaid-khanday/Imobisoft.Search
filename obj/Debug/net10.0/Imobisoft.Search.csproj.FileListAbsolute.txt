@@ -120,6 +120,6 @@ D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\od2tpep2xh-{0}-2oa8ef
 D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\d3wrj8pbx3-{0}-yb1imisx9f-yb1imisx9f.gz
 D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\dffy4krckw-{0}-q09xmzy3s0-q09xmzy3s0.gz
 D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\ee9apxmh1x-{0}-s9cip73zfn-s9cip73zfn.gz
-D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\yngxw0rsot-{0}-ohf4ix3523-ohf4ix3523.gz
+D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\compressed\yngxw0rsot-{0}-d04hs9r7vv-d04hs9r7vv.gz
 D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\staticwebassets.upToDateCheck.txt
 D:\imobisoft\Imobisoft.Search\obj\Debug\net10.0\Imobisof.5574A79A.Up2Date

@@ -1551,9 +1551,14 @@ internal sealed partial class SearchResultProcessor
         // added around the matched words - which is why they survive the encoding.
         var encoded = WebUtility.HtmlEncode(snippet);
 
+        // Either the tag the profile names, or one built from its colour and shape settings. Both
+        // are resolved here rather than read off the rules directly, so the style path cannot be
+        // bypassed by a caller reaching for StartTag.
+        var startTag = highlight.ResolvedStartTag();
+
         builder.Append(
-            highlight.HighlightMatches && !string.IsNullOrEmpty(highlight.StartTag)
-                ? matcher.Replace(encoded, m => highlight.StartTag + m.Value + highlight.EndTag)
+            highlight.HighlightMatches && !string.IsNullOrEmpty(startTag)
+                ? matcher.Replace(encoded, m => startTag + m.Value + highlight.ResolvedEndTag())
                 : encoded);
 
         if (start + length < source.Length)
