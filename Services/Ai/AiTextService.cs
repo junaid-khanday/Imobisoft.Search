@@ -87,7 +87,10 @@ public sealed class AiTextResult
 /// <summary>The live text tools, as the site's endpoint calls them.</summary>
 public interface IAiTextService
 {
-    /// <summary>Whether the tools are configured and switched on for a profile.</summary>
+    /// <summary>
+    /// Whether AI has anything to put on a search page for this profile - a button, a card, or the
+    /// notice about a query it rewrote. Either half of AI is enough on its own.
+    /// </summary>
     bool IsAvailable(string? profileAlias);
 
     /// <summary>The rules the frontend needs: which actions to offer, and which languages.</summary>
@@ -155,16 +158,34 @@ public sealed class AiTextService : IAiTextService
     {
         AiRules? rules = RulesFor(profileAlias);
 
-        if (rules is not { Enabled: true } || !_credentials.Describe().HasKey)
+        if (rules is null || !_credentials.Describe().HasKey)
         {
             return false;
         }
 
         // Either something a visitor can press, or something the page shows without being asked.
         // A profile with no buttons but an answer card switched on is a working configuration, and
-        // before the card existed this only had buttons to look for.
-        return (_options.EnableAiTextTools && rules.Actions.Count > 0)
-               || (_options.EnableAiSearch && (rules.Search.AnswerCard || rules.Search.RelatedSearches));
+        // before the card existed this only had buttons to look for. Each half is tested against
+        // its own switch, so neither can be the reason the other shows nothing.
+        if (_options.EnableAiTextTools && rules.Enabled && rules.Actions.Count > 0)
+        {
+            return true;
+        }
+
+        if (!_options.EnableAiSearch || !rules.SearchEnabled)
+        {
+            return false;
+        }
+
+        // Query understanding counts as well, even though it puts no panel on the page of its own.
+        // What it has to show is the notice saying which words were actually searched for - and a
+        // site whose own page does not render that server-side gets it from the state endpoint,
+        // which a page only asks for when this says there is something to ask about. Leaving it
+        // out meant switching on "read the query" alone changed the results and told the visitor
+        // nothing, which is the one thing this feature must never do silently.
+        return rules.Search.AnswerCard
+               || rules.Search.RelatedSearches
+               || rules.Search.UnderstandQuery;
     }
 
     /// <inheritdoc />
@@ -186,11 +207,14 @@ public sealed class AiTextService : IAiTextService
     {
         AiRules? rules = RulesFor(request.ProfileAlias);
 
-        if (rules is null || !rules.Enabled)
+        if (rules is null)
         {
             return AiTextResult.Failure("The AI text tools are switched off.", 404);
         }
 
+        // No blanket profile switch here: which switch governs this request depends on which half
+        // the action belongs to, and only IsAllowed knows that. Checking the text tools switch for
+        // everything is what used to make the answer card impossible without buttons on the page.
         if (!IsAllowed(rules, request.Action))
         {
             return AiTextResult.Failure("That action is not enabled.", 400);
@@ -576,9 +600,9 @@ public sealed class AiTextService : IAiTextService
     private bool IsAllowed(AiRules rules, AiAction action)
         => action switch
         {
-            AiAction.Overview => _options.EnableAiSearch && rules.Search.AnswerCard,
-            AiAction.RelatedSearches => _options.EnableAiSearch && rules.Search.RelatedSearches,
-            _ => _options.EnableAiTextTools && rules.Actions.Contains(action),
+            AiAction.Overview => _options.EnableAiSearch && rules.SearchEnabled && rules.Search.AnswerCard,
+            AiAction.RelatedSearches => _options.EnableAiSearch && rules.SearchEnabled && rules.Search.RelatedSearches,
+            _ => _options.EnableAiTextTools && rules.Enabled && rules.Actions.Contains(action),
         };
 
     /// <summary>

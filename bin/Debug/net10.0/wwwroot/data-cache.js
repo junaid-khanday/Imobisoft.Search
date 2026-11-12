@@ -221,6 +221,13 @@ export async function updateSettings(fetchFn, settings) {
     return res;
 }
 
+/** The appsettings switches as they are actually in effect. Read-only. */
+export function getDeploymentConfiguration(fetchFn, { force = false } = {}) {
+    const url = `${getBaseApiUrl()}settings/deployment`;
+    if (force) _entries.delete("settings:deployment");
+    return _read("settings:deployment", SETTINGS_TTL_MS, () => _json(fetchFn, url));
+}
+
 // ----------------- TEMPLATES API -----------------
 
 /** The views a site may take over, and which ones it already has. */

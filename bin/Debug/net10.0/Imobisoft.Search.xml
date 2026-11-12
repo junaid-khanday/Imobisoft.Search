@@ -185,6 +185,31 @@
         <member name="T:Imobisoft.Search.Api.SearchSettingsController">
             <summary>Site-wide package settings, as opposed to the per-profile search rules.</summary>
         </member>
+        <member name="M:Imobisoft.Search.Api.SearchSettingsController.Deployment">
+            <summary>
+            The deployment switches, as they are actually in effect.
+            <para>
+            Read-only on purpose, and worth having anyway. These live in <c>appsettings.json</c> so that
+            a developer decides them and an editor cannot switch the package off for the whole site or
+            open a paid AI endpoint by accident. But being unchangeable in the backoffice had turned
+            into being <em>invisible</em> there: with the AI features not appearing on a site, nothing
+            on any screen said whether the feature was off or the deployment switch was. A value you
+            cannot edit is still a value you need to be able to read.
+            </para>
+            </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Api.DeploymentSetting">
+            <summary>One deployment switch and its effective value.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Api.DeploymentSetting.IsOn">
+            <summary>For a switch, whether it is on. Always true for a value that is not a switch.</summary>
+        </member>
+        <member name="T:Imobisoft.Search.Api.DeploymentConfigurationResult">
+            <summary>The deployment switches plus where to change them.</summary>
+        </member>
+        <member name="P:Imobisoft.Search.Api.DeploymentConfigurationResult.Section">
+            <summary>The appsettings section these are bound from.</summary>
+        </member>
         <member name="T:Imobisoft.Search.Api.SearchAutocompleteController">
             <summary>Type-ahead, so the dashboard's test panel can exercise it the way a site would.</summary>
         </member>
@@ -748,6 +773,24 @@
             </para>
             </summary>
         </member>
+        <member name="P:Imobisoft.Search.Models.AiSearchRules.Enabled">
+            <summary>
+            Whether these stages may run at all, independently of the text tools.
+            <para>
+            There used to be one switch for both halves of AI, and it was the one on the text tools box
+            - so a site that wanted its results re-ordered had to put summarise buttons on the page to
+            get it, and a site that turned the buttons off silently lost query understanding and the
+            answer card with them. Two features that cost money on different schedules need two
+            switches.
+            </para>
+            <para>
+            Null means a profile saved before this existed, and defers to <see cref="P:Imobisoft.Search.Models.AiRules.Enabled"/>
+            - so an editor who had switched AI off keeps it off, rather than finding that re-ranking
+            resumed spending at their provider because it gained a switch of its own. The backoffice
+            always writes a real value, so a profile saved once is decided from then on.
+            </para>
+            </summary>
+        </member>
         <member name="P:Imobisoft.Search.Models.AiSearchRules.UnderstandQuery">
             <summary>
             Reads the query before it runs: corrects the spelling, adds the words the site itself uses
@@ -872,8 +915,19 @@
         </member>
         <member name="P:Imobisoft.Search.Models.AiRules.Enabled">
             <summary>
-            Turns the text tools on. Off, nothing is injected into the site and the public endpoint
-            refuses every request - which is also what happens when no key has been added yet.
+            Turns the text tools on - the buttons a visitor presses on a result. Off, no buttons are
+            injected into the site and the public endpoint refuses every press, which is also what
+            happens when no key has been added yet.
+            <para>
+            The text tools only. AI inside the search has its own switch,
+            <see cref="P:Imobisoft.Search.Models.AiSearchRules.Enabled"/>, and neither half waits on the other.
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.AiRules.SearchEnabled">
+            <summary>
+            Whether AI inside the search may run for this profile: the search half's own switch, or the
+            text tools switch for a profile saved before it had one.
             </summary>
         </member>
         <member name="P:Imobisoft.Search.Models.AiRules.Provider">
@@ -1505,10 +1559,28 @@
             </para>
             </summary>
         </member>
+        <member name="P:Imobisoft.Search.Models.ResultRules.TitleFields">
+            <summary>
+            Index fields to take a result's heading from, in order of preference. The first one with
+            anything in it wins; the node's own name is used when none of them do.
+            <para>
+            A result's heading came from the node name and nothing else, which is right for most sites
+            and wrong for the ones whose editors set a <c>pageTitle</c> or <c>metaTitle</c> that differs
+            from the name in the tree - there the search said one thing and the page said another, with
+            no way to reconcile them short of renaming content. Falling back to the node name means
+            leaving this empty behaves exactly as before.
+            </para>
+            </summary>
+        </member>
         <member name="P:Imobisoft.Search.Models.ResultRules.ReturnFields">
             <summary>
             Index fields copied into each result. Empty means the package returns a useful default set
             (name, url, content type, dates) plus whatever fields were searched.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.ResultRules.TypeLabels">
+            <summary>
+            Whether a result says what kind of thing it is, and what it calls it.
             </summary>
         </member>
         <member name="P:Imobisoft.Search.Models.ResultRules.GroupByContentType">
@@ -1546,6 +1618,57 @@
             Z-A, price lowest-first or highest-first. When a visitor picks one it overrides the
             profile's ranking order for that request; otherwise <see cref="P:Imobisoft.Search.Models.RankingRules.SortBy"/> rules.
             </summary>
+        </member>
+        <member name="T:Imobisoft.Search.Models.ResultTypeLabelRules">
+            <summary>
+            Whether a result is labelled with what kind of thing it is, and in what words.
+            <para>
+            The label was decided in C#: shown for media, members and best bets, hidden on every content
+            result, and printed as the raw document type alias when shown. A site whose results are a mix
+            of pages, news articles and downloads had no way to say so, and a site that wanted the label
+            got <c>umbracoMediaVideo</c> rather than "Video". Both halves are settings now, and the
+            defaults reproduce the previous behaviour exactly.
+            </para>
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.ResultTypeLabelRules.ShowOnContent">
+            <summary>
+            Show the label on content results too, not only on media, members and best bets.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.ResultTypeLabelRules.Hidden">
+            <summary>
+            Hide the label everywhere, including on media and members.
+            </summary>
+        </member>
+        <member name="P:Imobisoft.Search.Models.ResultTypeLabelRules.Labels">
+            <summary>
+            What to call each document or media type, keyed by its alias - <c>newsArticle</c> to
+            "News". An alias with no entry is labelled with its alias, as it always was.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Models.ResultTypeLabelRules.HasLabel(System.String,System.String)">
+            <summary>
+            Whether an editor has given this type wording of its own.
+            <para>
+            Naming a type is taken as saying it should be shown. The wording is set beside the tick that
+            includes the type in search, where "Shown on the frontend as: Page" plainly means the word
+            Page appears on the frontend - and it would not have, because the label is hidden on content
+            results unless <see cref="P:Imobisoft.Search.Models.ResultTypeLabelRules.ShowOnContent"/> says otherwise. A field that quietly does nothing
+            until a switch on another tab is found is worse than no field.
+            </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Models.ResultTypeLabelRules.Resolve(System.String,System.String)">
+            <summary>
+            The label for one alias: the configured wording, or the alias itself when none is set.
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Models.ResultTypeLabelRules.KeyFor(System.String,System.String)">
+            <summary>The alias a label is keyed by, falling back to the index type.</summary>
+        </member>
+        <member name="M:Imobisoft.Search.Models.ResultTypeLabelRules.TryFindLabel(System.String,System.String@)">
+            <summary>The wording set for this key, if any.</summary>
         </member>
         <member name="T:Imobisoft.Search.Models.SearchBoxModel">
             <summary>
@@ -3095,7 +3218,10 @@
             <summary>The live text tools, as the site's endpoint calls them.</summary>
         </member>
         <member name="M:Imobisoft.Search.Services.Ai.IAiTextService.IsAvailable(System.String)">
-            <summary>Whether the tools are configured and switched on for a profile.</summary>
+            <summary>
+            Whether AI has anything to put on a search page for this profile - a button, a card, or the
+            notice about a query it rewrote. Either half of AI is enough on its own.
+            </summary>
         </member>
         <member name="M:Imobisoft.Search.Services.Ai.IAiTextService.RulesFor(System.String)">
             <summary>The rules the frontend needs: which actions to offer, and which languages.</summary>
@@ -4134,13 +4260,23 @@
         </member>
         <member name="M:Imobisoft.Search.Services.Querying.SearchResultProcessor.Describe(System.Collections.Generic.IList{Imobisoft.Search.Models.SearchResultItem},Imobisoft.Search.Models.ResultRules)">
             <summary>
-            Gives each result on the page the two things a result line needs beyond its name: something
-            to say about itself, and a date that reads as a date.
+            Gives each result on the page the three things a result line needs: a heading, something to
+            say about itself, and a date that reads as a date.
             <para>
             The dates are parsed here rather than left to the view, because the index writes them as a
             tick count - a view printing the raw field shows a long run of digits that looks like an id.
             </para>
             </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Services.Querying.SearchResultProcessor.ApplyTitle(Imobisoft.Search.Models.SearchResultItem,System.Collections.Generic.IReadOnlyList{System.String})">
+            <summary>
+            Takes the heading from the first configured field that carries one, leaving the node's own
+            name in place when none do - which is what an unconfigured profile does, and what the
+            package did before the setting existed.
+            </summary>
+        </member>
+        <member name="F:Imobisoft.Search.Services.Querying.SearchResultProcessor.MaximumTitleLength">
+            <summary>Cuts a heading taken from a content field, in case the field holds prose.</summary>
         </member>
         <member name="M:Imobisoft.Search.Services.Querying.SearchResultProcessor.FindDescription(Imobisoft.Search.Models.SearchResultItem,System.Collections.Generic.IReadOnlyList{System.String},System.Int32)">
             <summary>The first of the named fields this result actually carries anything in.</summary>
@@ -5210,6 +5346,12 @@
             Off, the box is cleared after a search.
             </summary>
         </member>
+        <member name="P:Imobisoft.Search.Web.ImobisoftSearchPageViewModel.TypeLabels">
+            <summary>
+            Whether a result is labelled with what kind of thing it is, and in what words. From the
+            profile's result rules.
+            </summary>
+        </member>
         <member name="P:Imobisoft.Search.Web.ImobisoftSearchPageViewModel.OriginalTerm">
             <summary>
             What the visitor typed, before AI query understanding rewrote it. Null when nothing was
@@ -5271,6 +5413,12 @@
             The date is not governed by this. It sits under the description on every result, because it
             is context for what was just read rather than a label on the result.
             </para>
+            </summary>
+        </member>
+        <member name="M:Imobisoft.Search.Web.ImobisoftSearchPageViewModel.ResultTypeLabel(Imobisoft.Search.Models.SearchResultItem)">
+            <summary>
+            What to call this result's type: the wording the profile gives the alias, or the alias
+            itself when it gives none.
             </summary>
         </member>
         <member name="M:Imobisoft.Search.Web.ImobisoftSearchPageViewModel.IsStructuredLeftover(System.String)">

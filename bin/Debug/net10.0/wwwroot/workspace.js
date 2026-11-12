@@ -18,6 +18,7 @@ import {
     purgeInsights,
     getSettings,
     updateSettings,
+    getDeploymentConfiguration,
     uploadSearchBoxIcon,
     getTemplates,
     getTemplate,
@@ -52,6 +53,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         _insightsDays: { state: true },
         _insightsActiveReport: { state: true },
         _settings: { state: true },
+        _deployment: { state: true },
         _settingsSaving: { state: true },
         _profileSaving: { state: true },
         _iconUploading: { state: true },
@@ -166,6 +168,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         this._insightsDays = 30;
         this._insightsActiveReport = 'zero';
         this._settings = this._createEmptySettings();
+        this._deployment = null;
         this._settingsSaving = false;
         this._profileSaving = false;
         this._iconUploading = false;
@@ -343,6 +346,21 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         } catch (e) {
             console.error("Failed to load settings:", e);
         }
+
+        await this._loadDeployment(force);
+    }
+
+    /** The appsettings switches, so a feature that is off at deployment can be seen to be off. */
+    async _loadDeployment(force = false) {
+        try {
+            const res = await getDeploymentConfiguration(this._fetch.bind(this), { force });
+            this._deployment = res.ok && res.data ? res.data : null;
+        } catch (e) {
+            console.error("Failed to load deployment configuration:", e);
+            this._deployment = null;
+        }
+
+        this.requestUpdate();
     }
 
     async _loadInsights(days = this._insightsDays, force = false) {
@@ -457,7 +475,9 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     pageSize: 10,
                     maxResults: 500,
                     enableLoadMore: false,
+                    titleFields: [],
                     returnFields: [],
+                    typeLabels: { hidden: false, showOnContent: false, labels: {} },
                     groupByContentType: false,
                     deduplicateByField: '',
                     highlight: {
@@ -774,7 +794,13 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         if (p.rules.results.pageSize === undefined) p.rules.results.pageSize = 10;
         if (p.rules.results.maxResults === undefined) p.rules.results.maxResults = 500;
         if (p.rules.results.enableLoadMore === undefined) p.rules.results.enableLoadMore = false;
+        if (!p.rules.results.titleFields) p.rules.results.titleFields = [];
         if (!p.rules.results.returnFields) p.rules.results.returnFields = [];
+        if (!p.rules.results.typeLabels) p.rules.results.typeLabels = {};
+        const tl = p.rules.results.typeLabels;
+        if (tl.hidden === undefined) tl.hidden = false;
+        if (tl.showOnContent === undefined) tl.showOnContent = false;
+        if (!tl.labels) tl.labels = {};
         if (p.rules.results.groupByContentType === undefined) p.rules.results.groupByContentType = false;
         if (!p.rules.results.deduplicateByField) p.rules.results.deduplicateByField = '';
         if (!p.rules.results.highlight) p.rules.results.highlight = { enabled: false, highlightMatches: true, mode: 'sentence', field: '', snippetLength: 200, sentenceContext: 0, startTag: '<mark>', endTag: '</mark>' };
@@ -1096,6 +1122,11 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             // anything inside its own index type.
             this._sidePanelData = {
                 includeContentTypes: this._mergedIncludedTypes(),
+
+                // The frontend wording for each included type, edited here beside the tick that
+                // includes it. The same map the Results tab edits, not a second copy of it - two
+                // places storing the name of one document type is two places to disagree.
+                typeLabels: { ...(this._currentProfile.rules?.results?.typeLabels?.labels || {}) },
                 _searchFilter: ''
             };
         } else if (type === 'editSourceRoots') {
@@ -1107,7 +1138,8 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 rootNodeKeys: [...rootKeys],
                 _rootsInput: rootKeys.join('\n'),
                 excludedNodeKeys: [...excludedKeys],
-                excludeDescendantsOfExcludedNodes: this._currentProfile.rules?.sources?.excludeDescendantsOfExcludedNodes !== false
+                excludeDescendantsOfExcludedNodes: this._currentProfile.rules?.sources?.excludeDescendantsOfExcludedNodes !== false,
+                cultures: [...(this._currentProfile.rules?.sources?.cultures ?? [])]
             };
         } else if (type === 'editSourceProtection') {
             const hideFields = this._currentProfile.rules?.sources?.hideFromSearchFields || [];
@@ -1198,6 +1230,18 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     paddingY: st.paddingY ?? 0
                 }
             };
+        } else if (type === 'editResultDisplay') {
+            const tl = this._currentProfile.rules?.results?.typeLabels || {};
+            this._sidePanelData = {
+                titleFields: [...(this._currentProfile.rules?.results?.titleFields ?? [])],
+                _titleInput: (this._currentProfile.rules?.results?.titleFields ?? []).join('\n'),
+                hidden: !!tl.hidden,
+                showOnContent: !!tl.showOnContent,
+
+                // Edited as rows so an alias can be picked from the catalog, then saved back as the
+                // alias-to-wording map the rules hold.
+                labelRows: Object.entries(tl.labels || {}).map(([alias, label]) => ({ alias, label }))
+            };
         } else if (type === 'editResultShaping') {
             this._sidePanelData = {
                 enableDeduplication: this._currentProfile.rules?.results?.enableDeduplication !== false,
@@ -1223,6 +1267,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             const ai = this._currentProfile.rules?.ai || {};
             const languages = ai.languages || [];
             this._sidePanelData = {
+                enabled: !!ai.enabled,
                 actions: [...(ai.actions || [])],
                 maxQuestionCharacters: ai.maxQuestionCharacters ?? 300,
                 maxPagesConsulted: ai.maxPagesConsulted ?? 4,
@@ -1240,6 +1285,9 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         } else if (type === 'editAiSearch') {
             const s = this._currentProfile.rules?.ai?.search || {};
             this._sidePanelData = {
+                // The effective value, so a profile that has never had this switch shows what it
+                // is actually doing rather than a default it is not using.
+                enabled: this._aiSearchEnabled(this._currentProfile.rules?.ai || {}),
                 understandQuery: !!s.understandQuery,
                 correctSpelling: s.correctSpelling !== false,
                 expandSynonyms: s.expandSynonyms !== false,
@@ -1791,6 +1839,20 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             const split = this._splitTypesByKind(d.includeContentTypes || []);
             this._currentProfile.rules.sources.includeContentTypes = split.content;
             this._currentProfile.rules.sources.includeMediaTypes = split.media;
+
+            // The wording lives with the other result settings, because that is what it governs -
+            // what a result says it is. Untouched entries are carried through, so a name set for a
+            // type that is not ticked right now survives being unticked and ticked again.
+            if (!this._currentProfile.rules.results) this._currentProfile.rules.results = {};
+            if (!this._currentProfile.rules.results.typeLabels) this._currentProfile.rules.results.typeLabels = {};
+
+            const labels = {};
+            for (const [alias, label] of Object.entries(d.typeLabels || {})) {
+                const wording = (label || '').trim();
+                if (alias && wording) labels[alias] = wording;
+            }
+
+            this._currentProfile.rules.results.typeLabels.labels = labels;
         } else if (this._sidePanelType === 'editSourceRoots') {
             let keys = d.rootNodeKeys ? [...d.rootNodeKeys] : [];
             if ((!keys || keys.length === 0) && d._rootsInput) {
@@ -1800,6 +1862,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             this._currentProfile.rules.sources.startNodeKeys = keys;
             this._currentProfile.rules.sources.excludedNodeKeys = d.excludedNodeKeys ? [...d.excludedNodeKeys] : [];
             this._currentProfile.rules.sources.excludeDescendantsOfExcludedNodes = d.excludeDescendantsOfExcludedNodes !== false;
+            this._currentProfile.rules.sources.cultures = (d.cultures || []).filter(Boolean);
         } else if (this._sidePanelType === 'editSourceProtection') {
             this._currentProfile.rules.sources.publishedOnly = d.publishedOnly !== false;
             this._currentProfile.rules.sources.respectNaviHide = d.respectNaviHide !== false;
@@ -1875,6 +1938,25 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             };
 
             this._currentProfile.rules.results.descriptionFields = this._toPathList(d._descriptionInput, d.descriptionFields);
+        } else if (this._sidePanelType === 'editResultDisplay') {
+            if (!this._currentProfile.rules.results) this._currentProfile.rules.results = {};
+            this._currentProfile.rules.results.titleFields = this._toPathList(d._titleInput, d.titleFields);
+
+            const labels = {};
+            for (const row of (d.labelRows || [])) {
+                const alias = (row.alias || '').trim();
+                const label = (row.label || '').trim();
+
+                // A row with no wording is the same as no row: the alias is then printed as-is,
+                // which is what an empty map means.
+                if (alias && label) labels[alias] = label;
+            }
+
+            this._currentProfile.rules.results.typeLabels = {
+                hidden: !!d.hidden,
+                showOnContent: !!d.showOnContent,
+                labels
+            };
         } else if (this._sidePanelType === 'editResultShaping') {
             if (!this._currentProfile.rules.results) this._currentProfile.rules.results = {};
             this._currentProfile.rules.results.enableDeduplication = d.enableDeduplication !== false;
@@ -1895,6 +1977,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             this._currentProfile.rules.results.facets = d.facets || [];
         } else if (this._sidePanelType === 'editAiActions') {
             if (!this._currentProfile.rules.ai) this._currentProfile.rules.ai = {};
+            this._currentProfile.rules.ai.enabled = !!d.enabled;
             this._currentProfile.rules.ai.actions = d.actions || [];
             this._currentProfile.rules.ai.languages = this._toPathList(d._languagesInput, d.languages);
             this._currentProfile.rules.ai.maxQuestionCharacters = Math.min(1000, Math.max(20, parseInt(d.maxQuestionCharacters) || 300));
@@ -1911,6 +1994,9 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             if (!this._currentProfile.rules.ai) this._currentProfile.rules.ai = {};
             if (!this._currentProfile.rules.ai.search) this._currentProfile.rules.ai.search = {};
             const s = this._currentProfile.rules.ai.search;
+            // Written explicitly, which is what settles this profile's two AI halves apart for
+            // good: from here on neither switch is read as a stand-in for the other.
+            s.enabled = !!d.enabled;
             s.understandQuery = !!d.understandQuery;
             s.correctSpelling = !!d.correctSpelling;
             s.expandSynonyms = !!d.expandSynonyms;
@@ -2847,6 +2933,18 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     }
 
     // --- TAB: AI ---
+    /**
+     * Whether AI in search is on for this profile. Mirrors AiRules.SearchEnabled on the server:
+     * undefined means a profile saved before the search half had a switch of its own, and defers
+     * to the text tools switch so nothing starts or stops spending on its own.
+     */
+    _aiSearchEnabled(ai) {
+        const search = ai?.search || {};
+        return search.enabled === undefined || search.enabled === null
+            ? !!ai?.enabled
+            : !!search.enabled;
+    }
+
     _renderAiTab(p) {
         this._ensureProfileStructure(p);
 
@@ -2870,25 +2968,19 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                             <span class="field-type-tag">${current ? current.name : 'Provider'}</span>
                             <span class="field-count-pill">${status.hasKey ? `Key set ${status.hint || ''}` : 'No key yet'}</span>
                         </div>
-                        <div class="field-box-content">
+                        <div class="field-box-content is-stacked">
                             <div class="form-group">
                                 <label class="sp-label">API Key</label>
-                                <div style="display: flex; gap: 8px;">
+                                <div class="sp-input-row">
                                     <input type="password"
                                            id="imobisoft-ai-key"
                                            class="sp-input"
-                                           style="flex: 1;"
                                            autocomplete="off"
-                                           placeholder=${status.hasKey ? 'Paste a new key to replace the current one' : 'sk-… / AIza… / gsk_…'}>
+                                           placeholder=${status.hasKey ? 'Paste a new key to replace' : 'sk-… / AIza… / gsk_…'}>
                                     <button class="btn btn-primary" ?disabled=${this._aiBusy} @click=${() => this._saveAiKey()}>
                                         ${this._aiBusy ? 'Working…' : 'Save Key'}
                                     </button>
                                 </div>
-                                <small class="sp-hint">
-                                    ${status.hasKey && status.detectedProviderName
-                                        ? `Recognised as ${status.detectedProviderName}.`
-                                        : 'Paste the whole key, with no quotes and no "Bearer " prefix.'}
-                                </small>
                             </div>
 
                             <div class="form-row-2col">
@@ -2908,80 +3000,56 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                 <div class="form-group">
                                     <label class="sp-label">Model</label>
                                     ${models.ok && models.models.length > 0 ? html`
-                                        <div style="display: flex; gap: 6px;">
+                                        <div class="sp-input-row">
                                             <select class="sp-input"
-                                                    style="flex: 1;"
                                                     @change=${e => { ai.model = e.target.value; this.requestUpdate(); }}>
                                                 ${ai.model && !models.models.some(m => m.id === ai.model) ? html`
-                                                    <option value=${ai.model} selected>${ai.model} (not offered by this key)</option>
+                                                    <option value=${ai.model} selected>${ai.model}</option>
                                                 ` : nothing}
                                                 ${models.models.map(m => html`
                                                     <option value=${m.id} ?selected=${m.id === ai.model}>${m.label}</option>
                                                 `)}
                                             </select>
                                             <button class="btn btn-secondary"
-                                                    style="flex: 0 0 auto;"
                                                     ?disabled=${this._aiBusy}
-                                                    title="Ask the provider for its model list again"
-                                                    @click=${() => this._loadAiModels(false)}>↻</button>
+                                                    @click=${() => this._loadAiModels(false)}>Refresh</button>
                                         </div>
-                                        <small class="sp-hint">
-                                            ${models.models.length} models this key can run, from ${current ? current.name : 'the provider'}.
-                                            ${models.suggested ? html`Suggested: ${models.suggested}.` : nothing}
-                                        </small>
                                     ` : html`
-                                        <div style="display: flex; gap: 6px;">
+                                        <div class="sp-input-row">
                                             <input type="text"
                                                    class="sp-input"
-                                                   style="flex: 1;"
-                                                   placeholder=${current && current.defaultModel ? current.defaultModel : 'e.g. the model name from your provider'}
+                                                   placeholder=${current && current.defaultModel ? current.defaultModel : 'model name'}
                                                    .value=${ai.model ?? ''}
                                                    @input=${e => { ai.model = e.target.value; this.requestUpdate(); }}>
                                             ${status.hasKey ? html`
                                                 <button class="btn btn-secondary"
-                                                        style="flex: 0 0 auto;"
                                                         ?disabled=${this._aiBusy}
-                                                        title="Ask the provider which models this key can run"
                                                         @click=${() => this._loadAiModels(true)}>
                                                     ${this._aiBusy ? '…' : 'Fetch'}
                                                 </button>
                                             ` : nothing}
                                         </div>
-                                        <small class="sp-hint">
-                                            ${models.loaded && !models.ok
-                                                ? models.error
-                                                : status.hasKey
-                                                    ? 'Press Fetch to list the models this key can run.'
-                                                    : 'Add a key first, then the models can be listed for you.'}
-                                        </small>
+                                        ${models.loaded && !models.ok
+                                            ? html`<small class="sp-hint is-error">${models.error}</small>`
+                                            : nothing}
                                     `}
                                 </div>
                             </div>
 
                             ${current && current.requiresBaseUrl ? html`
-                                <div class="form-group" style="margin-top: 12px;">
+                                <div class="form-group">
                                     <label class="sp-label">API Base URL</label>
                                     <input type="text"
                                            class="sp-input"
-                                           placeholder="https://your-resource.openai.azure.com/openai/deployments/your-deployment/chat/completions?api-version=…"
+                                           placeholder=${current.value === 'AzureOpenAi'
+                                               ? 'https://your-resource.openai.azure.com/…?api-version=…'
+                                               : 'http://localhost:11434/v1'}
                                            .value=${ai.baseUrl ?? ''}
                                            @input=${e => { ai.baseUrl = e.target.value; this.requestUpdate(); }}>
-                                    <small class="sp-hint">
-                                        ${current.value === 'AzureOpenAi'
-                                            ? 'Azure hosts differ per resource, so paste the full chat-completions URL including the api-version.'
-                                            : 'The base URL of an OpenAI-compatible API, e.g. http://localhost:11434/v1 for a local Ollama.'}
-                                    </small>
                                 </div>
                             ` : nothing}
 
-                            ${current && current.modelsDocumentation ? html`
-                                <small class="sp-hint" style="display:block; margin-top: 10px;">
-                                    Model names change often, so the package does not guess one.
-                                    ${current.name}'s current list: ${current.modelsDocumentation}
-                                </small>
-                            ` : nothing}
-
-                            <div style="display: flex; gap: 8px; margin-top: 14px;">
+                            <div class="sp-button-row">
                                 <button class="btn btn-secondary" ?disabled=${this._aiBusy || !status.hasKey} @click=${() => this._testAi()}>
                                     Test Connection
                                 </button>
@@ -3004,7 +3072,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editAiActions')}>
                         <div class="field-box-header">
                             <span class="field-type-tag">Actions</span>
-                            <div style="display: flex; align-items: center; gap: 8px;" @click=${e => e.stopPropagation()}>
+                            <div class="sp-row" @click=${e => e.stopPropagation()}>
                                 <label class="switch switch-sm" title="${status.hasKey ? '' : 'Add an API key first'}">
                                     <input type="checkbox"
                                            .checked=${!!ai.enabled}
@@ -3048,22 +3116,39 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editAiSearch')}>
                         <div class="field-box-header">
                             <span class="field-type-tag">Pipeline</span>
-                            <span class="field-count-pill">
-                                ${(() => {
-                                    const s = ai.search || {};
-                                    const on = [s.understandQuery, s.rerank, s.answerCard, s.relatedSearches]
-                                        .filter(Boolean).length;
-                                    return on === 0 ? 'Off' : `${on} Enabled`;
-                                })()}
-                            </span>
+                            <!-- Its own switch, so this half neither needs the text tools on nor
+                                 stops working when they are turned off. -->
+                            <div class="sp-row" @click=${e => e.stopPropagation()}>
+                                <label class="switch switch-sm" title="${status.hasKey ? '' : 'Add an API key first'}">
+                                    <input type="checkbox"
+                                           .checked=${this._aiSearchEnabled(ai)}
+                                           ?disabled=${!status.hasKey}
+                                           @change=${async e => {
+                                               if (!ai.search) ai.search = {};
+                                               ai.search.enabled = e.target.checked;
+                                               this.requestUpdate();
+                                               await this._saveCurrentProfile();
+                                           }}>
+                                    <span class="slider round"></span>
+                                </label>
+                                <span class="field-count-pill">
+                                    ${(() => {
+                                        if (!this._aiSearchEnabled(ai)) return 'Off';
+                                        const s = ai.search || {};
+                                        const on = [s.understandQuery, s.rerank, s.answerCard, s.relatedSearches]
+                                            .filter(Boolean).length;
+                                        return on === 0 ? 'None chosen' : `${on} Enabled`;
+                                    })()}
+                                </span>
+                            </div>
                         </div>
                         <div class="field-box-content">
                             <div class="selected-chips-wrap">
                                 ${!status.hasKey ? html`
                                     <span class="selected-chip chip-muted">✕ Add an API key to switch these on</span>
                                 ` : nothing}
-                                ${!ai.enabled ? html`
-                                    <span class="selected-chip chip-muted">✕ AI is off for this profile</span>
+                                ${status.hasKey && !this._aiSearchEnabled(ai) ? html`
+                                    <span class="selected-chip chip-muted">✕ AI in search is off for this profile</span>
                                 ` : nothing}
                                 <span class="selected-chip ${(ai.search || {}).understandQuery ? 'chip-success' : 'chip-muted'}">
                                     ${(ai.search || {}).understandQuery ? '✓ Reads the query' : '✕ Query read as typed'}
@@ -3369,7 +3454,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editSearchBox')}>
                         <div class="field-box-header">
                             <span class="field-type-tag">Open In Place</span>
-                            <div style="display: flex; align-items: center; gap: 8px;" @click=${e => e.stopPropagation()}>
+                            <div class="sp-row" @click=${e => e.stopPropagation()}>
                                 <label class="switch switch-sm" title="${box.enabled ? 'The search link opens a box' : 'The search link goes straight to the search page'}">
                                     <input type="checkbox"
                                            .checked=${box.enabled !== false}
@@ -3529,6 +3614,11 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         const includeContentTypes = this._mergedIncludedTypes();
         const excludeContentTypes = sources.excludeContentTypes || [];
         const rootKeys = sources.rootNodeKeys || sources.startNodeKeys || [];
+        const cultures = sources.cultures || [];
+
+        // Read from the result rules, where the wording is stored - this tab edits it, it does not
+        // own it. The Results tab's own panel edits the same map.
+        const typeLabels = p.rules?.results?.typeLabels?.labels || {};
         this._resolveNodeNames(rootKeys);
 
         return html`
@@ -3604,7 +3694,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 <div class="mf-field">
                     <div class="field-left-info">
                         <div class="setting-title">Include Document Types</div>
-                        <div class="setting-desc">Tick what can appear in results. Nothing is searchable until ticked.</div>
+                        <div class="setting-desc">Tick what can appear in results, and what each is called on the frontend.</div>
                     </div>
                     <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editSourceContentTypes')}>
                         <div class="field-box-header">
@@ -3617,6 +3707,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                     ${includeContentTypes.map(ct => html`
                                         <span class="selected-chip">
                                             <code>${ct}</code>
+                                            ${typeLabels[ct] ? html`<span> → <strong>${typeLabels[ct]}</strong></span>` : nothing}
                                         </span>
                                     `)}
                                 </div>
@@ -3637,7 +3728,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 <div class="mf-field">
                     <div class="field-left-info">
                         <div class="setting-title">Search Subtree Roots &amp; Exclusions</div>
-                        <div class="setting-desc">Where to look, and which pages to skip. Empty roots means the whole site.</div>
+                        <div class="setting-desc">Where to look, which pages to skip, and which languages. Empty means everything.</div>
                     </div>
                     <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editSourceRoots')}>
                         <div class="field-box-header">
@@ -3645,13 +3736,16 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                             <span class="field-count-pill">${rootKeys.length ? `${rootKeys.length} roots` : 'Entire Site'}</span>
                         </div>
                         <div class="field-box-content">
-                            ${rootKeys.length ? html`
+                            ${rootKeys.length || cultures.length ? html`
                                 <div class="selected-chips-wrap">
                                     ${rootKeys.map(k => html`
                                         <span class="selected-chip">
                                             <code>${this._nodeDisplayName(k)}</code>
                                         </span>
                                     `)}
+                                    ${cultures.length ? html`
+                                        <span class="selected-chip chip-success">✓ ${cultures.join(', ')}</span>
+                                    ` : nothing}
                                 </div>
                             ` : html`
                                 <div class="selected-placeholder">
@@ -4002,6 +4096,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
     _renderResultsTab(p) {
         const res = p.rules.results || {};
         const highlight = res.highlight || {};
+        const labels = res.typeLabels || {};
 
         return html`
             <div class="source-settings-container">
@@ -4014,7 +4109,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editPaging')}>
                         <div class="field-box-header">
                             <span class="field-type-tag">Paging & Load More</span>
-                            <div style="display: flex; align-items: center; gap: 8px;" @click=${e => e.stopPropagation()}>
+                            <div class="sp-row" @click=${e => e.stopPropagation()}>
                                 <label class="switch switch-sm" title="${res.enableLoadMore ? 'Load More is Enabled' : 'Standard Numbered Pagination'}">
                                     <input type="checkbox"
                                            .checked=${!!res.enableLoadMore}
@@ -4071,8 +4166,41 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     </div>
                 </div>
 
+                <!-- 3. What a result line says it is -->
+                <div class="mf-field">
+                    <div class="field-left-info">
+                        <div class="setting-title">Result Heading & Type Label</div>
+                        <div class="setting-desc">Which field the heading comes from, and what each document type is called.</div>
+                    </div>
+                    <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editResultDisplay')}>
+                        <div class="field-box-header">
+                            <span class="field-type-tag">Heading & Label</span>
+                            <span class="field-count-pill">${(res.titleFields || []).length > 0 ? `${(res.titleFields || []).length} field(s)` : 'Page Name'}</span>
+                        </div>
+                        <div class="field-box-content">
+                            <div class="selected-chips-wrap">
+                                <span class="selected-chip ${(res.titleFields || []).length > 0 ? 'chip-success' : 'chip-muted'}">
+                                    ${(res.titleFields || []).length > 0
+                                        ? `✓ Heading from: ${(res.titleFields || []).join(', ')}`
+                                        : '✕ Heading From Page Name'}
+                                </span>
+                                <span class="selected-chip ${labels.hidden ? 'chip-muted' : 'chip-success'}">
+                                    ${labels.hidden
+                                        ? '✕ Type Label Hidden'
+                                        : (labels.showOnContent ? '✓ Type Label On Every Result' : '✓ Type Label On Media & Best Bets')}
+                                </span>
+                                <span class="selected-chip ${Object.keys(labels.labels || {}).length > 0 ? 'chip-success' : 'chip-muted'}">
+                                    ${Object.keys(labels.labels || {}).length > 0
+                                        ? `✓ ${Object.keys(labels.labels || {}).length} renamed type(s)`
+                                        : '✕ Types Named By Alias'}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 ${this._advanced('de-duplication and filter logic', html`
-                <!-- 3. De-duplication & Grouping -->
+                <!-- 4. De-duplication & Grouping -->
                 <div class="mf-field">
                     <div class="field-left-info">
                         <div class="setting-title">Result Shaping & De-Duplication</div>
@@ -4158,7 +4286,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     return html`
                         <div class="mf-field" style="opacity: ${isEnabled ? '1' : '0.65'}; transition: opacity 0.2s ease;">
                             <div class="field-left-info">
-                                <div class="setting-title" style="display: flex; align-items: center; gap: 8px;">
+                                <div class="setting-title sp-row">
                                     <span>${f.label || f.alias}</span>
                                     ${!isEnabled ? html`<span class="badge badge-muted" style="font-size: 10px; padding: 2px 6px;">Disabled</span>` : nothing}
                                 </div>
@@ -4172,7 +4300,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                             <div class="field-right-box clickable-box" @click=${() => this._openSidePanel('editFacet', f)}>
                                 <div class="field-box-header">
                                     <span class="field-type-tag">${typeName}</span>
-                                    <div style="display: flex; align-items: center; gap: 8px;" @click=${e => e.stopPropagation()}>
+                                    <div class="sp-row" @click=${e => e.stopPropagation()}>
                                         <label class="switch switch-sm" title="${isEnabled ? 'Filter is Enabled (click to disable)' : 'Filter is Disabled (click to enable)'}">
                                             <input type="checkbox"
                                                    .checked=${isEnabled}
@@ -4243,7 +4371,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 ${sorts.length ? html`
                     <div class="mf-field">
                         <div class="field-left-info">
-                            <div class="setting-title" style="display: flex; align-items: center; gap: 8px;">
+                            <div class="setting-title sp-row">
                                 <span>Sort by Options</span>
                             </div>
                             <div class="setting-desc">A "Sort by" dropdown on the site. Only enabled options show.</div>
@@ -4251,7 +4379,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         <div class="field-right-box clickable-box" @click=${() => this._openEditSortPanel()}>
                             <div class="field-box-header">
                                 <span class="field-type-tag">${this._getFilterTypeName('sort')}</span>
-                                <div style="display: flex; align-items: center; gap: 8px;" @click=${e => e.stopPropagation()}>
+                                <div class="sp-row" @click=${e => e.stopPropagation()}>
                                     <label class="switch switch-sm" title="${sorts.some(s => s.enabled !== false) ? 'Sort options Enabled (click to disable all)' : 'Sort options Disabled (click to enable all)'}">
                                         <input type="checkbox"
                                                .checked=${sorts.some(s => s.enabled !== false)}
@@ -4321,7 +4449,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                     .value=${this._testProfileAlias}
                                     @change=${e => { this._testProfileAlias = e.target.value; this._runTestSearch(); }}>
                                 ${this._profiles.map(p => html`
-                                    <option value="${p.alias}" ?selected=${String(this._testProfileAlias) === '${p.alias}'}>${p.name} (${p.alias})</option>
+                                    <option value="${p.alias}" ?selected=${String(this._testProfileAlias) === String(p.alias)}>${p.name} (${p.alias})</option>
                                 `)}
                             </select>
                         </div>
@@ -4333,7 +4461,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                     @change=${e => { this._testCulture = e.target.value; this._runTestSearch(); }}>
                                 <option value="" ?selected=${String(this._testCulture) === ''}>All Cultures</option>
                                 ${(this._catalog.languages || []).map(l => html`
-                                    <option value="${l.isoCode}" ?selected=${String(this._testCulture) === '${l.isoCode}'}>${l.name} (${l.isoCode})</option>
+                                    <option value="${l.isoCode}" ?selected=${String(this._testCulture) === String(l.isoCode)}>${l.name} (${l.isoCode})</option>
                                 `)}
                             </select>
                         </div>
@@ -4961,6 +5089,43 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         </div>
                     </div>
                 </div>
+
+                ${this._renderDeploymentCard()}
+            </div>
+        `;
+    }
+
+    /**
+     * The deployment switches, read-only. They are set by a developer in appsettings so an editor
+     * cannot turn the package off site-wide or open a paid AI endpoint - but a feature silently off
+     * at this level used to be invisible here, which made "it does not appear on the site"
+     * impossible to diagnose from the backoffice.
+     */
+    _renderDeploymentCard() {
+        const d = this._deployment;
+        if (!d) return nothing;
+
+        return html`
+            <div class="card">
+                <div class="card-header">
+                    <h4>Deployment Switches</h4>
+                </div>
+                <div class="card-body">
+                    <div class="toggle-list">
+                        ${(d.values ?? []).map(v => html`
+                            <div class="toggle-item" style="cursor: default;">
+                                <div class="toggle-info">
+                                    <strong>${v.name}</strong>
+                                    <span>${v.summary}</span>
+                                </div>
+                                <span class="dep-value ${v.isFlag ? (v.isOn ? 'is-on' : 'is-off') : ''}">
+                                    ${v.isFlag ? (v.isOn ? 'On' : 'Off') : (v.value || '—')}
+                                </span>
+                            </div>
+                        `)}
+                    </div>
+                    <span class="sp-hint">Set in appsettings.json under ${d.section}. Not editable here.</span>
+                </div>
             </div>
         `;
     }
@@ -4990,6 +5155,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         else if (t === 'editBlockedTerms') { title = "Blocked Search Terms"; labelTag = "BLOCKED"; }
         else if (t === 'editPaging') { title = "Paging & Result Capacity"; labelTag = "PAGING"; }
         else if (t === 'editHighlighting') { title = "Highlighting & Snippets"; labelTag = "HIGHLIGHT"; }
+        else if (t === 'editResultDisplay') { title = "Result Heading & Type Label"; labelTag = "DISPLAY"; }
         else if (t === 'editResultShaping') { title = "Result Shaping & De-Duplication"; labelTag = "SHAPING"; }
         else if (t === 'editFilterCombination') { title = "Filter Combination Logic"; labelTag = "COMBOS"; }
         else if (t === 'manageFacets') { title = "Facet Dimensions & Filters"; labelTag = "FILTERS"; }
@@ -5037,6 +5203,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         ${t === 'editSearchBoxPlacement' ? this._renderSearchBoxPlacementSidePanelBody(d) : nothing}
                         ${t === 'editPaging' ? this._renderPagingSidePanelBody(d) : nothing}
                         ${t === 'editHighlighting' ? this._renderHighlightingSidePanelBody(d) : nothing}
+                        ${t === 'editResultDisplay' ? this._renderResultDisplaySidePanelBody(d) : nothing}
                         ${t === 'editResultShaping' ? this._renderResultShapingSidePanelBody(d) : nothing}
                         ${t === 'editFilterCombination' ? this._renderFilterCombinationSidePanelBody(d) : nothing}
                         ${t === 'manageFacets' ? this._renderManageFacetsSidePanelBody(d) : nothing}
@@ -5220,7 +5387,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                             ${targetList.length} of ${contentTypes.length} ${isExclude ? 'excluded' : 'included'}
                             ${q ? html`<span> · ${filtered.length} shown</span>` : nothing}
                         </span>
-                        <div style="display: flex; gap: 8px;">
+                        <div class="sp-row">
                             <button class="btn btn-secondary btn-sm" @click=${() => {
                                 if (isExclude) d.excludeContentTypes = [];
                                 else d.includeContentTypes = [];
@@ -5262,33 +5429,54 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     ${filtered.map(ct => {
                         const isChecked = targetList.includes(ct.alias);
                         return html`
-                            <label class="sp-choice-card ${isChecked ? 'sp-choice-active' : ''}">
-                                <div class="sp-choice-info">
-                                    <strong class="sp-choice-title">${ct.name}</strong>
-                                    <span class="sp-choice-meta">
-                                        <code>${ct.alias}</code>
-                                        ${mediaAliases.has(ct.alias) ? html`<span> · media type</span>` : nothing}
-                                        ${ct.isElement ? html`
-                                            <span> · element type, searched as part of its parent page</span>
-                                        ` : nothing}
-                                    </span>
-                                </div>
-                                <input type="checkbox"
-                                       class="switch-input"
-                                       .checked=${isChecked}
-                                       @change=${e => {
-                                           if (isExclude) {
-                                               if (!d.excludeContentTypes) d.excludeContentTypes = [];
-                                               if (e.target.checked) d.excludeContentTypes.push(ct.alias);
-                                               else d.excludeContentTypes = d.excludeContentTypes.filter(a => a !== ct.alias);
-                                           } else {
-                                               if (!d.includeContentTypes) d.includeContentTypes = [];
-                                               if (e.target.checked) d.includeContentTypes.push(ct.alias);
-                                               else d.includeContentTypes = d.includeContentTypes.filter(a => a !== ct.alias);
-                                           }
-                                           this.requestUpdate();
-                                       }}>
-                            </label>
+                            <div class="sp-choice-block">
+                                <label class="sp-choice-card ${isChecked ? 'sp-choice-active' : ''}">
+                                    <div class="sp-choice-info">
+                                        <strong class="sp-choice-title">${ct.name}</strong>
+                                        <span class="sp-choice-meta">
+                                            <code>${ct.alias}</code>
+                                            ${mediaAliases.has(ct.alias) ? html`<span> · media type</span>` : nothing}
+                                            ${ct.isElement ? html`
+                                                <span> · element type, searched as part of its parent page</span>
+                                            ` : nothing}
+                                        </span>
+                                    </div>
+                                    <input type="checkbox"
+                                           class="switch-input"
+                                           .checked=${isChecked}
+                                           @change=${e => {
+                                               if (isExclude) {
+                                                   if (!d.excludeContentTypes) d.excludeContentTypes = [];
+                                                   if (e.target.checked) d.excludeContentTypes.push(ct.alias);
+                                                   else d.excludeContentTypes = d.excludeContentTypes.filter(a => a !== ct.alias);
+                                               } else {
+                                                   if (!d.includeContentTypes) d.includeContentTypes = [];
+                                                   if (e.target.checked) d.includeContentTypes.push(ct.alias);
+                                                   else d.includeContentTypes = d.includeContentTypes.filter(a => a !== ct.alias);
+                                               }
+                                               this.requestUpdate();
+                                           }}>
+                                </label>
+
+                                ${!isExclude && isChecked ? html`
+                                    <!-- Outside the label on purpose: a label with no "for" acts on
+                                         its first form control, so a text box inside this one would
+                                         untick the type as soon as it was clicked. -->
+                                    <div class="sp-choice-name">
+                                        <label class="sp-label">Shown on the frontend as</label>
+                                        <input type="text"
+                                               class="sp-input"
+                                               placeholder=${ct.name}
+                                               .value=${(d.typeLabels || {})[ct.alias] ?? ''}
+                                               @input=${e => {
+                                                   if (!d.typeLabels) d.typeLabels = {};
+                                                   d.typeLabels[ct.alias] = e.target.value;
+                                                   this.requestUpdate();
+                                               }}>
+                                        <span class="sp-hint">Naming a type shows the label on its results. Empty shows nothing.</span>
+                                    </div>
+                                ` : nothing}
+                            </div>
                         `;
                     })}
                     ${filtered.length === 0 ? html`
@@ -5336,13 +5524,63 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     <label class="toggle-item">
                         <div class="toggle-info">
                             <strong>Exclude Descendants of Excluded Nodes</strong>
-                            <span>If an excluded document has children, automatically exclude all descendants in the tree. This is what turns excluding a section landing page into excluding the whole section.</span>
+                            <span>Excluding a section landing page then excludes the whole section.</span>
                         </div>
                         <input type="checkbox"
                                class="switch-input"
                                .checked=${d.excludeDescendantsOfExcludedNodes !== false}
                                @change=${e => { d.excludeDescendantsOfExcludedNodes = e.target.checked; this.requestUpdate(); }}>
                     </label>
+                </div>
+
+                ${this._renderCultureChoices(d)}
+            </div>
+        `;
+    }
+
+    /**
+     * Which languages to search. Nothing ticked searches them all, which is what every profile did
+     * before this was editable - the rules property existed and was honoured at query time, but
+     * only raw JSON could set it.
+     */
+    _renderCultureChoices(d) {
+        const languages = this._catalog?.languages || [];
+        if (languages.length === 0) return nothing;
+
+        const chosen = d.cultures || [];
+
+        return html`
+            <div class="sp-group">
+                <div class="sp-choice-header-info">
+                    <p class="sp-choice-desc">Languages to search. None ticked searches all.</p>
+                    <div class="sp-choice-actions">
+                        <button class="btn btn-secondary btn-sm" @click=${() => { d.cultures = []; this.requestUpdate(); }}>
+                            Reset to All Languages
+                        </button>
+                    </div>
+                </div>
+
+                <div class="sp-choices-list">
+                    ${languages.map(l => {
+                        const isChecked = chosen.some(c => String(c).toLowerCase() === String(l.isoCode).toLowerCase());
+                        return html`
+                            <label class="sp-choice-card ${isChecked ? 'sp-choice-active' : ''}">
+                                <div class="sp-choice-info">
+                                    <strong class="sp-choice-title">${l.name}</strong>
+                                    <span class="sp-choice-meta">${l.isoCode}</span>
+                                </div>
+                                <input type="checkbox"
+                                       class="switch-input"
+                                       .checked=${isChecked}
+                                       @change=${e => {
+                                           if (!d.cultures) d.cultures = [];
+                                           if (e.target.checked) d.cultures.push(l.isoCode);
+                                           else d.cultures = d.cultures.filter(c => String(c).toLowerCase() !== String(l.isoCode).toLowerCase());
+                                           this.requestUpdate();
+                                       }}>
+                            </label>
+                        `;
+                    })}
                 </div>
             </div>
         `;
@@ -5568,7 +5806,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     ${filtered.map(f => html`
                         <div class="sp-choice-card" style="cursor: default;">
                             <div class="sp-choice-info">
-                                <div style="display: flex; align-items: center; gap: 8px;">
+                                <div class="sp-row">
                                     <strong class="sp-choice-title">${f.name}</strong>
                                     <span class="badge badge-info">${f.boost}x boost</span>
                                     <span class="badge">${f.matchMode || 'prefix'}</span>
@@ -5607,7 +5845,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                     })()}
                                 </span>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 8px;">
+                            <div class="sp-row">
                                 <input type="checkbox"
                                        class="switch-input"
                                        title="Enable/Disable Field"
@@ -5715,7 +5953,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             <div class="sp-multi-choice-layout">
                 <div class="sp-choice-header-info">
                     <p class="sp-choice-desc">Words ignored in queries.</p>
-                    <div style="display: flex; gap: 8px;">
+                    <div class="sp-row">
                         <button class="btn btn-secondary btn-sm" @click=${() => {
                             const defaults = ["a","about","an","and","are","as","at","be","by","for","from","how","in","is","it","of","on","or","that","the","this","to","was","what","when","where","who","will","with"];
                             d._wordsInput = defaults.join('\n');
@@ -5795,7 +6033,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     ${sortBy.map((s, idx) => html`
                         <div class="sp-choice-card" style="cursor: default;">
                             <div class="sp-choice-info">
-                                <div style="display: flex; align-items: center; gap: 8px;">
+                                <div class="sp-row">
                                     <span class="badge badge-info">Priority #${idx + 1}</span>
                                     <strong class="sp-choice-title">${s.field}</strong>
                                 </div>
@@ -5839,7 +6077,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                 <strong class="sp-choice-title">${alias}</strong>
                                 <span class="sp-choice-meta">Score multiplier: <strong>${boost}x</strong></span>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 8px;">
+                            <div class="sp-row">
                                 <input type="number"
                                        class="sp-input"
                                        style="width: 75px;"
@@ -6022,7 +6260,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             { value: 'shorten', name: 'Shorten', desc: 'The same text at about half the length, facts kept.' },
             { value: 'keyPoints', name: 'Key points', desc: 'The main points as a short list.' },
             { value: 'translate', name: 'Translate', desc: 'The text in one of the languages below.' },
-            { value: 'ask', name: 'Ask a question', desc: 'A visitor types a question and gets an answer drawn from that page. The only action that accepts typed text, and the costliest - a distinct question can never be served from the cache.' }
+            { value: 'ask', name: 'Ask a question', desc: 'An answer drawn from that page. The costliest action.' }
         ];
 
         const toggle = (value, on) => {
@@ -6033,6 +6271,24 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
 
         return html`
             <div class="sp-multi-choice-layout">
+                <div class="sp-choice-header-info">
+                    <p class="sp-choice-desc">Runs on a click. Separate from AI in search.</p>
+                </div>
+
+                <!-- This half's own master switch, matching the one in the AI In Search panel. -->
+                <div class="sp-toggle-row" style="margin-bottom: 14px;">
+                    <div class="sp-toggle-info">
+                        <span class="sp-toggle-title">Text Tools On Results</span>
+                        <span class="sp-toggle-desc">Master switch for the buttons below.</span>
+                    </div>
+                    <label class="switch switch-sm">
+                        <input type="checkbox"
+                               .checked=${!!d.enabled}
+                               @change=${e => { d.enabled = e.target.checked; this.requestUpdate(); }}>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
                 <!-- The same sliding switch the other side panels use, rather than a bare
                      checkbox, so turning an action on reads the same as every other toggle here. -->
                 ${options.map(option => html`
@@ -6158,36 +6414,31 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         return html`
             <div class="sp-multi-choice-layout">
                 <div class="sp-choice-header-info">
-                    <p class="sp-choice-desc">These run on every search, not on a click.</p>
+                    <p class="sp-choice-desc">Runs on every search. Separate from the text tools.</p>
                 </div>
+
+                ${toggle('enabled', 'AI In Search', 'Master switch for the four below.')}
 
                 ${toggle(
                     'understandQuery',
                     'Read The Query Before It Runs',
-                    'Turns a sentence into the parts this profile already understands: a term, the ' +
-                    'site\'s own words for it, filter selections and a sort order. Only filters and ' +
-                    'sort orders this profile defines and has enabled can be selected - anything else ' +
-                    'the model suggests is discarded. Where its filters match nothing, the search is ' +
-                    'run again without them rather than showing an empty page.')}
+                    'Reads a sentence as a term, filters and a sort order.')}
 
                 ${d.understandQuery ? html`
                     <div class="sp-group" style="margin: -8px 0 20px 24px;">
                         ${toggle('correctSpelling', 'Correct The Spelling',
-                            'Rewrites the query that actually runs. Separate from the "did you mean" line, which only offers.')}
+                            'Rewrites the query that runs.')}
                         ${toggle('expandSynonyms', 'Add The Site\'s Own Words',
-                            'Searched alongside what the visitor typed, never instead of it, so this can only widen what matches.')}
+                            'Searched as well as what was typed.')}
                         ${toggle('extractFilters', 'Select Filters And Sort Order',
-                            'Lifts "in Leeds", "added this month", "cheapest first" out of the query and applies them as this profile\'s own filters. A filter the visitor ticked themselves always wins.')}
+                            'Only filters this profile already offers.')}
                     </div>
                 ` : nothing}
 
                 ${toggle(
                     'rerank',
                     'Re-Order The Results',
-                    'Puts the best matches in the order a person would, rather than by how often the ' +
-                    'query\'s words appear - the fix for a page that is plainly the right answer and ' +
-                    'ranks eighth. First page only, and only on relevance: a visitor who chose "newest ' +
-                    'first" has given an instruction. Best bets stay pinned.')}
+                    'Orders the best matches by what answers the query.')}
 
                 ${d.rerank ? html`
                     <div class="sp-group" style="margin: -8px 0 20px 24px;">
@@ -6205,16 +6456,12 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                 ${toggle(
                     'answerCard',
                     'Answer Above The Results',
-                    'A short answer to the search at the top of the page, with links to the pages it ' +
-                    'was written from. Answered only from this site\'s own content, and shows nothing ' +
-                    'at all when the site does not hold an answer - a list of results is a better ' +
-                    'answer than a vague paragraph.')}
+                    'A short answer from this site\'s own pages.')}
 
                 ${toggle(
                     'relatedSearches',
                     'Suggest Further Searches',
-                    'A row of searches to try next, drawn from the pages this search actually found ' +
-                    'rather than from a list anyone maintains.')}
+                    'Searches to try next, from what this search found.')}
 
                 <div class="sp-group">
                     <label class="sp-label">Give Up After (milliseconds)</label>
@@ -6572,7 +6819,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     <div class="form-row-2col">
                         <div class="form-group">
                             <label class="sp-label">Text Colour</label>
-                            <div style="display: flex; align-items: center; gap: 8px;">
+                            <div class="sp-row">
                                 <input type="color"
                                        class="sp-input"
                                        style="flex: 0 0 48px; padding: 2px; height: 34px;"
@@ -6590,7 +6837,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
 
                         <div class="form-group">
                             <label class="sp-label">Background</label>
-                            <div style="display: flex; align-items: center; gap: 8px;">
+                            <div class="sp-row">
                                 <input type="color"
                                        class="sp-input"
                                        style="flex: 0 0 48px; padding: 2px; height: 34px;"
@@ -6634,7 +6881,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         </div>
                         <div class="form-group">
                             <label class="sp-label">Padding X / Y (px)</label>
-                            <div style="display: flex; align-items: center; gap: 8px;">
+                            <div class="sp-row">
                                 <input type="number" class="sp-input" style="flex: 1;" min="0" max="40"
                                        .value=${String(st.paddingX ?? 0)}
                                        @input=${e => set('paddingX', parseInt(e.target.value) || 0)}>
@@ -6713,6 +6960,85 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             return /^[0-9a-fA-F]+$/.test(d) && [3, 6, 8].includes(d.length) ? text.toLowerCase() : '';
         }
         return /^[a-zA-Z]{1,24}$/.test(text) ? text.toLowerCase() : '';
+    }
+
+    _renderResultDisplaySidePanelBody(d) {
+        const rows = d.labelRows || [];
+        const types = this._catalog?.contentTypes || [];
+
+        return html`
+            <div class="sp-multi-choice-layout">
+                <div class="sp-group">
+                    <label class="sp-label">Heading Fields (one per line)</label>
+                    <textarea class="sp-textarea"
+                              style="min-height: 80px; font-family: monospace; font-size: 13px;"
+                              placeholder="e.g.&#10;pageTitle&#10;metaTitle"
+                              .value=${d._titleInput ?? (d.titleFields || []).join('\n')}
+                              @input=${e => { d._titleInput = e.target.value; this.requestUpdate(); }}></textarea>
+                    <span class="sp-hint">First field with a value wins. Empty uses the page name.</span>
+                </div>
+
+                <div class="sp-group">
+                    <label class="toggle-item">
+                        <div class="toggle-info">
+                            <strong>Hide The Type Label</strong>
+                            <span>No type shown on any result.</span>
+                        </div>
+                        <input type="checkbox"
+                               class="switch-input"
+                               .checked=${!!d.hidden}
+                               @change=${e => { d.hidden = e.target.checked; this.requestUpdate(); }}>
+                    </label>
+                </div>
+
+                <div class="sp-group">
+                    <label class="toggle-item">
+                        <div class="toggle-info">
+                            <strong>Show It On Page Results Too</strong>
+                            <span>Off, only media, members and best bets are labelled.</span>
+                        </div>
+                        <input type="checkbox"
+                               class="switch-input"
+                               ?disabled=${!!d.hidden}
+                               .checked=${!!d.showOnContent}
+                               @change=${e => { d.showOnContent = e.target.checked; this.requestUpdate(); }}>
+                    </label>
+                </div>
+
+                <div class="sp-group">
+                    <label class="sp-label">What To Call Each Type</label>
+                    ${rows.map((row, i) => html`
+                        <div class="sp-row" style="margin-bottom: 8px;">
+                            <select class="sp-select flex-1"
+                                    @change=${e => { row.alias = e.target.value; this.requestUpdate(); }}>
+                                <option value="" ?selected=${!row.alias}>-- Document Type --</option>
+                                ${types.map(ct => html`
+                                    <option value="${ct.alias}" ?selected=${String(row.alias) === String(ct.alias)}>${ct.name} (${ct.alias})</option>
+                                `)}
+                                ${row.alias && !types.some(ct => ct.alias === row.alias) ? html`
+                                    <!-- An alias the catalog no longer lists, kept so it is not lost. -->
+                                    <option value="${row.alias}" selected>${row.alias}</option>
+                                ` : nothing}
+                            </select>
+                            <input type="text"
+                                   class="sp-input flex-1"
+                                   placeholder="e.g. News"
+                                   .value=${row.label || ''}
+                                   @input=${e => { row.label = e.target.value; this.requestUpdate(); }}>
+                            <button class="btn btn-sm btn-danger"
+                                    @click=${() => { rows.splice(i, 1); this.requestUpdate(); }}>Remove</button>
+                        </div>
+                    `)}
+                    <div class="sp-button-row">
+                        <button class="btn btn-sm btn-secondary"
+                                @click=${() => { d.labelRows = [...rows, { alias: '', label: '' }]; this.requestUpdate(); }}>
+                            Add Type Label
+                        </button>
+                    </div>
+                    <span class="sp-hint">A type with no wording here is labelled with its alias.</span>
+                </div>
+            </div>
+        `;
     }
 
     _renderResultShapingSidePanelBody(d) {
@@ -6827,13 +7153,13 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                     ${facets.map((f, idx) => html`
                         <div class="sp-choice-card" style="cursor: default;">
                             <div class="sp-choice-info">
-                                <div style="display: flex; align-items: center; gap: 8px;">
+                                <div class="sp-row">
                                     <strong class="sp-choice-title">${f.label || f.alias}</strong>
                                     <span class="badge badge-info">${f.kind || 'field'}</span>
                                 </div>
                                 <span class="sp-choice-meta">Field: <code>${f.field}</code> | Max buckets: ${f.maxValues || 20}${f.ranges?.length ? ` | ${f.ranges.length} range options` : ''}</span>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 8px;">
+                            <div class="sp-row">
                                 <button class="btn-icon" title="Edit Facet" @click=${() => this._openSidePanel('editFacet', f)}>
                                     <i class="icon-edit"></i>
                                 </button>
@@ -7057,7 +7383,9 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                                 }];
                                                 this.requestUpdate();
                                             }}>
-                                        <option value="">-- Choose Document Type --</option>
+                                        <!-- The empty first row: nothing is chosen yet, and choosing
+                                             swaps this select for the bound one above. -->
+                                        <option value="" selected>-- Choose Document Type --</option>
                                         ${(this._catalog?.contentTypes || []).map(ct => html`
                                             <option value="${ct.alias}">${ct.name} (${ct.alias})</option>
                                         `)}
@@ -7121,7 +7449,10 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                                                     <option value="${ct.alias}" ?selected=${opt.alias === ct.alias || opt.from === ct.alias}>${ct.name} (${ct.alias})</option>
                                                 `)}
                                                 ${opt.alias && !(this._catalog?.contentTypes || []).some(ct => ct.alias === opt.alias) ? html`
-                                                    <option value="${opt.alias}" ?selected=${String(opt.alias || opt.from || '') === '${opt.alias}'} selected>${opt.alias}</option>
+                                                    <!-- An alias the catalog no longer has - kept so editing another
+                                                         field cannot silently drop it. It is the current value by
+                                                         definition, hence selected outright. -->
+                                                    <option value="${opt.alias}" selected>${opt.alias}</option>
                                                 ` : nothing}
                                             </select>
                                         ` : html`
@@ -7272,7 +7603,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
                         @change=${e => { d.contentType = e.target.value; this.requestUpdate(); }}>
                     <option value="" ?selected=${String(d.contentType) === ''}>Select Document Type...</option>
                     ${(this._catalog.contentTypes || []).map(ct => html`
-                        <option value="${ct.alias}" ?selected=${String(d.contentType) === '${ct.alias}'}>${ct.name} (${ct.alias})</option>
+                        <option value="${ct.alias}" ?selected=${String(d.contentType) === String(ct.alias)}>${ct.name} (${ct.alias})</option>
                     `)}
                 </select>
                 ${this._sidePanelErrors.contentType ? html`<span class="sp-error">${this._sidePanelErrors.contentType}</span>` : nothing}
@@ -7961,6 +8292,59 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             gap: 20px;
         }
 
+        /* .field-box-content is a centred row, which is right for a line of chips and wrong for a
+           stack of inputs - a card with several form groups in it laid them out side by side and
+           vertically centred. This is the stacked variant for those cards. */
+        .field-box-content.is-stacked {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 14px;
+        }
+
+        /* An input with a button beside it: the input takes the space, the button takes what it
+           needs. Replaces the inline flex declarations these rows each carried their own copy of. */
+        .sp-input-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sp-input-row > .sp-input,
+        .sp-input-row > select.sp-input {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .sp-input-row > .btn {
+            flex: 0 0 auto;
+        }
+
+        /* Buttons sit together at the start rather than being pushed apart. */
+        .sp-button-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        /* One button size inside cards and panels, whatever classes the markup happens to use. */
+        .field-box-content .btn,
+        .sp-body .btn {
+            height: 30px;
+            padding: 0 12px;
+            font-size: 12.5px;
+        }
+
+        .sp-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sp-hint.is-error {
+            color: var(--error);
+        }
+
         .mf-advanced {
             display: block;
             border-top: 1px solid var(--border-light);
@@ -8192,6 +8576,7 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         .badge-success { background: #dcfce7; color: #15803d; }
         .badge-danger { background: #fee2e2; color: #b91c1c; }
         .badge-info { background: #e0f2fe; color: #0369a1; }
+        .badge-muted { background: #e5e7eb; color: #4b5563; }
 
         /* Profile Editor Sub-Tabs */
         .editor-tabs-bar {
@@ -8339,6 +8724,12 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             border-radius: 4px;
         }
 
+        /* The same pill for a setting that is switched off, so the count reads as inactive. */
+        .field-count-pill.pill-muted {
+            color: #9ca3af;
+            background: #f3f4f6;
+        }
+
         .field-box-content {
             display: flex;
             align-items: center;
@@ -8459,6 +8850,29 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             display: flex;
             justify-content: space-between;
             align-items: center;
+        }
+
+        /* Fixed, so the button does not jump width when its label becomes "Searching...". */
+        .btn-search {
+            min-width: 112px;
+        }
+
+        /* Fills the rest of a flex row. min-width keeps a long value from widening the row. */
+        .flex-1 {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .text-muted {
+            color: var(--text-tertiary);
+        }
+
+        /* A card title and its status badge, side by side rather than stacked. */
+        .card-title-wrap {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
         }
 
         /* Chips & Checkbox grids */
@@ -8585,6 +8999,31 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
 
         .toggle-info span {
             font-size: 12px;
+            color: var(--text-tertiary);
+        }
+
+        /* A deployment switch's effective value - read-only, so it sits where a switch would. */
+        .dep-value {
+            flex: 0 0 auto;
+            min-width: 54px;
+            padding: 4px 10px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: var(--surface);
+            font-size: 12px;
+            font-weight: 600;
+            text-align: center;
+            color: var(--text-secondary);
+            font-family: monospace;
+        }
+
+        .dep-value.is-on {
+            border-color: var(--success);
+            color: #047857;
+        }
+
+        .dep-value.is-off {
+            border-color: var(--border-dark);
             color: var(--text-tertiary);
         }
 
@@ -9422,6 +9861,29 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
             box-sizing: border-box;
         }
 
+        /* One document type: the tick, and the name it is shown under once ticked. */
+        .sp-choice-block {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            min-width: 0;
+        }
+
+        /* Indented under its type and sharing the card's border, so it reads as part of that row
+           rather than as the next one. */
+        .sp-choice-name {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin: 6px 0 2px 16px;
+            padding-left: 12px;
+            border-left: 2px solid #e5e7eb;
+        }
+
+        .sp-choice-name .sp-input {
+            max-width: 320px;
+        }
+
         .sp-choice-card {
             display: flex;
             align-items: center;
@@ -9640,6 +10102,13 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
 
         .test-body-grid.full-width {
             grid-template-columns: 1fr;
+        }
+
+        /* Grid children default to min-content width, so a long diagnostic line would otherwise
+           stretch its column past the 1fr / 380px split. */
+        .test-results-col,
+        .test-diag-col {
+            min-width: 0;
         }
 
         .results-stats-header {
@@ -10051,6 +10520,12 @@ export class ImobisoftSearchWorkspace extends UmbElementMixin(LitElement) {
         .toast-icon {
             font-weight: 800;
             font-size: 14px;
+        }
+
+        /* Takes the middle of the toast, so the close button stays at the right edge whatever the
+           message length - short and long toasts then put it in the same place. */
+        .toast-message {
+            flex: 1;
         }
 
         .toast-close {

@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Imobisoft.Search.Models;
 
 /// <summary>
@@ -65,6 +67,24 @@ public enum AiAction
 /// </summary>
 public sealed class AiSearchRules
 {
+    /// <summary>
+    /// Whether these stages may run at all, independently of the text tools.
+    /// <para>
+    /// There used to be one switch for both halves of AI, and it was the one on the text tools box
+    /// - so a site that wanted its results re-ordered had to put summarise buttons on the page to
+    /// get it, and a site that turned the buttons off silently lost query understanding and the
+    /// answer card with them. Two features that cost money on different schedules need two
+    /// switches.
+    /// </para>
+    /// <para>
+    /// Null means a profile saved before this existed, and defers to <see cref="AiRules.Enabled"/>
+    /// - so an editor who had switched AI off keeps it off, rather than finding that re-ranking
+    /// resumed spending at their provider because it gained a switch of its own. The backoffice
+    /// always writes a real value, so a profile saved once is decided from then on.
+    /// </para>
+    /// </summary>
+    public bool? Enabled { get; set; }
+
     /// <summary>
     /// Reads the query before it runs: corrects the spelling, adds the words the site itself uses
     /// for the same thing, and lifts filters and a sort order out of a sentence - so "3 bed houses
@@ -202,10 +222,22 @@ public enum AiProvider
 public sealed class AiRules
 {
     /// <summary>
-    /// Turns the text tools on. Off, nothing is injected into the site and the public endpoint
-    /// refuses every request - which is also what happens when no key has been added yet.
+    /// Turns the text tools on - the buttons a visitor presses on a result. Off, no buttons are
+    /// injected into the site and the public endpoint refuses every press, which is also what
+    /// happens when no key has been added yet.
+    /// <para>
+    /// The text tools only. AI inside the search has its own switch,
+    /// <see cref="AiSearchRules.Enabled"/>, and neither half waits on the other.
+    /// </para>
     /// </summary>
     public bool Enabled { get; set; }
+
+    /// <summary>
+    /// Whether AI inside the search may run for this profile: the search half's own switch, or the
+    /// text tools switch for a profile saved before it had one.
+    /// </summary>
+    [JsonIgnore]
+    public bool SearchEnabled => Search.Enabled ?? Enabled;
 
     /// <summary>Which service answers. Left on <see cref="AiProvider.Auto"/>, the key decides.</summary>
     public AiProvider Provider { get; set; } = AiProvider.Auto;

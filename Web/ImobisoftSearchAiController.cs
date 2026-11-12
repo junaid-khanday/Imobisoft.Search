@@ -143,11 +143,14 @@ public sealed class ImobisoftSearchAiController : Controller
 
         AiRules? rules = _ai.RulesFor(alias);
 
-        // "AI is on for this profile and there is a key", which is what every feature below needs.
+        // "One half of AI is on for this profile and there is a key", which is the least that could
+        // put anything on the page. Either half on its own is enough: a profile running only the
+        // answer card has no buttons, and one running only buttons has no card, and asking for both
+        // here is what used to make the search half depend on the text tools being switched on.
         // Deliberately not IAiTextService.IsAvailable: that asks whether some button or card is
         // switched on, and a profile running only query understanding has neither while still
         // having something to report - the interpretation it applied to the visitor's query.
-        if (rules is null || !rules.Enabled || !_credentials.Describe().HasKey)
+        if (rules is null || (!rules.Enabled && !rules.SearchEnabled) || !_credentials.Describe().HasKey)
         {
             // Not a 404: the script asks on every search page, and "nothing is on" is a perfectly
             // ordinary answer that should not read as a broken endpoint in a browser console.
@@ -158,16 +161,16 @@ public sealed class ImobisoftSearchAiController : Controller
         {
             enabled = true,
 
-            // Each feature gated by its own deployment switch, the same way TransformAsync gates
-            // the request that follows - so the page is never offered something the endpoint would
-            // then refuse.
-            actions = _options.EnableAiTextTools
+            // Each feature gated by its own deployment switch AND its own profile switch, the same
+            // way TransformAsync gates the request that follows - so the page is never offered
+            // something the endpoint would then refuse.
+            actions = _options.EnableAiTextTools && rules.Enabled
                 ? rules.Actions.Select(Camel).ToList()
                 : new List<string>(),
             languages = rules.Languages,
             questionLimit = rules.MaxQuestionCharacters,
-            answer = _options.EnableAiSearch && rules.Search.AnswerCard,
-            related = _options.EnableAiSearch && rules.Search.RelatedSearches,
+            answer = _options.EnableAiSearch && rules.SearchEnabled && rules.Search.AnswerCard,
+            related = _options.EnableAiSearch && rules.SearchEnabled && rules.Search.RelatedSearches,
             notice = Notice(q, alias),
         });
     }

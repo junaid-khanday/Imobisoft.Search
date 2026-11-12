@@ -138,6 +138,10 @@ public sealed class SearchPageModelBuilder : ISearchPageModelBuilder
             // page behaves the same way as the header box.
             KeepSearchTerm = profile?.Rules.Matching.KeepSearchTerm ?? true,
 
+            // What a result is allowed to call itself, so the page prints "News" where the profile
+            // says so rather than the newsArticle alias.
+            TypeLabels = profile?.Rules.Results.TypeLabels ?? new ResultTypeLabelRules(),
+
             // "ai=0" on the URL, which is what the page's own "search for X instead" link sets.
             // Read here rather than in the search service so that one visitor insisting on their
             // own words is a property of this request and nothing else.

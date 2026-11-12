@@ -39,6 +39,12 @@ public sealed class ImobisoftSearchPageViewModel
     public bool KeepSearchTerm { get; set; } = true;
 
     /// <summary>
+    /// Whether a result is labelled with what kind of thing it is, and in what words. From the
+    /// profile's result rules.
+    /// </summary>
+    public ResultTypeLabelRules TypeLabels { get; set; } = new();
+
+    /// <summary>
     /// What the visitor typed, before AI query understanding rewrote it. Null when nothing was
     /// rewritten.
     /// <para>
@@ -106,7 +112,17 @@ public sealed class ImobisoftSearchPageViewModel
     /// </summary>
     public bool ShowResultType(SearchResultItem item)
     {
-        if (item.IsBestBet)
+        // "Never show it" wins over everything, including a best bet's badge row.
+        if (TypeLabels.Hidden)
+        {
+            return false;
+        }
+
+        // A type an editor has given wording to is shown, whatever kind it is. Setting "Shown on
+        // the frontend as: Page" is the editor saying Page should appear.
+        if (item.IsBestBet
+            || TypeLabels.ShowOnContent
+            || TypeLabels.HasLabel(item.ContentTypeAlias, item.IndexType))
         {
             return true;
         }
@@ -116,6 +132,13 @@ public sealed class ImobisoftSearchPageViewModel
             ImobisoftSearchConstants.IndexTypes.Content,
             StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// What to call this result's type: the wording the profile gives the alias, or the alias
+    /// itself when it gives none.
+    /// </summary>
+    public string ResultTypeLabel(SearchResultItem item)
+        => TypeLabels.Resolve(item.ContentTypeAlias, item.IndexType);
 
     /// <summary>
     /// Whether this text is block editor structure rather than prose: a JSON document, a JSON

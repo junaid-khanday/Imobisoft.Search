@@ -1013,11 +1013,16 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
         item.Fields[ImobisoftSearchConstants.IndexFields.CreateDate] = node.CreateDate.ToString("O");
         item.Fields[ImobisoftSearchConstants.IndexFields.UpdateDate] = node.UpdateDate.ToString("O");
 
-        // The fields a description is looked for in, copied off the node so the shared pass can
-        // find one here exactly as it does on a result that came from the index.
-        IEnumerable<string> aliases = results.DescriptionFields.Count > 0
+        // The fields a heading and a description are looked for in, copied off the node so the
+        // shared pass can find them here exactly as it does on a result that came from the index.
+        IEnumerable<string> descriptionAliases = results.DescriptionFields.Count > 0
             ? results.DescriptionFields.Where(f => !string.IsNullOrWhiteSpace(f)).Select(f => f.Trim())
             : SearchResultProcessor.DefaultDescriptionFields;
+
+        IEnumerable<string> aliases = results.TitleFields
+            .Where(f => !string.IsNullOrWhiteSpace(f))
+            .Select(f => f.Trim())
+            .Concat(descriptionAliases);
 
         foreach (var alias in aliases)
         {

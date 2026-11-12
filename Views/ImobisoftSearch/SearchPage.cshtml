@@ -725,7 +725,11 @@ else
                         ? AiTools.RulesFor(response.ProfileAlias)
                         : null;
 
-                    var aiActions = ai is null
+                    @* The buttons need the text tools switch specifically. A profile running only
+                       the search half - an answer card and no buttons - is available here, and
+                       listing its actions anyway would put buttons on the page that the endpoint
+                       then refuses. *@
+                    var aiActions = ai is null || !ai.Enabled
                         ? string.Empty
                         : string.Join(',', ai.Actions.Select(a => char.ToLowerInvariant(a.ToString()[0]) + a.ToString()[1..]));
 
@@ -838,7 +842,7 @@ else
                                         @if (showType
                                              && (!string.IsNullOrWhiteSpace(item.ContentTypeAlias) || !string.IsNullOrWhiteSpace(item.IndexType)))
                                         {
-                                            <span class="imobisoft-result-type">@(item.ContentTypeAlias ?? item.IndexType)</span>
+                                            <span class="imobisoft-result-type">@Model.ResultTypeLabel(item)</span>
                                         }
                                         @if (showType && !string.IsNullOrWhiteSpace(item.Culture))
                                         {

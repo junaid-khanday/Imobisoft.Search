@@ -1193,8 +1193,8 @@ internal sealed partial class SearchResultProcessor
     };
 
     /// <summary>
-    /// Gives each result on the page the two things a result line needs beyond its name: something
-    /// to say about itself, and a date that reads as a date.
+    /// Gives each result on the page the three things a result line needs: a heading, something to
+    /// say about itself, and a date that reads as a date.
     /// <para>
     /// The dates are parsed here rather than left to the view, because the index writes them as a
     /// tick count - a view printing the raw field shows a long run of digits that looks like an id.
@@ -1219,8 +1219,15 @@ internal sealed partial class SearchResultProcessor
             ? results.DescriptionLength
             : results.Highlight.SnippetLength > 0 ? results.Highlight.SnippetLength : 320;
 
+        IReadOnlyList<string> titleFields = results.TitleFields
+            .Where(f => !string.IsNullOrWhiteSpace(f))
+            .Select(f => f.Trim())
+            .ToList();
+
         foreach (SearchResultItem item in items)
         {
+            ApplyTitle(item, titleFields);
+
             if (TryParseDate(FieldValue(item, ImobisoftSearchConstants.IndexFields.CreateDate) ?? string.Empty, out DateTime created))
             {
                 item.CreateDate = created;
@@ -1234,6 +1241,38 @@ internal sealed partial class SearchResultProcessor
             item.Summary ??= FindDescription(item, fields, limit);
         }
     }
+
+    /// <summary>
+    /// Takes the heading from the first configured field that carries one, leaving the node's own
+    /// name in place when none do - which is what an unconfigured profile does, and what the
+    /// package did before the setting existed.
+    /// </summary>
+    private static void ApplyTitle(SearchResultItem item, IReadOnlyList<string> fields)
+    {
+        if (fields.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var field in fields)
+        {
+            var raw = FieldValue(item, field) ?? CultureVariantValue(item, field);
+            var value = PlainText(FlattenStructuredValue(raw));
+
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            // A heading is one line. A field holding a paragraph is the wrong field for this, and
+            // printing the paragraph as a link would be worse than falling back to the name.
+            item.Name = Shorten(value, MaximumTitleLength);
+            return;
+        }
+    }
+
+    /// <summary>Cuts a heading taken from a content field, in case the field holds prose.</summary>
+    private const int MaximumTitleLength = 160;
 
     /// <summary>The first of the named fields this result actually carries anything in.</summary>
     private static string? FindDescription(SearchResultItem item, IReadOnlyList<string> fields, int limit)

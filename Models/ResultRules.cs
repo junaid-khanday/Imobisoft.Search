@@ -286,10 +286,28 @@ public sealed class ResultRules
     public int DescriptionLength { get; set; } = 320;
 
     /// <summary>
+    /// Index fields to take a result's heading from, in order of preference. The first one with
+    /// anything in it wins; the node's own name is used when none of them do.
+    /// <para>
+    /// A result's heading came from the node name and nothing else, which is right for most sites
+    /// and wrong for the ones whose editors set a <c>pageTitle</c> or <c>metaTitle</c> that differs
+    /// from the name in the tree - there the search said one thing and the page said another, with
+    /// no way to reconcile them short of renaming content. Falling back to the node name means
+    /// leaving this empty behaves exactly as before.
+    /// </para>
+    /// </summary>
+    public IList<string> TitleFields { get; set; } = new List<string>();
+
+    /// <summary>
     /// Index fields copied into each result. Empty means the package returns a useful default set
     /// (name, url, content type, dates) plus whatever fields were searched.
     /// </summary>
     public IList<string> ReturnFields { get; set; } = new List<string>();
+
+    /// <summary>
+    /// Whether a result says what kind of thing it is, and what it calls it.
+    /// </summary>
+    public ResultTypeLabelRules TypeLabels { get; set; } = new();
 
     /// <summary>Adds a content type grouping breakdown to the response.</summary>
     public bool GroupByContentType { get; set; }
@@ -328,4 +346,102 @@ public sealed class ResultRules
     /// profile's ranking order for that request; otherwise <see cref="RankingRules.SortBy"/> rules.
     /// </summary>
     public IList<SortOption> SortOptions { get; set; } = new List<SortOption>();
+}
+
+/// <summary>
+/// Whether a result is labelled with what kind of thing it is, and in what words.
+/// <para>
+/// The label was decided in C#: shown for media, members and best bets, hidden on every content
+/// result, and printed as the raw document type alias when shown. A site whose results are a mix
+/// of pages, news articles and downloads had no way to say so, and a site that wanted the label
+/// got <c>umbracoMediaVideo</c> rather than "Video". Both halves are settings now, and the
+/// defaults reproduce the previous behaviour exactly.
+/// </para>
+/// </summary>
+public sealed class ResultTypeLabelRules
+{
+    /// <summary>
+    /// Show the label on content results too, not only on media, members and best bets.
+    /// </summary>
+    public bool ShowOnContent { get; set; }
+
+    /// <summary>
+    /// Hide the label everywhere, including on media and members.
+    /// </summary>
+    public bool Hidden { get; set; }
+
+    /// <summary>
+    /// What to call each document or media type, keyed by its alias - <c>newsArticle</c> to
+    /// "News". An alias with no entry is labelled with its alias, as it always was.
+    /// </summary>
+    public IDictionary<string, string> Labels { get; set; } =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Whether an editor has given this type wording of its own.
+    /// <para>
+    /// Naming a type is taken as saying it should be shown. The wording is set beside the tick that
+    /// includes the type in search, where "Shown on the frontend as: Page" plainly means the word
+    /// Page appears on the frontend - and it would not have, because the label is hidden on content
+    /// results unless <see cref="ShowOnContent"/> says otherwise. A field that quietly does nothing
+    /// until a switch on another tab is found is worse than no field.
+    /// </para>
+    /// </summary>
+    public bool HasLabel(string? alias, string? indexType)
+        => TryFindLabel(KeyFor(alias, indexType), out _);
+
+    /// <summary>
+    /// The label for one alias: the configured wording, or the alias itself when none is set.
+    /// </summary>
+    public string Resolve(string? alias, string? indexType)
+    {
+        var key = KeyFor(alias, indexType);
+
+        if (key.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        return TryFindLabel(key, out var label) ? label : key;
+    }
+
+    /// <summary>The alias a label is keyed by, falling back to the index type.</summary>
+    private static string KeyFor(string? alias, string? indexType)
+    {
+        var key = (alias ?? string.Empty).Trim();
+
+        return key.Length == 0 ? (indexType ?? string.Empty).Trim() : key;
+    }
+
+    /// <summary>The wording set for this key, if any.</summary>
+    private bool TryFindLabel(string key, out string label)
+    {
+        label = string.Empty;
+
+        if (key.Length == 0)
+        {
+            return false;
+        }
+
+        if (Labels.TryGetValue(key, out var exact) && !string.IsNullOrWhiteSpace(exact))
+        {
+            label = exact.Trim();
+            return true;
+        }
+
+        // Deserialising the profile rebuilds this dictionary with the default comparer, so the
+        // case-insensitive lookup the property declares does not survive a round trip. An alias
+        // typed in one case and indexed in another would otherwise silently lose its wording.
+        foreach (KeyValuePair<string, string> candidate in Labels)
+        {
+            if (string.Equals(candidate.Key, key, StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(candidate.Value))
+            {
+                label = candidate.Value.Trim();
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

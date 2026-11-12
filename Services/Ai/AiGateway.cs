@@ -80,10 +80,12 @@ public sealed class AiGateway : IAiGateway
     /// <inheritdoc />
     public bool IsConfigured(AiRules? rules)
     {
-        // The profile's own master switch counts here too. An editor who has turned AI off for a
-        // profile has turned it off - finding that the results were still being re-ordered by a
-        // model, because that happens to have a toggle of its own, would be indefensible.
-        if (rules is not { Enabled: true } || !_options.Enabled || !_options.EnableAiSearch)
+        // The profile's switch for this half counts here too. An editor who has turned AI in search
+        // off has turned it off - finding that the results were still being re-ordered by a model,
+        // because that happens to have a toggle of its own, would be indefensible. It is the search
+        // half's switch specifically: the text tools are a separate feature with a separate bill,
+        // and this gateway serves only the stages that run during a search.
+        if (rules is null || !rules.SearchEnabled || !_options.Enabled || !_options.EnableAiSearch)
         {
             return false;
         }
