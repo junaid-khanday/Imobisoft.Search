@@ -1,0 +1,21 @@
+@*
+    The document the package's own search page is rendered in when the site has no layout it can be
+    rendered into. Deliberately bare: the page itself carries all of its styling, and a site that
+    wants its own header and footer around search does not use this at all - it names one of its own
+    pages in Search → Settings, or renders the search page's view component from its own template.
+
+    This exists as a layout rather than as markup in the page because <head> and <body> have to be
+    real elements for a tag helper component to find them: that is how the search box's stylesheet
+    and the type-ahead script arrive on this page, the same way they arrive on every page of a site.
+*@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@(ViewData["Title"] as string ?? "Search")</title>
+</head>
+<body>
+    @RenderBody()
+</body>
+</html>

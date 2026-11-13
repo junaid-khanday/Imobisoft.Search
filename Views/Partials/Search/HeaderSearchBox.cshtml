@@ -1,0 +1,240 @@
+@using Imobisoft.Search.Models
+@model SearchBoxModel
+@{
+    var inputId = string.IsNullOrWhiteSpace(Model.Id)
+        ? "isb-" + Guid.NewGuid().ToString("N")[..8]
+        : Model.Id;
+    var formId = inputId + "-form";
+    var open = Model.StartOpen || !string.IsNullOrWhiteSpace(Model.Term);
+    var placeholder = string.IsNullOrWhiteSpace(Model.Placeholder) ? "Search our site" : Model.Placeholder;
+}
+@*
+    The header search bar. This one file is the whole thing - markup, styling and behaviour - and it
+    is what the package renders into a site's header when the search link is pressed. Edit it here or
+    from the Search section; a copy saved into the site wins over this one.
+
+    Two things the package relies on, and the bar stops working without them:
+
+      - a root element carrying data-imobisoft-searchbox, which the package toggles data-open on,
+      - a GET form containing a text input, so a submitted term reaches the search page as ?q=.
+
+    Everything else - the layout, the icons, the colours - is free to change. The bar is placed
+    inside an overlay the package positions over the header, so it already spans the full width of
+    it; there is no need to position anything here.
+*@
+<div class="isb @Model.RootClass"
+     data-imobisoft-searchbox
+     data-open="@(open ? "true" : "false")">
+    <style>
+        .isb {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            font-family: inherit;
+            background: transparent;
+        }
+
+        .isb *,
+        .isb *::before,
+        .isb *::after {
+            box-sizing: border-box;
+        }
+
+        .isb-form {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            margin: 0;
+        }
+
+        /* Submit, on the left, so the bar reads as a search field rather than a form. */
+        .isb-search-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            padding: 8px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: #1e5180;
+        }
+
+        .isb-search-btn:focus-visible,
+        .isb-close-btn:focus-visible {
+            outline: 2px solid #2563eb;
+            outline-offset: 2px;
+            border-radius: 4px;
+        }
+
+        /* Takes all the room the overlay gives it, which is the width of the header. */
+        .isb-input {
+            flex: 1 1 auto;
+            min-width: 0;
+            height: 52px;
+            padding: 0;
+            font: inherit;
+            font-size: clamp(16px, 2.2vw, 22px);
+            color: #2c3e50;
+            background: transparent;
+            border: none;
+            outline: none;
+            box-shadow: none;
+        }
+
+        .isb-input::placeholder {
+            color: #5c6b73;
+            opacity: 1;
+        }
+
+        /* Browsers add their own clear button inside a search input once it has text. There is a
+           close button below, so without this there are two crosses side by side. */
+        .isb-input::-webkit-search-cancel-button,
+        .isb-input::-webkit-search-decoration,
+        .isb-input::-webkit-search-results-button,
+        .isb-input::-webkit-search-results-decoration {
+            -webkit-appearance: none;
+            appearance: none;
+            display: none;
+        }
+
+        .isb-input::-ms-clear,
+        .isb-input::-ms-reveal {
+            display: none;
+            width: 0;
+            height: 0;
+        }
+
+        /* Clears the box, and closes the bar once it is already empty. */
+        .isb-close-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            padding: 8px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: #1e5180;
+        }
+
+        .isb-close-btn:hover {
+            color: #0f172a;
+        }
+
+        .isb-icon {
+            width: 22px;
+            height: 22px;
+            stroke-width: 2.2;
+        }
+
+        .isb-icon-img {
+            width: 22px;
+            height: 22px;
+            object-fit: contain;
+            display: block;
+        }
+    </style>
+
+    <form id="@formId"
+          class="isb-form @Model.FormClass"
+          role="search"
+          method="get"
+          action="@Model.Action"
+          data-isb-form>
+
+        <button type="submit"
+                class="isb-search-btn @Model.ButtonClass"
+                title="@Model.ButtonLabel"
+                aria-label="@Model.ButtonLabel">
+            @if (!string.IsNullOrWhiteSpace(Model.IconUrl))
+            {
+                @* A site's own icon file, rendered as an image so it keeps its own colours. *@
+                <img class="isb-icon-img" src="@Model.IconUrl" alt="" aria-hidden="true"
+                     width="@Model.IconSize" height="@Model.IconSize" />
+            }
+            else
+            {
+                <svg class="isb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                    <circle cx="11" cy="11" r="7" />
+                    <line x1="16.5" y1="16.5" x2="21" y2="21" />
+                </svg>
+            }
+        </button>
+
+        <input type="search"
+               id="@inputId"
+               name="@Model.QueryName"
+               class="isb-input @Model.InputClass"
+               value="@Model.Term"
+               placeholder="@placeholder"
+               autocomplete="off"
+               aria-label="@placeholder"
+               data-isb-input />
+
+        <button type="button"
+                class="isb-close-btn"
+                aria-label="Close search"
+                title="Close"
+                data-isb-close>
+            <svg class="isb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+        </button>
+    </form>
+</div>
+
+<script>
+    (function () {
+        document.querySelectorAll('[data-imobisoft-searchbox]').forEach(function (root) {
+            if (root.dataset.isbBound) return;
+            root.dataset.isbBound = 'true';
+
+            var form = root.querySelector('[data-isb-form]');
+            var input = root.querySelector('[data-isb-input]');
+            var closeBtn = root.querySelector('[data-isb-close]');
+            if (!form || !input) return;
+
+            // Closing has to reach the package's overlay as well as this element, or the overlay
+            // keeps covering the header after the bar has gone.
+            function close() {
+                root.setAttribute('data-open', 'false');
+
+                var holder = root.parentNode;
+                if (holder && holder.classList && holder.classList.contains('imsx-holder')) {
+                    holder.setAttribute('data-open', 'false');
+                }
+            }
+
+            // Clears a typed term first, and closes once there is nothing left to clear.
+            if (closeBtn) {
+                closeBtn.addEventListener('click', function () {
+                    if (input.value.trim() !== '') {
+                        input.value = '';
+                        input.focus();
+                    } else {
+                        close();
+                    }
+                });
+            }
+
+            form.addEventListener('submit', function (e) {
+                if (!input.value.trim()) {
+                    e.preventDefault();
+                    input.focus();
+                }
+            });
+
+            input.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' || e.key === 'Esc') {
+                    close();
+                }
+            });
+        });
+    })();
+</script>

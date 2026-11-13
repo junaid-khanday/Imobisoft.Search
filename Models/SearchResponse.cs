@@ -38,6 +38,29 @@ public sealed class SearchResultItem
     /// <summary>Snippet built from the highlight rules, when highlighting is on.</summary>
     public string? Highlight { get; set; }
 
+    /// <summary>
+    /// What the page says about itself - its meta description, summary or opening text - read from
+    /// the first of <see cref="ResultRules.DescriptionFields"/> that has anything in it.
+    /// <para>
+    /// This is what a result line shows when there is no <see cref="Highlight"/> to show instead,
+    /// which is every result on a search page nobody has typed into yet, and any result that
+    /// matched on something other than its prose. A result with a name and nothing under it tells
+    /// a visitor nothing about whether to click it.
+    /// </para>
+    /// <para>Plain text: markup is stripped and structured values flattened, so it is safe to print.</para>
+    /// </summary>
+    public string? Summary { get; set; }
+
+    /// <summary>
+    /// When the page was created, read out of the index whichever way it was written there - a
+    /// Lucene date string, a tick count or a formatted date - so a view never has to print the raw
+    /// value, which is a long run of digits.
+    /// </summary>
+    public DateTime? CreateDate { get; set; }
+
+    /// <summary>When the page was last edited. Read the same way as <see cref="CreateDate"/>.</summary>
+    public DateTime? UpdateDate { get; set; }
+
     /// <summary>The fields requested by <see cref="ResultRules.ReturnFields"/>.</summary>
     public IDictionary<string, string> Fields { get; set; } =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -118,6 +141,36 @@ public sealed class SearchResponse
     /// and a close alternative exists in the index.
     /// </summary>
     public string? Suggestion { get; set; }
+
+    /// <summary>
+    /// What AI query understanding made of the query, in a few words - "term rewritten to "3
+    /// bedroom house"; filter location=Leeds" - or null when the stage did not run or found nothing
+    /// to change.
+    /// <para>
+    /// Here rather than only in the diagnostics because a visitor should be able to see that their
+    /// search was interpreted, and undo it. A search silently answering a different question than
+    /// the one typed is the failure mode of this feature, and the fix for it is saying so.
+    /// </para>
+    /// </summary>
+    public string? AiQuery { get; set; }
+
+    /// <summary>
+    /// Filters AI query understanding selected, in the words a visitor reads - "Location: Leeds".
+    /// Empty when it selected none.
+    /// <para>
+    /// These narrow the results without appearing in the URL, so the filter bar does not show them
+    /// as ticked and "Clear active filters" does not reach them - both read the query string, which
+    /// is the visitor's own record of what they asked for and not a place for this to write. So the
+    /// page states them instead, beside the one link that undoes the whole interpretation. A
+    /// narrowing nobody can see and nobody can lift is the failure mode of this feature.
+    /// </para>
+    /// </summary>
+    public IList<string> AiFilters { get; set; } = new List<string>();
+
+    /// <summary>
+    /// True when the results were re-ordered by AI rather than by the profile's ranking alone.
+    /// </summary>
+    public bool AiReranked { get; set; }
 
     /// <summary>Only populated when <see cref="SearchRequest.IncludeDiagnostics"/> is set.</summary>
     public SearchDiagnostics? Diagnostics { get; set; }

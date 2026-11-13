@@ -223,15 +223,26 @@ public sealed class SearchProfileRepository : ISearchProfileRepository
             false,
             key);
 
-    private static SearchProfile Map(SearchProfileSchema row) => new()
+    private static SearchProfile Map(SearchProfileSchema row)
     {
-        Key = row.UniqueId,
-        Alias = row.ProfileAlias,
-        Name = row.ProfileName,
-        IsDefault = row.IsDefault,
-        Enabled = row.IsEnabled,
-        CreateDate = row.CreateDate,
-        UpdateDate = row.UpdateDate,
-        Rules = SearchProfileJson.DeserializeOrDefault<SearchRuleSet>(row.ConfigJson),
-    };
+        SearchRuleSet rules = SearchProfileJson.DeserializeOrDefault<SearchRuleSet>(row.ConfigJson);
+
+        // A profile saved before an AI action existed has no way of knowing about it, and its stored
+        // list is indistinguishable from one where an editor turned that action off. Offering the
+        // new action here - on read, in memory - means it reaches the site straight away, and the
+        // stamped version keeps it from being re-added once an editor has had their say.
+        rules.Ai.ApplyActionsAddedSinceSave();
+
+        return new SearchProfile
+        {
+            Key = row.UniqueId,
+            Alias = row.ProfileAlias,
+            Name = row.ProfileName,
+            IsDefault = row.IsDefault,
+            Enabled = row.IsEnabled,
+            CreateDate = row.CreateDate,
+            UpdateDate = row.UpdateDate,
+            Rules = rules,
+        };
+    }
 }

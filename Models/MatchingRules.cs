@@ -85,4 +85,18 @@ public sealed class MatchingRules
     /// rather than just one of them.
     /// </summary>
     public bool AllTermsMustMatch { get; set; }
+
+    /// <summary>
+    /// Puts the term the visitor searched for back into the search box on the results page, so it is
+    /// still there to refine rather than having to be retyped.
+    /// <para>
+    /// On by default. Turning it off clears the box after a search, which suits a site that wants
+    /// every search started from scratch.
+    /// </para>
+    /// <para>
+    /// This governs the boxes the package renders - the search page and the header box. A search box
+    /// in a site's own template echoes back whatever that template tells it to.
+    /// </para>
+    /// </summary>
+    public bool KeepSearchTerm { get; set; } = true;
 }

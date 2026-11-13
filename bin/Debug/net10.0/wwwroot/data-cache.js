@@ -221,6 +221,97 @@ export async function updateSettings(fetchFn, settings) {
     return res;
 }
 
+/** The appsettings switches as they are actually in effect. Read-only. */
+export function getDeploymentConfiguration(fetchFn, { force = false } = {}) {
+    const url = `${getBaseApiUrl()}settings/deployment`;
+    if (force) _entries.delete("settings:deployment");
+    return _read("settings:deployment", SETTINGS_TTL_MS, () => _json(fetchFn, url));
+}
+
+// ----------------- TEMPLATES API -----------------
+
+/** The views a site may take over, and which ones it already has. */
+export function getTemplates(fetchFn, { force = false } = {}) {
+    const url = `${getBaseApiUrl()}templates`;
+    if (force) _entries.delete("templates");
+    return _read("templates", SETTINGS_TTL_MS, () => _json(fetchFn, url));
+}
+
+/** The package's own source for one view, plus the site's copy if it has one. */
+export function getTemplate(fetchFn, id) {
+    return _json(fetchFn, `${getBaseApiUrl()}templates/${encodeURIComponent(id)}`);
+}
+
+export async function saveTemplate(fetchFn, id, content) {
+    const res = await _json(fetchFn, `${getBaseApiUrl()}templates/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content })
+    });
+    _entries.delete("templates");
+    return res;
+}
+
+export async function resetTemplate(fetchFn, id) {
+    const res = await _json(fetchFn, `${getBaseApiUrl()}templates/${encodeURIComponent(id)}`, {
+        method: 'DELETE'
+    });
+    _entries.delete("templates");
+    return res;
+}
+
+// ----------------- AI API -----------------
+
+/**
+ * Whether an AI key is stored (never the key itself), plus the providers the package can call.
+ */
+export function getAiSettings(fetchFn, { force = false } = {}) {
+    const url = `${getBaseApiUrl()}ai`;
+    if (force) _entries.delete("ai");
+    return _read("ai", SETTINGS_TTL_MS, () => _json(fetchFn, url));
+}
+
+export async function saveAiKey(fetchFn, apiKey) {
+    const res = await _json(fetchFn, `${getBaseApiUrl()}ai/key`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey })
+    });
+    _entries.delete("ai");
+    return res;
+}
+
+export async function deleteAiKey(fetchFn) {
+    const res = await _json(fetchFn, `${getBaseApiUrl()}ai/key`, { method: 'DELETE' });
+    _entries.delete("ai");
+    return res;
+}
+
+/** The models the stored key can run, straight from the provider, plus the one to use. */
+export function getAiModels(fetchFn, profileAlias) {
+    const query = profileAlias ? `?profileAlias=${encodeURIComponent(profileAlias)}` : '';
+    return _json(fetchFn, `${getBaseApiUrl()}ai/models${query}`);
+}
+
+/** Runs one real request against the configured provider to prove the setup works. */
+export function testAi(fetchFn, profileAlias) {
+    const query = profileAlias ? `?profileAlias=${encodeURIComponent(profileAlias)}` : '';
+    return _json(fetchFn, `${getBaseApiUrl()}ai/test${query}`, { method: 'POST' });
+}
+
+// ----------------- SEARCH BOX ICON API -----------------
+
+/**
+ * Uploads a search icon chosen from the editor's own machine and resolves with its URL.
+ * No Content-Type header: the browser has to set the multipart boundary itself.
+ */
+export async function uploadSearchBoxIcon(fetchFn, file) {
+    const body = new FormData();
+    body.append('file', file, file.name);
+
+    return _json(fetchFn, `${getBaseApiUrl()}search-box-icon`, { method: 'POST', body });
+}
+
 // ----------------- PREVIEW & AUTOCOMPLETE API -----------------
 
 export async function previewSearch(fetchFn, request) {

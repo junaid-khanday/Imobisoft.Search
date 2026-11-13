@@ -172,6 +172,14 @@ internal sealed class LegacySearchBridge
             // A page size set by the site wins; with none set, the profile's "Results per page" rule
             // decides, so it can be changed in the Search section without touching the site.
             PageSize = itemsPerPage > 0 ? itemsPerPage : null,
+
+            // The interface being answered here is the site's own and it is synchronous, so the
+            // call below has to be blocked on. That rules out the AI stages: they make an HTTP
+            // request to a provider, and blocking a request thread on one - for every search, with
+            // nothing able to await it - trades a slow provider for a site that runs out of
+            // threads. A site that wants them can call IImobisoftSearchService directly, which is
+            // async, or let the package answer its search page instead of its search service.
+            DisableAi = true,
         };
 
         if (_cultureProperty?.GetValue(parameters) is string culture && !string.IsNullOrWhiteSpace(culture))

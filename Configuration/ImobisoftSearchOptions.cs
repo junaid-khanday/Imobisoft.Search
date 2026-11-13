@@ -55,6 +55,96 @@ public sealed class ImobisoftSearchOptions
     public bool EnableSearchPage { get; set; } = true;
 
     /// <summary>
+    /// Finds the search page a site already had and answers it with the package, so installing on
+    /// a site that already has search leaves it with one search page rather than two.
+    /// <para>
+    /// This is the companion to <see cref="TakeOverSiteSearch"/>: that one puts the package behind
+    /// the site's search <em>service</em>, this one behind the site's search <em>page</em>. A site
+    /// that built search without a service of its own - the query written straight into a
+    /// controller or a template - is covered by this and not by that.
+    /// </para>
+    /// <para>
+    /// On by default, for the same reason: installing the package is taken to mean you want it
+    /// answering searches. This is the deployment-level switch; day to day it is controlled in the
+    /// backoffice (Search → Settings), and setting this to <c>false</c> stops the package touching
+    /// the site's own search page at all, whatever the backoffice says.
+    /// </para>
+    /// </summary>
+    public bool TakeOverSiteSearchPage { get; set; } = true;
+
+    /// <summary>
+    /// Adds the header search box to every page, which is what turns a site's existing search link
+    /// into a box that opens in place rather than a link that leaves for an empty search page. No
+    /// markup or code is needed in the site for this.
+    /// <para>
+    /// This is the deployment-level switch. Day to day the box is controlled in the backoffice
+    /// (Search → Settings); setting this to <c>false</c> stops the package injecting anything at
+    /// all, whatever the backoffice says, which is the way to rule it out on a site that never
+    /// wants it.
+    /// </para>
+    /// </summary>
+    public bool EnableHeaderSearchBox { get; set; } = true;
+
+    /// <summary>
+    /// Allows the AI text tools - summarise, shorten, key points, translate - to run on the site.
+    /// <para>
+    /// This is the deployment-level switch, and it governs a public endpoint that spends money at an
+    /// AI provider on request. Day to day the tools are controlled in the backoffice (the profile
+    /// editor's AI tab) and stay off until a key is added; setting this to <c>false</c> takes the
+    /// endpoint out of the site altogether, whatever the backoffice says.
+    /// </para>
+    /// </summary>
+    public bool EnableAiTextTools { get; set; } = true;
+
+    /// <summary>
+    /// Allows AI inside the search itself - reading the query before it runs, re-ordering the
+    /// results, and answering above them.
+    /// <para>
+    /// Separate from <see cref="EnableAiTextTools"/>, which governs the buttons a visitor presses.
+    /// These stages spend money per search rather than per press, so a site may well want one
+    /// without the other.
+    /// </para>
+    /// <para>
+    /// This is the deployment-level switch and it is on, but every stage behind it is off until an
+    /// editor switches it on per profile (the profile editor's AI tab). Setting this to
+    /// <c>false</c> takes them out of the site altogether, whatever the backoffice says.
+    /// </para>
+    /// </summary>
+    public bool EnableAiSearch { get; set; } = true;
+
+    /// <summary>
+    /// Adds a clean body-text field (<c>extractedContent</c>) to content documents as Umbraco
+    /// indexes them, with block editor JSON and layout structure stripped out.
+    /// <para>
+    /// On by default, because without it a result snippet cut from a block-built page reads as
+    /// <c>["Home page-square text layout"] Our World Who we are</c> rather than as prose. It only
+    /// ever adds a field - nothing Umbraco indexed is removed, since these indexes are shared with
+    /// the backoffice search and with the site's own code.
+    /// </para>
+    /// <para>
+    /// Changing this needs the indexes rebuilt before it shows: a field is written while a document
+    /// is indexed, so existing documents keep whatever they were built with.
+    /// </para>
+    /// </summary>
+    public bool EnableContentExtraction { get; set; } = true;
+
+    /// <summary>
+    /// Fewest words a run of text needs before it counts as body text rather than a label.
+    /// <para>
+    /// The one number that decides what the extraction keeps. Six drops "Home page-square text
+    /// layout" and keeps a sentence; raising it drops short real paragraphs too, and lowering it
+    /// lets block labels back in. 0 uses the built-in default.
+    /// </para>
+    /// </summary>
+    public int ContentExtractionMinimumWords { get; set; }
+
+    /// <summary>
+    /// Ceiling on the extracted text per document. 0 uses the built-in default. Text past the
+    /// ceiling is index weight no snippet will ever reach.
+    /// </summary>
+    public int ContentExtractionMaxCharacters { get; set; }
+
+    /// <summary>
     /// Reads filter selections straight off the query string, so a search page needs no code to
     /// support filtering - the links the package generates are enough.
     /// </summary>

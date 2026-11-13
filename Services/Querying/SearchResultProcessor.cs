@@ -99,6 +99,10 @@ internal sealed partial class SearchResultProcessor
             ApplyHighlighting(pageItems, plan, rules.Results.Highlight);
         }
 
+        // After highlighting, so a result that got a matched sentence keeps it and only the rest
+        // fall back to what the page says about itself. Only the page being returned is walked.
+        Describe(pageItems, rules.Results);
+
         var response = new SearchResponse
         {
             Term = request.Term,
@@ -158,6 +162,12 @@ internal sealed partial class SearchResultProcessor
             }
 
             if (sources.RespectNaviHide && IsHidden(item))
+            {
+                return false;
+            }
+
+            if (sources.HideFromSearchFields.Count > 0
+                && IsHiddenFromSearch(item, sources.HideFromSearchFields))
             {
                 return false;
             }
@@ -229,7 +239,58 @@ internal sealed partial class SearchResultProcessor
     }
 
     private static bool IsHidden(SearchResultItem item)
-        => item.Fields.TryGetValue(ImobisoftSearchConstants.IndexFields.NaviHide, out var value) && IsTruthy(value);
+        => IsFlagSet(item, ImobisoftSearchConstants.IndexFields.NaviHide);
+
+    /// <summary>
+    /// Whether this page carries any of the profile's "hide from search" toggles.
+    /// <para>
+    /// The site's own version of <c>umbracoNaviHide</c>, under whatever alias it chose. An editor
+    /// who ticks a box called "Hide from site search" has made a decision, and a search engine that
+    /// returns the page anyway is simply wrong.
+    /// </para>
+    /// </summary>
+    private static bool IsHiddenFromSearch(SearchResultItem item, IList<string> fields)
+    {
+        for (var i = 0; i < fields.Count; i++)
+        {
+            if (!string.IsNullOrWhiteSpace(fields[i]) && IsFlagSet(item, fields[i].Trim()))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Reads a boolean flag off an indexed document, by its plain alias or with a culture suffix.
+    /// <para>
+    /// A property that varies by culture is indexed as <c>alias_en-gb</c>, so looking only for the
+    /// plain alias would silently find nothing on exactly the sites most likely to use one - and
+    /// "silently finds nothing" on a hide-from-search toggle means publishing a page that was meant
+    /// to be held back.
+    /// </para>
+    /// </summary>
+    private static bool IsFlagSet(SearchResultItem item, string field)
+    {
+        if (item.Fields.TryGetValue(field, out var value))
+        {
+            return IsTruthy(value);
+        }
+
+        var prefix = field + "_";
+
+        foreach (KeyValuePair<string, string> candidate in item.Fields)
+        {
+            if (candidate.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                && IsTruthy(candidate.Value))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>
     /// Only drops a document when the index explicitly says it is unpublished. A published-only index
@@ -1102,6 +1163,194 @@ internal sealed partial class SearchResultProcessor
     }
 
     /// <summary>
+    /// The property aliases a description is looked for in when a profile names none. These are
+    /// what Umbraco sites call the field in practice, most specific first: a meta description is
+    /// written to be read out of context, an opening paragraph is only the next best thing.
+    /// </summary>
+    internal static readonly string[] DefaultDescriptionFields =
+    {
+        "metaDescription",
+        "seoMetaDescription",
+        "searchDescription",
+        "description",
+        "summary",
+        "excerpt",
+        "teaser",
+        "standfirst",
+        "introText",
+        "intro",
+        "subtitle",
+
+        // Ahead of the raw properties below, and that order is the point. On a block-built page
+        // bodyText and content hold the editor's JSON, so a description cut from them reads as
+        // block labels and layout names; extractedContent is the same words with the structure
+        // taken out. Behind the hand-written fields above, because a meta description was written
+        // to be read out of context and extracted prose is only the next best thing.
+        ImobisoftSearchConstants.IndexFields.ExtractedContent,
+
+        "bodyText",
+        "content",
+    };
+
+    /// <summary>
+    /// Gives each result on the page the three things a result line needs: a heading, something to
+    /// say about itself, and a date that reads as a date.
+    /// <para>
+    /// The dates are parsed here rather than left to the view, because the index writes them as a
+    /// tick count - a view printing the raw field shows a long run of digits that looks like an id.
+    /// </para>
+    /// </summary>
+    internal static void Describe(IList<SearchResultItem> items, ResultRules results)
+    {
+        IReadOnlyList<string> fields = results.DescriptionFields
+            .Where(f => !string.IsNullOrWhiteSpace(f))
+            .Select(f => f.Trim())
+            .ToList();
+
+        if (fields.Count == 0)
+        {
+            fields = DefaultDescriptionFields;
+        }
+
+        // The description's own length, falling back to the snippet length only when nothing is
+        // set. A description is what a result says for itself when nothing matched its prose, and
+        // on a browse page that is every result - so it is allowed to run longer than a snippet.
+        var limit = results.DescriptionLength > 0
+            ? results.DescriptionLength
+            : results.Highlight.SnippetLength > 0 ? results.Highlight.SnippetLength : 320;
+
+        IReadOnlyList<string> titleFields = results.TitleFields
+            .Where(f => !string.IsNullOrWhiteSpace(f))
+            .Select(f => f.Trim())
+            .ToList();
+
+        foreach (SearchResultItem item in items)
+        {
+            ApplyTitle(item, titleFields);
+
+            if (TryParseDate(FieldValue(item, ImobisoftSearchConstants.IndexFields.CreateDate) ?? string.Empty, out DateTime created))
+            {
+                item.CreateDate = created;
+            }
+
+            if (TryParseDate(FieldValue(item, ImobisoftSearchConstants.IndexFields.UpdateDate) ?? string.Empty, out DateTime updated))
+            {
+                item.UpdateDate = updated;
+            }
+
+            item.Summary ??= FindDescription(item, fields, limit);
+        }
+    }
+
+    /// <summary>
+    /// Takes the heading from the first configured field that carries one, leaving the node's own
+    /// name in place when none do - which is what an unconfigured profile does, and what the
+    /// package did before the setting existed.
+    /// </summary>
+    private static void ApplyTitle(SearchResultItem item, IReadOnlyList<string> fields)
+    {
+        if (fields.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var field in fields)
+        {
+            var raw = FieldValue(item, field) ?? CultureVariantValue(item, field);
+            var value = PlainText(FlattenStructuredValue(raw));
+
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            // A heading is one line. A field holding a paragraph is the wrong field for this, and
+            // printing the paragraph as a link would be worse than falling back to the name.
+            item.Name = Shorten(value, MaximumTitleLength);
+            return;
+        }
+    }
+
+    /// <summary>Cuts a heading taken from a content field, in case the field holds prose.</summary>
+    private const int MaximumTitleLength = 160;
+
+    /// <summary>The first of the named fields this result actually carries anything in.</summary>
+    private static string? FindDescription(SearchResultItem item, IReadOnlyList<string> fields, int limit)
+    {
+        foreach (var field in fields)
+        {
+            var raw = FieldValue(item, field) ?? CultureVariantValue(item, field);
+
+            // Block list properties are indexed as raw JSON, so what is in the field may be a blob
+            // rather than prose. The same flattening the snippet builder uses gets the sentence
+            // someone actually wrote out of it.
+            var value = PlainText(FlattenStructuredValue(raw));
+
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            return Shorten(value, limit);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The same field on a site that varies by culture, where Umbraco indexes it as
+    /// <c>description_en-gb</c> rather than <c>description</c>. The first culture that carries one
+    /// is used: a result already belongs to one culture by the time it is here.
+    /// </summary>
+    private static string? CultureVariantValue(SearchResultItem item, string field)
+    {
+        var prefix = field + "_";
+
+        foreach (KeyValuePair<string, string> candidate in item.Fields)
+        {
+            if (candidate.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(candidate.Value))
+            {
+                return candidate.Value;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Markup out, runs of whitespace collapsed. A description is printed as text, so a stray tag
+    /// would be shown rather than rendered - and rendering it instead would let indexed content
+    /// write markup into the page.
+    /// </summary>
+    private static string? PlainText(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var text = Regex.Replace(value, "<[^>]+>", " ");
+        text = WebUtility.HtmlDecode(text);
+        text = Regex.Replace(text, @"\s+", " ").Trim();
+
+        return text.Length == 0 ? null : text;
+    }
+
+    /// <summary>Cut at a word boundary, so a description never ends mid-word.</summary>
+    private static string Shorten(string value, int limit)
+    {
+        if (limit <= 0 || value.Length <= limit)
+        {
+            return value;
+        }
+
+        var cut = value.LastIndexOf(' ', Math.Min(limit, value.Length - 1));
+
+        return (cut > limit / 2 ? value[..cut] : value[..limit]).TrimEnd(' ', ',', ';', ':', '-') + "...";
+    }
+
+    /// <summary>
     /// Builds a snippet around the first match. The snippet is HTML-encoded before the highlight tags
     /// go in, so indexed content can never inject markup into the consumer's page.
     /// </summary>
@@ -1159,19 +1408,27 @@ internal sealed partial class SearchResultProcessor
             return FlattenStructuredValue(FieldValue(item, highlight.Field));
         }
 
+        // The clean body text first, when the document has it and it contains the term. It exists
+        // for precisely this - prose with the block structure taken out - and preferring it is what
+        // stops a snippet being cut from a title.
+        var extracted = FieldValue(item, ImobisoftSearchConstants.IndexFields.ExtractedContent)
+                        ?? CultureVariantValue(item, ImobisoftSearchConstants.IndexFields.ExtractedContent);
+
+        if (!string.IsNullOrWhiteSpace(extracted) && matcher.IsMatch(extracted) && IsReadable(extracted))
+        {
+            return extracted;
+        }
+
         string? containingTerm = null;
-        string? anyValue = null;
 
         foreach (var fieldName in plan.Indexes.SelectMany(x => x.Fields).Distinct(StringComparer.OrdinalIgnoreCase))
         {
             var value = FlattenStructuredValue(FieldValue(item, fieldName));
 
-            if (string.IsNullOrWhiteSpace(value))
+            if (string.IsNullOrWhiteSpace(value) || !IsReadable(value))
             {
                 continue;
             }
-
-            anyValue ??= value;
 
             if (matcher.IsMatch(value) && (containingTerm is null || value.Length > containingTerm.Length))
             {
@@ -1179,10 +1436,56 @@ internal sealed partial class SearchResultProcessor
             }
         }
 
-        // The term matched a field we cannot show - a culture-suffixed twin, or a field the profile
-        // does not return - so fall back to any text this document has, then to its name.
-        return containingTerm ?? anyValue ?? item.Name;
+        // Null rather than a short field or the document's own name.
+        //
+        // The old fallbacks produced the worst snippet there is: a page called "Home", matched on
+        // its name, rendered as "...Home..." - the search term, two sets of ellipses, and no
+        // sentence around it. That is strictly less use than the page's description, which is where
+        // the view goes when there is no snippet, so the honest answer here is to have none.
+        return containingTerm;
     }
+
+    /// <summary>
+    /// Whether a value has enough words to be read as a sentence.
+    /// <para>
+    /// A snippet exists to show a matched word <em>in context</em>. A title, a URL segment or a
+    /// node name has no context to offer, so cutting one produces the word back with ellipses
+    /// around it. Below this it is not a snippet, it is the search term.
+    /// </para>
+    /// </summary>
+    private static bool IsReadable(string value)
+    {
+        var words = 0;
+        var inWord = false;
+
+        foreach (var c in value)
+        {
+            if (char.IsWhiteSpace(c))
+            {
+                inWord = false;
+                continue;
+            }
+
+            if (!inWord)
+            {
+                words++;
+                inWord = true;
+
+                if (words >= MinimumSnippetWords)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Fewest words a value needs before a snippet is cut from it. Eight is about the shortest run
+    /// that still reads as a sentence once the matched word is marked inside it.
+    /// </summary>
+    private const int MinimumSnippetWords = 8;
 
     private static readonly HashSet<string> JsonNoiseKeys = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -1287,9 +1590,14 @@ internal sealed partial class SearchResultProcessor
         // added around the matched words - which is why they survive the encoding.
         var encoded = WebUtility.HtmlEncode(snippet);
 
+        // Either the tag the profile names, or one built from its colour and shape settings. Both
+        // are resolved here rather than read off the rules directly, so the style path cannot be
+        // bypassed by a caller reaching for StartTag.
+        var startTag = highlight.ResolvedStartTag();
+
         builder.Append(
-            highlight.HighlightMatches && !string.IsNullOrEmpty(highlight.StartTag)
-                ? matcher.Replace(encoded, m => highlight.StartTag + m.Value + highlight.EndTag)
+            highlight.HighlightMatches && !string.IsNullOrEmpty(startTag)
+                ? matcher.Replace(encoded, m => startTag + m.Value + highlight.ResolvedEndTag())
                 : encoded);
 
         if (start + length < source.Length)

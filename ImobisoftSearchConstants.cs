@@ -40,6 +40,12 @@ public static class ImobisoftSearchConstants
         /// which a site is likely to want for a content node of its own.
         /// </summary>
         public const string SearchPagePath = "imobisoft-search";
+
+        /// <summary>
+        /// Set on the request once the search page has been rendered into it, so a site page that
+        /// renders the view component itself is not then given a second copy by the injector.
+        /// </summary>
+        public const string PageRenderedKey = "Imobisoft.Search.PageRendered";
     }
 
     public static class Database
@@ -59,6 +65,21 @@ public static class ImobisoftSearchConstants
         public const string KeyValueKey = "Imobisoft.Search.Settings";
 
         public const string CacheKey = "Imobisoft.Search.Settings.Cache";
+    }
+
+    public static class Ai
+    {
+        /// <summary>
+        /// Key the encrypted AI API key is stored under in Umbraco's key/value table. Deliberately
+        /// not part of the profile's rules JSON, which is served to the browser in full.
+        /// </summary>
+        public const string KeyValueKey = "Imobisoft.Search.Ai.ApiKey";
+
+        /// <summary>Last four characters of the key, stored in clear - this is all the backoffice shows.</summary>
+        public const string HintKeyValueKey = "Imobisoft.Search.Ai.ApiKeyHint";
+
+        /// <summary>Runtime cache key prefix for AI answers, so the same page is not paid for twice.</summary>
+        public const string CacheKeyPrefix = "Imobisoft.Search.Ai.Result";
     }
 
     public static class Profiles
@@ -91,6 +112,18 @@ public static class ImobisoftSearchConstants
         public const string Culture = "__Culture";
         public const string Raw = "__Raw_";
         public const string SortPrefix = "__Sort_";
+
+        /// <summary>
+        /// The clean body text the package adds while a document is being indexed, with block
+        /// editor JSON and layout structure stripped out. Culture-suffixed alongside the rest -
+        /// <c>extractedContent_en-gb</c> - on a variant site.
+        /// <para>
+        /// This is what result snippets and descriptions should be cut from. The fields it was
+        /// built from stay in the index untouched and still match; they are simply not worth
+        /// reading.
+        /// </para>
+        /// </summary>
+        public const string ExtractedContent = "extractedContent";
 
         public const string CreateDate = "createDate";
         public const string UpdateDate = "updateDate";

@@ -6,6 +6,13 @@ namespace Imobisoft.Search.Models;
 /// </summary>
 public sealed class SearchRuleSet
 {
+    /// <summary>
+    /// How a visitor starts a search: the box the package puts on the site's own search link.
+    /// First in the set because it is first in the journey - and first on the profile editor's
+    /// tabs, ahead of Source.
+    /// </summary>
+    public SearchBoxRules SearchBox { get; set; } = new();
+
     /// <summary>What is searchable.</summary>
     public SourceRules Sources { get; set; } = new();
 
@@ -17,6 +24,12 @@ public sealed class SearchRuleSet
 
     /// <summary>The shape of the response.</summary>
     public ResultRules Results { get; set; } = new();
+
+    /// <summary>
+    /// The live text tools offered on a result - summarise, shorten, key points, translate. Off
+    /// until a key is added in the backoffice.
+    /// </summary>
+    public AiRules Ai { get; set; } = new();
 }
 
 /// <summary>
@@ -64,9 +77,14 @@ public sealed class SearchProfile
         {
             Sources = new SourceRules
             {
-                // Without an explicit entity-type selection the engine treats the profile as
-                // "nothing included yet", so the seeded profile names the two indexes every
-                // Umbraco site ships with.
+                // The two index types every Umbraco site ships with, so the Sources tab opens on
+                // something rather than on nothing.
+                //
+                // This profile still returns no results until document types are included: that is
+                // what including means, and it is the one place the package asks for a decision
+                // before it will do anything. The alternative - searching every document type on
+                // the site by default - puts settings nodes and internal pages in front of
+                // visitors on day one, which is not a default anyone should inherit silently.
                 IndexTypes =
                 {
                     ImobisoftSearchConstants.IndexTypes.Content,

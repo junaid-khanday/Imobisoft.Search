@@ -4,6 +4,8 @@ using Examine;
 using Examine.Search;
 using Imobisoft.Search.Configuration;
 using Imobisoft.Search.Models;
+using Imobisoft.Search.Services.Ai;
+using Imobisoft.Search.Services.Indexing;
 using Imobisoft.Search.Services.Querying;
 using Imobisoft.Search.Web;
 using Microsoft.AspNetCore.Http;
@@ -11,6 +13,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Models;
+using Umbraco.Cms.Core.Models.PublishedContent;
 using Umbraco.Cms.Core.Routing;
 using Umbraco.Cms.Core.Services;
 using Umbraco.Cms.Core.Web;
@@ -43,6 +46,8 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
     private readonly IPublishedUrlProvider _publishedUrlProvider;
     private readonly IIdKeyMap _idKeyMap;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IAiQueryPlanner _aiQuery;
+    private readonly IAiReranker _aiRerank;
     private readonly ImobisoftSearchOptions _options;
     private readonly ILogger<ImobisoftSearchService> _logger;
 
@@ -60,6 +65,8 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
         IPublishedUrlProvider publishedUrlProvider,
         IIdKeyMap idKeyMap,
         IHttpContextAccessor httpContextAccessor,
+        IAiQueryPlanner aiQuery,
+        IAiReranker aiRerank,
         IOptions<ImobisoftSearchOptions> options,
         ILogger<ImobisoftSearchService> logger)
     {
@@ -73,6 +80,12 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
         _publishedUrlProvider = publishedUrlProvider;
         _idKeyMap = idKeyMap;
         _httpContextAccessor = httpContextAccessor;
+
+        // The two AI stages that run inside a search. Both are off until a profile switches them
+        // on, and neither can fail a search: they are asked, and a no is the normal answer.
+        _aiQuery = aiQuery;
+        _aiRerank = aiRerank;
+
         _options = options.Value;
         _logger = logger;
     }
@@ -95,7 +108,9 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
             cancellationToken);
 
     /// <inheritdoc />
-    public Task<SearchResponse> SearchAsync(SearchRequest request, CancellationToken cancellationToken = default)
+    public async Task<SearchResponse> SearchAsync(
+        SearchRequest request,
+        CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
 
@@ -114,22 +129,57 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
         if (!_options.Enabled)
         {
             _logger.LogDebug("Imobisoft.Search is disabled in configuration; returning no results.");
-            return Task.FromResult(SearchResponse.Empty(request.Term, profileAlias, request.Page, pageSize));
+            return SearchResponse.Empty(request.Term, profileAlias, request.Page, pageSize);
         }
 
         if (profile is { Enabled: false })
         {
             _logger.LogDebug("Search profile '{Alias}' is disabled; returning no results.", profileAlias);
-            return Task.FromResult(SearchResponse.Empty(request.Term, profileAlias, request.Page, pageSize));
+            return SearchResponse.Empty(request.Term, profileAlias, request.Page, pageSize);
         }
 
         ApplyQueryStringFilters(request);
 
-        (SearchRuleSet effectiveRules, string? appliedSort) = ApplyRequestedSort(rules, request);
+        // Reads the query before it runs, so a sentence becomes the term, filters and sort order
+        // the rest of this pipeline already knows how to apply. Returns null far more often than
+        // not - the stage is off by default, and an ordinary keyword search has nothing to read.
+        AiQueryPlan? plan = await PlanQueryAsync(rules, request, cancellationToken);
 
-        SearchResponse response = Execute(effectiveRules, request, profileAlias, pageSize, stopwatch, cancellationToken);
+        SearchResponse response = await RunAsync(
+            rules,
+            request,
+            profileAlias,
+            pageSize,
+            plan,
+            stopwatch,
+            cancellationToken);
 
-        response.SelectedSort = appliedSort;
+        // A plan that filtered everything away has made the search worse, which is the one outcome
+        // this must not ship. Running again without its filters costs a second index query and no
+        // AI, and only happens on a search that was about to show nothing.
+        if (response.TotalResults == 0 && plan is { Filters.Count: > 0 })
+        {
+            _logger.LogDebug(
+                "Imobisoft.Search dropped the filters read out of \"{Term}\": they matched nothing.",
+                request.Term);
+
+            foreach (var alias in plan.Filters.Keys)
+            {
+                request.Filters.Remove(alias);
+            }
+
+            response = await RunAsync(
+                rules,
+                request,
+                profileAlias,
+                pageSize,
+                new AiQueryPlan { Term = plan.Term, Expansions = plan.Expansions, Sort = plan.Sort },
+                stopwatch,
+                cancellationToken);
+
+            response.Diagnostics?.Notes.Add(
+                "AI filters matched nothing and were dropped; the search ran again without them.");
+        }
 
         AddSuggestion(response, rules, request, profileAlias, cancellationToken);
 
@@ -143,7 +193,291 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
 
         PublishToRequest(response);
 
-        return Task.FromResult(response);
+        return response;
+    }
+
+    /// <summary>
+    /// One pass of the engine with a plan applied: the sort the visitor or the plan asked for, a
+    /// deeper first page when the results are to be re-ordered, and the re-ordering itself.
+    /// </summary>
+    private async Task<SearchResponse> RunAsync(
+        SearchRuleSet rules,
+        SearchRequest request,
+        string profileAlias,
+        int pageSize,
+        AiQueryPlan? plan,
+        Stopwatch stopwatch,
+        CancellationToken cancellationToken)
+    {
+        SearchRuleSet planned = ApplyPlan(rules, request, plan);
+
+        (SearchRuleSet effectiveRules, string? appliedSort) = ApplyRequestedSort(planned, request);
+
+        // Re-ranking only reaches as far as the page it is given, so the page is fetched deeper
+        // than it will be shown and trimmed afterwards. That is what lets it pull a result up from
+        // eighteenth; without it the stage could only reorder the ten already on screen.
+        var depth = RerankDepth(rules, request, appliedSort);
+        var fetch = depth > pageSize ? depth : pageSize;
+
+        // On the request, because that is where the pager reads the page size from - the argument
+        // below only names the size an empty response reports. Put back afterwards: this request
+        // is run a second time if the AI's filters turn out to match nothing, and the deeper fetch
+        // is this method's own business rather than something the caller asked for.
+        var asked = request.PageSize;
+
+        if (fetch != pageSize)
+        {
+            request.PageSize = fetch;
+        }
+
+        SearchResponse response;
+
+        try
+        {
+            response = Execute(
+                effectiveRules,
+                request,
+                profileAlias,
+                pageSize,
+                stopwatch,
+                cancellationToken);
+        }
+        finally
+        {
+            request.PageSize = asked;
+        }
+
+        response.SelectedSort = appliedSort;
+
+        if (plan is not null)
+        {
+            response.AiQuery = plan.Describe();
+            response.AiFilters = plan.DescribeFilters(rules);
+            response.Diagnostics?.Notes.Add("AI read the query as: " + plan.Describe());
+        }
+
+        if (depth > 0)
+        {
+            await RerankAsync(response, rules, request, pageSize, cancellationToken);
+        }
+
+        // Back to the page size the caller asked for, whether or not the re-ranking happened: the
+        // deeper fetch is this method's business and must not reach a view, which would otherwise
+        // show twenty results on a page configured for ten.
+        if (fetch != pageSize)
+        {
+            response.PageSize = pageSize;
+
+            if (response.Results.Count > pageSize)
+            {
+                response.Results = response.Results.Take(pageSize).ToList();
+            }
+        }
+
+        return response;
+    }
+
+    /// <summary>
+    /// A rule set's AI rules, never null.
+    /// <para>
+    /// The property is declared non-nullable and a saved profile always has it, but an ad-hoc rule
+    /// set is posted as JSON by the dashboard and can carry an explicit null - which would read as
+    /// a missing section everywhere else and as a crash here. Defaults mean every AI stage is off,
+    /// which is the right answer for a rule set that did not mention them.
+    /// </para>
+    /// </summary>
+    private static AiRules AiRulesOf(SearchRuleSet rules) => rules.Ai ?? new AiRules();
+
+    /// <summary>
+    /// How many results to re-rank, or 0 when the stage should not run for this request.
+    /// <para>
+    /// The first page only: an order produced for the top twenty says nothing about what belongs on
+    /// page three, and re-ranking each page independently would move results between pages as a
+    /// visitor paged through them. And only on relevance - a visitor who picked "newest first" has
+    /// given an instruction, and reordering underneath it would be ignoring it.
+    /// </para>
+    /// </summary>
+    private int RerankDepth(SearchRuleSet rules, SearchRequest request, string? appliedSort)
+    {
+        AiSearchRules search = AiRulesOf(rules).Search;
+
+        if (request.DisableAi
+            || !search.Rerank
+            || request.Page > 1
+            || string.IsNullOrWhiteSpace(request.Term))
+        {
+            return 0;
+        }
+
+        // An explicit relevance choice is still relevance, so it is the only sort this runs under.
+        if (!string.IsNullOrWhiteSpace(appliedSort))
+        {
+            SortOption? option = rules.Results.SortOptions.FirstOrDefault(
+                o => o.Alias.Equals(appliedSort, StringComparison.OrdinalIgnoreCase));
+
+            if (option is not null && !string.IsNullOrWhiteSpace(option.Field)
+                                   && !option.Field.Equals(SortRule.ScoreField, StringComparison.OrdinalIgnoreCase))
+            {
+                return 0;
+            }
+        }
+
+        return Math.Clamp(search.RerankDepth, 5, 50);
+    }
+
+    /// <summary>
+    /// Replaces the response's results with the AI's ordering, or leaves them exactly as they were.
+    /// </summary>
+    private async Task RerankAsync(
+        SearchResponse response,
+        SearchRuleSet rules,
+        SearchRequest request,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            IReadOnlyList<SearchResultItem>? ordered = await _aiRerank.RerankAsync(
+                request.Term,
+                response.Results.ToList(),
+                AiRulesOf(rules),
+                cancellationToken);
+
+            if (ordered is null)
+            {
+                return;
+            }
+
+            response.Results = ordered.ToList();
+            response.AiReranked = true;
+
+            response.Diagnostics?.Notes.Add(
+                $"AI re-ordered the top {ordered.Count} result(s); the first {pageSize} are shown.");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The visitor left. Nothing is waiting for this response.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // The ordering is an improvement on the engine's, not a replacement for it. Anything
+            // that goes wrong here leaves the engine's own ranking in place, which is a working
+            // search - so this is logged and dropped rather than failing the request.
+            _logger.LogWarning(ex, "Imobisoft.Search could not re-rank the results.");
+        }
+    }
+
+    /// <summary>
+    /// Asks the AI to read the query, swallowing anything that goes wrong. A stage that runs inside
+    /// a search is never allowed to be the reason a search fails.
+    /// </summary>
+    private async Task<AiQueryPlan?> PlanQueryAsync(
+        SearchRuleSet rules,
+        SearchRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.DisableAi
+            || !AiRulesOf(rules).Search.UnderstandQuery
+            || string.IsNullOrWhiteSpace(request.Term))
+        {
+            return null;
+        }
+
+        try
+        {
+            return await _aiQuery.PlanAsync(request.Term, rules, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Imobisoft.Search could not read the query with AI.");
+
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Applies a plan to the request and the rules: the corrected term and any filters and sort go
+    /// onto the request, while the expansion words become synonyms of the term.
+    /// <para>
+    /// Synonyms rather than extra words in the term, because the query planner already knows how to
+    /// expand a synonym into an OR group of its own. Added to the term the visitor actually typed,
+    /// so the expansions widen what matches without being ranked as though the visitor had asked
+    /// for them.
+    /// </para>
+    /// <para>
+    /// The rules are cloned rather than edited. A saved profile is cached and shared by every
+    /// request on the server, so writing one visitor's expansions into its synonym list would put
+    /// them in everyone else's searches.
+    /// </para>
+    /// </summary>
+    private static SearchRuleSet ApplyPlan(SearchRuleSet rules, SearchRequest request, AiQueryPlan? plan)
+    {
+        if (plan is null)
+        {
+            return rules;
+        }
+
+        // A filter the visitor selected themselves always wins: they ticked a box, and the plan is
+        // reading a sentence.
+        foreach (KeyValuePair<string, IList<string>> filter in plan.Filters)
+        {
+            if (!request.Filters.ContainsKey(filter.Key))
+            {
+                request.Filters[filter.Key] = filter.Value.ToList();
+            }
+        }
+
+        // Same for the sort dropdown: an explicit choice is not overridden by one read out of words.
+        if (!string.IsNullOrWhiteSpace(plan.Sort) && string.IsNullOrWhiteSpace(request.Sort))
+        {
+            request.Sort = plan.Sort;
+        }
+
+        var term = plan.Term.Length > 0 ? plan.Term : request.Term;
+
+        if (plan.Expansions.Count == 0)
+        {
+            request.Term = term;
+
+            return rules;
+        }
+
+        var synonyms = new Dictionary<string, IList<string>>(
+            rules.Matching.Synonyms,
+            StringComparer.OrdinalIgnoreCase);
+
+        // Keyed on the term as it will be searched, so the expansions are found when it is looked up.
+        synonyms[term] = synonyms.TryGetValue(term, out IList<string>? existing)
+            ? existing.Concat(plan.Expansions).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+            : plan.Expansions.ToList();
+
+        request.Term = term;
+
+        return new SearchRuleSet
+        {
+            SearchBox = rules.SearchBox,
+            Sources = rules.Sources,
+            Matching = new MatchingRules
+            {
+                Fields = rules.Matching.Fields,
+                DefaultOperator = rules.Matching.DefaultOperator,
+                Fuzziness = rules.Matching.Fuzziness,
+                MinimumQueryLength = rules.Matching.MinimumQueryLength,
+                MinimumScore = rules.Matching.MinimumScore,
+                StopWords = rules.Matching.StopWords,
+                Synonyms = synonyms,
+                AllTermsMustMatch = rules.Matching.AllTermsMustMatch,
+                KeepSearchTerm = rules.Matching.KeepSearchTerm,
+            },
+            Ranking = rules.Ranking,
+            Results = rules.Results,
+            Ai = rules.Ai,
+        };
     }
 
     /// <summary>
@@ -202,12 +536,18 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
 
         // Best bets still pin their nodes to the top; everything below them follows the visitor's
         // chosen order, which is what a "Sort by" dropdown promises.
+        //
+        // Every other section is carried across, including the ones this does not touch: a clone
+        // that quietly drops the box rules or the AI rules would hand the rest of the pipeline a
+        // rule set where they are at their defaults - which for the AI rules reads as "off".
         SearchRuleSet effective = new()
         {
+            SearchBox = rules.SearchBox,
             Sources = rules.Sources,
             Matching = rules.Matching,
             Ranking = ranking,
             Results = rules.Results,
+            Ai = rules.Ai,
         };
 
         return (effective, option.Alias);
@@ -325,7 +665,9 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
         SearchResponse response = Execute(rules, request, profile.Alias, size * 3, stopwatch, cancellationToken);
         ResolveUrls(response);
 
-        return Task.FromResult(SuggestionEngine.BuildAutocomplete(response.Results.ToList(), size));
+        // The term goes in too, so what comes back can complete the word being typed rather than
+        // only name the pages it was found in.
+        return Task.FromResult(SuggestionEngine.BuildAutocomplete(response.Results.ToList(), size, term));
     }
 
     /// <inheritdoc />
@@ -378,6 +720,10 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
 
         var processor = new SearchResultProcessor(IsProtectedPath, ResolveNodeIdForFacets);
         SearchResponse response = processor.Process(matches, plan, request, profileAlias);
+
+        // Runs after the processor rather than instead of it, so the filter counts above the list
+        // still describe the whole site while the list itself is the editor's.
+        ApplyCuratedBrowseResults(response, plan, request);
 
         TrimReturnedFields(response, plan);
         ResolveUrls(response);
@@ -560,6 +906,193 @@ public sealed class ImobisoftSearchService : IImobisoftSearchService
         }
 
         return matches;
+    }
+
+    /// <summary>
+    /// Replaces the results of a browse - a search page nobody has typed into yet - with the pages
+    /// the profile names, in the order it names them.
+    /// <para>
+    /// Read from the published cache rather than from the index, because an editor's choice has to
+    /// appear whether or not it happens to fall inside the window of documents the browse query
+    /// pulled back. A pick is an instruction, not a ranking signal.
+    /// </para>
+    /// <para>
+    /// Does nothing on a real search, and nothing when the profile picks nothing. If not one pick
+    /// can be resolved - every one of them unpublished, say - the automatic list is left exactly as
+    /// it was, which is a working search page rather than an empty one.
+    /// </para>
+    /// </summary>
+    private void ApplyCuratedBrowseResults(SearchResponse response, SearchPlan plan, SearchRequest request)
+    {
+        IList<Guid> keys = plan.Rules.Results.BrowseNodeKeys;
+
+        if (keys.Count == 0 || !request.AllowEmptyTerm || !string.IsNullOrWhiteSpace(request.Term))
+        {
+            return;
+        }
+
+        var picked = new List<SearchResultItem>();
+
+        try
+        {
+            using UmbracoContextReference reference = _umbracoContextFactory.EnsureUmbracoContext();
+            IUmbracoContext context = reference.UmbracoContext;
+
+            foreach (Guid key in keys)
+            {
+                // Media as well as content: the picker offers documents, but a profile saved
+                // against a media key should still resolve rather than silently vanish.
+                IPublishedContent? node = context.Content?.GetById(key) ?? context.Media?.GetById(key);
+
+                if (node is null)
+                {
+                    continue;
+                }
+
+                picked.Add(Describe(node, plan.Rules.Results));
+            }
+        }
+        catch (Exception ex)
+        {
+            // No published cache - the backoffice preview, for one. The automatic list stands.
+            _logger.LogDebug(ex, "Could not read the curated browse results from the published cache.");
+
+            return;
+        }
+
+        if (picked.Count == 0)
+        {
+            _logger.LogInformation(
+                "The profile names {Count} page(s) to open the search page with, but none of them "
+                + "could be found - unpublished or deleted, most likely. The search page is showing "
+                + "its usual results instead.",
+                keys.Count);
+
+            return;
+        }
+
+        // The same pass the index results get, so a picked page carries a description and a real
+        // date rather than being the one kind of result that does not.
+        SearchResultProcessor.Describe(picked, plan.Rules.Results);
+
+        response.Results = picked;
+        response.TotalResults = picked.Count;
+        response.Page = 1;
+
+        // Every pick is on this one page, which is what makes TotalPages one and HasMore false -
+        // both are worked out from these two numbers. Load More has nothing left to fetch.
+        response.PageSize = picked.Count;
+        response.EnableLoadMore = false;
+    }
+
+    /// <summary>One picked page, in the shape the rest of the pipeline and the view expect.</summary>
+    private static SearchResultItem Describe(IPublishedContent node, ResultRules results)
+    {
+        var isMedia = node.ItemType == PublishedItemType.Media;
+
+        var item = new SearchResultItem
+        {
+            Id = node.Id.ToString(),
+            Key = node.Key,
+            Name = node.Name ?? string.Empty,
+            ContentTypeAlias = node.ContentType.Alias,
+            IndexType = isMedia
+                ? ImobisoftSearchConstants.IndexTypes.Media
+                : ImobisoftSearchConstants.IndexTypes.Content,
+            Path = node.Path,
+
+            // Picked, not scored. Nothing here was ranked against anything.
+            RawScore = 0,
+            Score = 0,
+        };
+
+        // The same fields a result off the index carries, so a view reading updateDate for its
+        // date line finds one here too.
+        item.Fields[ImobisoftSearchConstants.IndexFields.NodeName] = item.Name;
+        item.Fields[ImobisoftSearchConstants.IndexFields.NodeTypeAlias] = item.ContentTypeAlias;
+        item.Fields[ImobisoftSearchConstants.IndexFields.CreateDate] = node.CreateDate.ToString("O");
+        item.Fields[ImobisoftSearchConstants.IndexFields.UpdateDate] = node.UpdateDate.ToString("O");
+
+        // The fields a heading and a description are looked for in, copied off the node so the
+        // shared pass can find them here exactly as it does on a result that came from the index.
+        IEnumerable<string> descriptionAliases = results.DescriptionFields.Count > 0
+            ? results.DescriptionFields.Where(f => !string.IsNullOrWhiteSpace(f)).Select(f => f.Trim())
+            : SearchResultProcessor.DefaultDescriptionFields;
+
+        IEnumerable<string> aliases = results.TitleFields
+            .Where(f => !string.IsNullOrWhiteSpace(f))
+            .Select(f => f.Trim())
+            .Concat(descriptionAliases);
+
+        foreach (var alias in aliases)
+        {
+            if (item.Fields.ContainsKey(alias))
+            {
+                continue;
+            }
+
+            // The property API rather than the Value() extension, which wants an
+            // IPublishedValueFallback this does not need: the value is either on the node or it is
+            // not, and the next alias in the list is the fallback.
+            var value = node.GetProperty(alias)?.GetValue()?.ToString();
+
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                item.Fields[alias] = value;
+            }
+        }
+
+        AddExtractedContent(item, node);
+
+        return item;
+    }
+
+    /// <summary>
+    /// Builds the clean body-text field for a node read from the published cache, using the same
+    /// rules the indexer uses.
+    /// <para>
+    /// A curated browse result - the pages a profile opens its search page with - never passes
+    /// through Examine, so it cannot inherit the <c>extractedContent</c> the indexer writes. Left
+    /// alone it falls through the description list to <c>bodyText</c>, which on a block-built page
+    /// is the editor's raw JSON: the one kind of result that shows block layout data instead of a
+    /// sentence, on the one page where every result needs a description because none of them
+    /// matched anything.
+    /// </para>
+    /// <para>
+    /// Source values, not rendered ones, because the source is what the indexer sees and the two
+    /// have to agree - a browse description that read differently from the same page's search
+    /// description would be a puzzle for whoever noticed.
+    /// </para>
+    /// </summary>
+    private static void AddExtractedContent(SearchResultItem item, IPublishedContent node)
+    {
+        var field = ImobisoftSearchConstants.IndexFields.ExtractedContent;
+
+        if (item.Fields.ContainsKey(field))
+        {
+            return;
+        }
+
+        try
+        {
+            var values = node.Properties
+                .Select(p => new KeyValuePair<string, IEnumerable<object>>(
+                    p.Alias,
+                    new object[] { p.GetSourceValue() ?? string.Empty }))
+                .ToList();
+
+            var text = ExtractedContentBuilder.Build(values);
+
+            if (text.Length > 0)
+            {
+                item.Fields[field] = text;
+            }
+        }
+        catch
+        {
+            // A property that throws on read leaves this result without a description rather than
+            // without a search page. The name and the link still work.
+        }
     }
 
     private static SearchResultItem MapResult(ISearchResult result, string indexName)

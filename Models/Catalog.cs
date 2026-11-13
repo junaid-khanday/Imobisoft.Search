@@ -18,6 +18,25 @@ public sealed class IndexFieldInfo
 
     /// <summary>True for Umbraco's internal <c>__</c> plumbing fields, which the UI hides by default.</summary>
     public bool IsSystemField { get; set; }
+
+    /// <summary>
+    /// True when the sampled values look like block editor data rather than prose - JSON, or a
+    /// list of block labels.
+    /// <para>
+    /// Worth knowing before picking a field to search, because the consequence is not obvious and
+    /// does not look like a configuration mistake. A block field carries every block's label and
+    /// layout name as well as its content, so a page using a block called "Home page-square text
+    /// layout" matches a search for "home" with nothing about home on it anywhere. The symptom is
+    /// results that are simply wrong, with no clue as to why.
+    /// </para>
+    /// </summary>
+    public bool LooksStructured { get; set; }
+
+    /// <summary>
+    /// True for the clean body-text field the package writes while indexing. The one to search and
+    /// to cut snippets from on a site built with block editors.
+    /// </summary>
+    public bool IsExtractedContent { get; set; }
 }
 
 /// <summary>

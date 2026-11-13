@@ -2,6 +2,7 @@ using Imobisoft.Search.Configuration;
 using Imobisoft.Search.Models;
 using Imobisoft.Search.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Imobisoft.Search.Web;
@@ -22,18 +23,24 @@ namespace Imobisoft.Search.Web;
 [Route("~/" + ImobisoftSearchConstants.Web.SearchPagePath)]
 public sealed class ImobisoftSearchController : Controller
 {
-    private readonly IImobisoftSearchService _search;
-    private readonly ISearchProfileService _profiles;
+    private readonly ISearchPageModelBuilder _builder;
+    private readonly ISiteLayoutLocator _layout;
+    private readonly ISiteSearchPageLocator _sitePages;
     private readonly ImobisoftSearchOptions _options;
+    private readonly ILogger<ImobisoftSearchController> _logger;
 
     public ImobisoftSearchController(
-        IImobisoftSearchService search,
-        ISearchProfileService profiles,
-        IOptions<ImobisoftSearchOptions> options)
+        ISearchPageModelBuilder builder,
+        ISiteLayoutLocator layout,
+        ISiteSearchPageLocator sitePages,
+        IOptions<ImobisoftSearchOptions> options,
+        ILogger<ImobisoftSearchController> logger)
     {
-        _search = search;
-        _profiles = profiles;
+        _builder = builder;
+        _layout = layout;
+        _sitePages = sitePages;
         _options = options.Value;
+        _logger = logger;
     }
 
     /// <summary>The search page. A request with no term renders the form on its own.</summary>
@@ -48,91 +55,78 @@ public sealed class ImobisoftSearchController : Controller
             return NotFound();
         }
 
-        ImobisoftSearchPageViewModel model = await BuildModel(q, page, cancellationToken);
+        // A site that has a page of its own for search has one search page, not two. Everything the
+        // visitor asked for travels with them, so a term typed into the header box is answered on
+        // the site's page rather than dropped on the way there. Found, not permanent: naming a
+        // different page in the settings must not leave browsers redirecting to the old one.
+        var sitePage = SitePage();
 
-        return View(model);
+        if (sitePage is not null)
+        {
+            return Redirect(sitePage + Request.QueryString);
+        }
+
+        ImobisoftSearchPageViewModel model = await _builder.BuildAsync(q, page, cancellationToken);
+
+        // This route is the package's own, so the page is on its own path rather than inside one of
+        // the site's pages - its form posts back here.
+        model.PagePath = "/" + ImobisoftSearchConstants.Web.SearchPagePath;
+
+        // The site's layout where there is one this page can be rendered into, so search arrives
+        // with the site's header and footer around it. Where there is not - which is any layout
+        // that declares a view model of its own, because a layout shares its model with the page
+        // inside it - the page writes its own document and the site renders search inside its own
+        // pages instead, through ImobisoftSearchPageViewComponent.
+        model.LayoutPath = _layout.Find();
+        model.RenderDocumentShell = model.LayoutPath is null;
+
+        return View("SearchPage", model);
     }
 
     /// <summary>
-    /// Just the results, for the "load more" button to append. Rendering the same partial the page
-    /// uses means the appended results can never drift from the first page's.
+    /// The first site page search is answered on, as a path to send a visitor to, or null when the
+    /// site has none and this route is the search page.
+    /// <para>
+    /// Either a page named in Search → Settings or the search page the site already had, which the
+    /// package recognises on its own - so a site that had search before the package keeps the one
+    /// page its links already point at.
+    /// </para>
     /// </summary>
-    [HttpGet("results")]
-    public async Task<IActionResult> Results(
-        [FromQuery] string? q,
-        [FromQuery] int page = 1,
-        CancellationToken cancellationToken = default)
+    private string? SitePage()
     {
-        if (!_options.EnableSearchPage)
+        try
         {
-            return NotFound();
+            var path = _sitePages.Find().FirstOrDefault();
+
+            if (string.IsNullOrEmpty(path))
+            {
+                return null;
+            }
+
+            // Never to this route, which would be a redirect to the page doing the redirecting.
+            // Said plainly in the log, because a site page given this URL is also shadowed by this
+            // route - an attribute route wins over Umbraco's content route - so the page would
+            // appear to have been ignored with nothing to say why.
+            if (path.Trim('/').Equals(ImobisoftSearchConstants.Web.SearchPagePath, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning(
+                    "Search → Settings names {Path} as the site page to render search into, but that "
+                    + "is this package's own route and it is serving this request. A site page at "
+                    + "that URL can never be reached. Give the page a URL of its own - /site-search, "
+                    + "/find - and name that instead; this route will then send visitors to it.",
+                    path);
+
+                return null;
+            }
+
+            return path;
         }
-
-        ImobisoftSearchPageViewModel model = await BuildModel(q, page, cancellationToken);
-
-        return PartialView("_Results", model);
-    }
-
-    private async Task<ImobisoftSearchPageViewModel> BuildModel(string? q, int page, CancellationToken cancellationToken)
-    {
-        var term = (q ?? string.Empty).Trim();
-        var hasQuery = !string.IsNullOrWhiteSpace(term)
-                       || (Request != null && Request.Query.ContainsKey("q"))
-                       || (Request != null && Request.Query.ContainsKey("sort"))
-                       || HttpContext.HasActiveFilters();
-        SearchProfile? profile = _profiles.ResolveForSearch(null);
-
-        List<SortOption> configuredSorts = profile?.Rules.Results.SortOptions
-            .Where(s => s.Enabled && !string.IsNullOrWhiteSpace(s.Alias) && !string.IsNullOrWhiteSpace(s.Label))
-            .ToList() ?? new List<SortOption>();
-
-        var selectedSort = Request?.Query["sort"].ToString() ?? string.Empty;
-        if (!configuredSorts.Any(s => s.Alias.Equals(selectedSort, StringComparison.OrdinalIgnoreCase)))
+        catch
         {
-            selectedSort = string.Empty;
+            // Settings live in the database and discovery reads the content cache. A failure in
+            // either leaves this route serving the search page itself, which is what it did before
+            // there was a setting.
+            return null;
         }
-
-        var model = new ImobisoftSearchPageViewModel
-        {
-            Term = term,
-            Page = page < 1 ? 1 : page,
-            PagePath = "/" + ImobisoftSearchConstants.Web.SearchPagePath,
-            HasSearched = hasQuery,
-            ConfiguredFacets = profile?.Rules.Results.Facets
-                .Where(f => f.Enabled && !string.IsNullOrWhiteSpace(f.Alias))
-                .ToList() ?? new List<FacetDefinition>(),
-            ConfiguredSortOptions = configuredSorts,
-            SelectedSort = selectedSort,
-        };
-
-        // With Load More disabled the profile serves exactly one page of PageSize items: later
-        // pages are not served even when the URL asks for them, so the configured page size is the
-        // hard limit on what a visitor can see.
-        if (profile?.Rules.Results.EnableLoadMore != true)
-        {
-            model.Page = 1;
-        }
-
-        // A search runs when the visitor asked for one, or - before that - when the profile defines
-        // filters, so the dropdowns can show their live counts on an untouched page. An empty term
-        // with filters selected is a real request too: picking a filter without typing anything
-        // must list what matches it.
-        if (model.HasSearched || (profile?.Rules.Results.Facets.Count ?? 0) > 0 || configuredSorts.Count > 0)
-        {
-            // Filters and the sort choice are read off the query string by the package, so nothing
-            // is passed for them here. Page size comes from the profile unless the profile says
-            // otherwise.
-            model.Response = await _search.SearchAsync(
-                new SearchRequest
-                {
-                    Term = term,
-                    Page = model.Page,
-                    AllowEmptyTerm = string.IsNullOrWhiteSpace(term),
-                    Sort = string.IsNullOrWhiteSpace(selectedSort) ? null : selectedSort,
-                },
-                cancellationToken);
-        }
-
-        return model;
     }
 }

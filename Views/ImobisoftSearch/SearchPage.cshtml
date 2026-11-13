@@ -1,0 +1,929 @@
+@model ImobisoftSearchPageViewModel
+@inject Imobisoft.Search.Services.Ai.IAiTextService AiTools
+@{
+    // Three ways this page is rendered, and the model says which:
+    //   - the package's own route with the site's layout found, which puts the site's header and
+    //     footer around search without the site doing anything;
+    //   - the package's own route with no layout it can use, where it stands on its own in the
+    //     package's bare document;
+    //   - as a block inside one of the site's own pages, which is how search gets the header and
+    //     footer of a site whose layout declares a view model of its own - either placed there by
+    //     the package or rendered by the site through ImobisoftSearchPageViewComponent. No layout
+    //     here: the page it is in is already providing one.
+    var siteLayout = string.IsNullOrWhiteSpace(Model.LayoutPath) ? null : Model.LayoutPath;
+    var standalone = siteLayout is null && Model.RenderDocumentShell;
+
+    Layout = siteLayout ?? (standalone ? "~/Views/ImobisoftSearch/_SearchPageLayout.cshtml" : null);
+
+    ViewData["Title"] = Model.HasSearched && !string.IsNullOrWhiteSpace(Model.Term)
+        ? $"{Model.Term} - Search"
+        : "Search";
+
+    SearchResponse? response = Model.Response;
+    var activeFilters = Context.GetActiveFilters();
+    var hasActiveFilters = Context.HasActiveFilters();
+    var facetCounts = Context.GetSearchFilters();
+
+    // "Keep the searched term" on the profile's Matching tab decides whether the box still holds
+    // what was searched for, so it can be refined rather than retyped.
+    var keepTerm = Model.KeepSearchTerm;
+    var boxTerm = keepTerm ? Model.Term : string.Empty;
+}
+    @* Stays with the markup rather than moving to a section: it has to reach the page whether this
+       is the whole document or a block inside one of the site's pages, and a site's layout cannot
+       be relied on to render a section this package asks for. *@
+    <style>
+        /*
+            Everything here is driven by the custom properties below, so a site re-colours search by
+            setting them somewhere its own stylesheet loads - no need to touch the rest of this file:
+
+                :root {
+                    --imobisoft-title: #8b1d41;
+                    --imobisoft-gradient: linear-gradient(90deg, #8b1d41 0%, #d4145a 100%);
+                }
+        */
+        :root {
+            /* Result titles. The one strong colour on the page. */
+            --imobisoft-title: #006f8e;
+            --imobisoft-title-hover: #00536b;
+
+            /* Body copy: the snippet and anything read as a sentence. */
+            --imobisoft-text: #42526e;
+
+            /* Paths, dates and counts - present, but never competing with the result itself. */
+            --imobisoft-muted: #666666;
+
+            --imobisoft-border: #c1c7d0;
+            --imobisoft-bg: #ffffff;
+            --imobisoft-radius: 10px;
+
+            /* The one filled control on the page - Load More. */
+            --imobisoft-gradient: linear-gradient(90deg, #007385 0%, #0058a8 48%, #fd4199 100%);
+
+            /* The matched word in a snippet is bold rather than highlighted. Set this to a colour
+               - #fef08a, say - to have it marked out instead. */
+            --imobisoft-highlight: transparent;
+
+            /* And the colour it is bolded in: dark green, so a match stands out in a paragraph
+               without a block of fill behind every one of them. Recolour the matched term by
+               setting this alone. */
+            --imobisoft-highlight-text: #15803d;
+
+            --imobisoft-font: Calibri, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+
+            /* The search field, and the filter row above it, are held to a readable width rather
+               than stretched across the page. */
+            --imobisoft-field-width: 790px;
+
+            /* Content sits in the right ten of twelve columns on a wide screen, which is what puts
+               the left margin beside the results. Set to 0 for full width. */
+            --imobisoft-indent: 16.6667%;
+        }
+
+@if (standalone)
+{
+        @* The whole document is this page's, so the reset and the page frame are too. *@
+        <text>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: var(--imobisoft-font);
+            background-color: var(--imobisoft-bg);
+            color: var(--imobisoft-text);
+            line-height: 1.5;
+            padding: 48px 20px;
+        }
+        </text>
+}
+else
+{
+        @* Inside the site's own page, where a global reset and a rule on body would be the
+           package quietly restyling the site around it. Everything is held to this page's own
+           subtree, and the site's background and spacing are left to the site. *@
+        <text>
+        .imobisoft-container, .imobisoft-container * { box-sizing: border-box; }
+
+        .imobisoft-container {
+            font-family: var(--imobisoft-font);
+            color: var(--imobisoft-text);
+            line-height: 1.5;
+        }
+        </text>
+}
+
+        .imobisoft-container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .imobisoft-page-form {
+            margin: 0;
+        }
+
+        @@media (min-width: 992px) {
+            .imobisoft-page-form { margin-left: var(--imobisoft-indent); }
+        }
+
+        .imobisoft-page-title {
+            margin: 0 0 32px;
+            font-size: 44px;
+            line-height: 1.2;
+            font-weight: 700;
+            color: var(--imobisoft-title);
+        }
+
+        /* Filters -------------------------------------------------------------------------- */
+
+        .imobisoft-filter-bar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px 24px;
+            max-width: var(--imobisoft-field-width);
+            margin-bottom: 16px;
+        }
+
+        .imobisoft-filter-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .imobisoft-filter-label {
+            font-size: 16px;
+            font-weight: 500;
+            color: #000000;
+        }
+
+        .imobisoft-filter-select {
+            height: 40px;
+            max-width: 100%;
+            padding: 0 12px;
+            border: 1px solid var(--imobisoft-border);
+            border-radius: var(--imobisoft-radius);
+            background: #ffffff;
+            font-family: inherit;
+            font-size: 15px;
+            color: var(--imobisoft-text);
+            cursor: pointer;
+        }
+
+        .imobisoft-filter-select:focus-visible {
+            outline: 2px solid var(--imobisoft-title);
+            outline-offset: 1px;
+        }
+
+        .imobisoft-clear-filters {
+            font-size: 15px;
+            color: var(--imobisoft-muted);
+            text-decoration: underline;
+        }
+
+        .imobisoft-clear-filters:hover {
+            color: var(--imobisoft-title);
+        }
+
+        /* The search field ----------------------------------------------------------------- */
+
+        .imobisoft-header {
+            margin-bottom: 64px;
+        }
+
+        .imobisoft-search-form {
+            position: relative;
+            max-width: var(--imobisoft-field-width);
+        }
+
+        .imobisoft-input-wrap {
+            position: relative;
+        }
+
+        .imobisoft-input {
+            width: 100%;
+            height: 54px;
+            padding: 11px 56px 13px 24px;
+            border: 1px solid var(--imobisoft-border);
+            border-radius: var(--imobisoft-radius);
+            background: #ffffff;
+            font-family: inherit;
+            font-size: 14px;
+            color: #000000;
+        }
+
+        .imobisoft-input::placeholder {
+            color: #8a93a4;
+        }
+
+        .imobisoft-input:focus {
+            outline: none;
+            border-color: var(--imobisoft-title);
+            box-shadow: 0 0 0 3px rgba(0, 111, 142, 0.12);
+        }
+
+        /* The magnifier sits in the field rather than beside it, so the bar reads as one control. */
+        .imobisoft-search-submit {
+            position: absolute;
+            top: 50%;
+            right: 10px;
+            transform: translateY(-50%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            padding: 0;
+            border: 0;
+            border-radius: 8px;
+            background: transparent;
+            color: var(--imobisoft-title);
+            cursor: pointer;
+        }
+
+        .imobisoft-search-submit:hover {
+            color: var(--imobisoft-title-hover);
+        }
+
+        /* Above the results ---------------------------------------------------------------- */
+
+        .imobisoft-suggestion {
+            margin-bottom: 24px;
+            font-size: 18px;
+            color: var(--imobisoft-text);
+        }
+
+        .imobisoft-suggestion a {
+            color: var(--imobisoft-title);
+            font-weight: 700;
+            text-decoration: underline;
+        }
+
+        /* "Showing results for X - search instead for Y". Quieter than the did-you-mean line above
+           it: that one is an offer, and this is a notice about something already done. */
+        .imobisoft-ai-notice {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: baseline;
+            gap: 4px 12px;
+            margin-bottom: 20px;
+            font-size: 15px;
+            color: var(--imobisoft-muted);
+        }
+
+        .imobisoft-ai-notice strong {
+            color: var(--imobisoft-text);
+        }
+
+        .imobisoft-ai-notice a {
+            color: var(--imobisoft-title);
+            text-decoration: underline;
+        }
+
+        .imobisoft-stats-bar {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            gap: 8px 24px;
+            margin-bottom: 24px;
+            font-size: 16px;
+            color: var(--imobisoft-muted);
+        }
+
+        .imobisoft-stats-bar strong {
+            color: var(--imobisoft-text);
+            font-weight: 700;
+        }
+
+        .imobisoft-groups-pills {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px 16px;
+            margin-bottom: 32px;
+            font-size: 15px;
+            color: var(--imobisoft-muted);
+        }
+
+        .imobisoft-group-pill strong {
+            color: var(--imobisoft-text);
+        }
+
+        /* Results -------------------------------------------------------------------------- */
+
+        .imobisoft-results-list {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+
+        .imobisoft-result-card {
+            padding-bottom: 40px;
+        }
+
+        .imobisoft-result-header {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        .imobisoft-result-header:empty {
+            display: none;
+        }
+
+        .imobisoft-badge {
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+            color: var(--imobisoft-muted);
+        }
+
+        .imobisoft-badge-bestbet {
+            color: var(--imobisoft-title);
+        }
+
+        .imobisoft-result-title {
+            margin: 0;
+            font-size: 20px;
+            line-height: 1.4;
+            font-weight: 700;
+        }
+
+        .imobisoft-result-title a {
+            color: var(--imobisoft-title);
+            text-decoration: underline;
+        }
+
+        .imobisoft-result-title a:hover {
+            color: var(--imobisoft-title-hover);
+        }
+
+        /* Where the result lives, under its name, the way a breadcrumb reads. */
+        .imobisoft-result-path {
+            margin-top: 4px;
+            font-size: 14px;
+            color: var(--imobisoft-muted);
+            overflow-wrap: anywhere;
+        }
+
+        .imobisoft-result-snippet {
+            margin-top: 8px;
+            font-size: 20px;
+            line-height: 1.5;
+            color: var(--imobisoft-text);
+        }
+
+        /*
+            The matched term inside a snippet.
+
+            Every tag the highlight rules can be set to is covered - mark, b, strong, and a
+            span.highlight - so changing the start tag in Search → Results → Highlighting restyles
+            nothing and still looks right. Dark green and bold rather than a yellow fill: the fill
+            reads as a marker pen across a paragraph, which is heavy when most results have several
+            matches in them.
+        */
+        .imobisoft-result-snippet mark,
+        .imobisoft-result-snippet b,
+        .imobisoft-result-snippet strong,
+        .imobisoft-result-snippet .highlight {
+            background: none;
+            color: var(--imobisoft-highlight-text);
+            font-weight: 700;
+        }
+
+        /* A clear line between the description and the date, so the date reads as a footnote to
+           the result rather than as the last clause of the sentence above it. */
+        .imobisoft-result-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px 24px;
+            margin-top: 1.5em;
+            font-size: 16px;
+            color: var(--imobisoft-muted);
+        }
+
+        .imobisoft-result-meta:empty {
+            display: none;
+        }
+
+        /* Empty states --------------------------------------------------------------------- */
+
+        .imobisoft-empty-box {
+            max-width: var(--imobisoft-field-width);
+            padding: 32px 0;
+        }
+
+        .imobisoft-empty-box h3 {
+            margin: 0 0 8px;
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--imobisoft-title);
+        }
+
+        .imobisoft-empty-box p {
+            margin: 0;
+            font-size: 18px;
+            color: var(--imobisoft-text);
+        }
+
+        /* Buttons -------------------------------------------------------------------------- */
+
+        .imobisoft-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            height: 54px;
+            padding: 0 24px;
+            border: 1px solid transparent;
+            border-radius: var(--imobisoft-radius);
+            font-family: inherit;
+            font-size: 18px;
+            font-weight: 700;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .imobisoft-btn-primary {
+            background-image: var(--imobisoft-gradient);
+            color: #ffffff;
+        }
+
+        .imobisoft-btn-secondary {
+            border-color: var(--imobisoft-border);
+            background: #ffffff;
+            color: var(--imobisoft-text);
+        }
+
+        .imobisoft-btn-secondary:hover {
+            border-color: var(--imobisoft-title);
+            color: var(--imobisoft-title);
+        }
+
+        .imobisoft-pagination-wrap {
+            padding-top: 8px;
+        }
+
+        .imobisoft-btn-load-more {
+            padding: 16px 24px;
+            border: 0;
+            border-radius: var(--imobisoft-radius);
+            background-image: var(--imobisoft-gradient);
+            font-family: inherit;
+            font-size: 18px;
+            font-weight: 700;
+            color: #ffffff;
+            cursor: pointer;
+        }
+
+        .imobisoft-btn-load-more:hover {
+            filter: brightness(1.08);
+        }
+
+        .imobisoft-btn-load-more:disabled {
+            opacity: 0.6;
+            cursor: default;
+            filter: none;
+        }
+
+        @@media (max-width: 575px) {
+            .imobisoft-result-title { font-size: 18px; }
+            .imobisoft-result-snippet { font-size: 17px; }
+            .imobisoft-page-title { font-size: 32px; }
+        }
+    </style>
+    <div class="imobisoft-container">
+        @* One GET form holds the search box and every filter dropdown, so picking an option
+           re-runs the search with the term and every other selection intact. *@
+        <form method="get" action="@Model.PagePath" class="imobisoft-page-form">
+        @* The filters sit on top, before the search box, and are here the moment the page
+           opens - the bar is driven by the profile's facet definitions, with live counts joining
+           from the response once a search (or the automatic browse pass) has produced them. *@
+        @if (Model.ConfiguredFacets.Count > 0 || Model.ConfiguredSortOptions.Count > 0)
+        {
+            <div class="imobisoft-filter-bar">
+                @foreach (FacetDefinition definition in Model.ConfiguredFacets)
+                {
+                    FacetResult? counts = facetCounts.FirstOrDefault(f =>
+                        f.Alias.Equals(definition.Alias, StringComparison.OrdinalIgnoreCase));
+                    var label = string.IsNullOrWhiteSpace(definition.Label) ? definition.Alias : definition.Label;
+
+                    <label class="imobisoft-filter-item">
+                        <span class="imobisoft-filter-label">@label</span>
+                        <select class="imobisoft-filter-select"
+                                name="f_@definition.Alias"
+                                aria-label="@label"
+                                onchange="this.form.submit()">
+                            <option value="">All @label</option>
+                            @if (counts is not null)
+                            {
+                                @foreach (FacetValue choice in counts.Values)
+                                {
+                                    <option value="@choice.Value" selected="@choice.IsSelected">@choice.Label (@choice.Count)</option>
+                                }
+                            }
+                        </select>
+                    </label>
+                }
+
+                @if (Model.ConfiguredSortOptions.Count > 0)
+                {
+                    <label class="imobisoft-filter-item">
+                        <span class="imobisoft-filter-label">Sort by</span>
+                        <select class="imobisoft-filter-select"
+                                name="sort"
+                                aria-label="Sort by"
+                                onchange="this.form.submit()">
+                            <option value="" selected="@string.IsNullOrEmpty(Model.SelectedSort)">Relevance</option>
+                            @foreach (SortOption option in Model.ConfiguredSortOptions)
+                            {
+                                @* Options without a field ARE the relevance choice, already
+                                   covered by the blank entry above - skip them to avoid duplicates. *@
+                                if (string.IsNullOrWhiteSpace(option.Field))
+                                {
+                                    continue;
+                                }
+                                <option value="@option.Alias"
+                                        selected="@option.Alias.Equals(Model.SelectedSort, StringComparison.OrdinalIgnoreCase)">
+                                    @option.Label
+                                </option>
+                            }
+                        </select>
+                    </label>
+                }
+
+                @if (hasActiveFilters)
+                {
+                    <a href="@Context.ClearFiltersUrl()" class="imobisoft-clear-filters" rel="nofollow">
+                        Clear all filters
+                    </a>
+                }
+            </div>
+        }
+
+        @* Filter selections for which no dropdown is rendered (an alias since renamed, say)
+           still have to survive the round trip. *@
+        @foreach (var filter in activeFilters.Where(f => !Model.ConfiguredFacets.Any(x => x.Alias.Equals(f.Key, StringComparison.OrdinalIgnoreCase))))
+            {
+                foreach (var value in filter.Value)
+                {
+                    <input type="hidden" name="f_@filter.Key" value="@value" />
+                }
+            }
+
+            <header class="imobisoft-header">
+                @* Only on the package's own bare page. Inside one of the site's pages the site has
+                   already given the page its title - in a banner of its own, usually - and a second
+                   "Search" under it is the package talking over the site. *@
+                @if (standalone)
+                {
+                    <h1 class="imobisoft-page-title">Search</h1>
+                }
+
+                @* The search bar. Inlined rather than a partial so this one file is the whole page -
+                   restyle it here. The only contract is a text input named "q" inside this page's
+                   GET form, which the form above already is. *@
+                <div class="imobisoft-search-form">
+                    <div class="imobisoft-input-wrap">
+                        @* data-imobisoft-suggest opts this box into type-ahead. Remove it to turn
+                           suggestions off for this page only; the site-wide switch is in
+                           Search > Settings. *@
+                        <input type="search"
+                               id="imobisoft-search-page-input"
+                               name="q"
+                               class="imobisoft-input"
+                               value="@boxTerm"
+                               placeholder="Search our site"
+                               autocomplete="off"
+                               aria-label="Search"
+                               data-imobisoft-suggest />
+                        <button type="submit" class="imobisoft-search-submit" aria-label="Search">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                                 aria-hidden="true" focusable="false">
+                                <circle cx="11" cy="11" r="7"></circle>
+                                <line x1="20" y1="20" x2="16.65" y2="16.65"></line>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            @if (response is null)
+            {
+                <div class="imobisoft-empty-box">
+                    <h3>Welcome to Search</h3>
+                    <p>Type keywords into the search box above, or pick a filter, to find pages, articles, media, and documents.</p>
+                </div>
+            }
+            else
+            {
+                @* A response exists even before the first term: the browse pass serves the
+                   profile's "results before searching" so the page opens with content. *@
+                @* Did You Mean Suggestion *@
+                @if (!string.IsNullOrWhiteSpace(response.Suggestion))
+                {
+                    <div class="imobisoft-suggestion">
+                        Did you mean
+                        <a href="@Model.PagePath?q=@Uri.EscapeDataString(response.Suggestion)">@response.Suggestion</a>?
+                    </div>
+                }
+
+                @* What the AI made of the query, and the way back out of it.
+
+                   Shown whenever the query that ran was not the query that was typed. A feature
+                   that silently searches for something else is indistinguishable from a broken
+                   search when it gets it wrong, so this says what happened and links to the
+                   unaltered search - ai=0, which turns both AI stages off for that one request. *@
+                @if (!string.IsNullOrWhiteSpace(Model.OriginalTerm))
+                {
+                    var rewritten = !string.Equals(response.Term, Model.OriginalTerm, StringComparison.Ordinal);
+
+                    @* Nothing to say when the interpretation changed neither the words nor the
+                       results - an expansion only ever widens what matches, and a notice about it
+                       would be the page explaining itself for no reason. *@
+                    @if (rewritten || response.AiFilters.Count > 0)
+                    {
+                        <div class="imobisoft-ai-notice">
+                            <span>
+                                @if (rewritten)
+                                {
+                                    <text>Showing results for &ldquo;<strong>@response.Term</strong>&rdquo;</text>
+                                }
+                                else
+                                {
+                                    <text>Showing results narrowed from your search</text>
+                                }
+
+                                @* One at a time rather than joined into a string: a field facet's
+                                   value is whatever the model proposed, so it is printed as an
+                                   encoded expression and never as markup. *@
+                                @foreach (var applied in response.AiFilters)
+                                {
+                                    <text> &middot; </text>
+                                    <strong>@applied</strong>
+                                }
+                            </span>
+                            <a href="@Model.PagePath?q=@Uri.EscapeDataString(Model.OriginalTerm)&amp;ai=0">
+                                Search instead for &ldquo;@Model.OriginalTerm&rdquo;
+                            </a>
+                        </div>
+                    }
+                }
+
+                <div class="imobisoft-stats-bar">
+                    <div>
+                        Found <strong>@response.TotalResults</strong> result@(response.TotalResults == 1 ? "" : "s")
+                        @if (!string.IsNullOrWhiteSpace(response.Term))
+                        {
+                            <span>for &ldquo;<strong>@response.Term</strong>&rdquo;</span>
+                        }
+                    </div>
+                    @if (response.TotalResults > 0 && response.EnableLoadMore)
+                    {
+                        <div>Page <strong>@response.Page</strong> of <strong>@Math.Max(1, response.TotalPages)</strong></div>
+                    }
+                </div>
+
+                @* Content Type Group Breakdown *@
+                @if (response.Groups.Count > 0)
+                {
+                    <div class="imobisoft-groups-pills">
+                        @foreach (var group in response.Groups)
+                        {
+                            <span class="imobisoft-group-pill">@group.Key: <strong>@group.Value</strong></span>
+                        }
+                    </div>
+                }
+
+                @if (response.Results.Count == 0 && response.TotalResults == 0)
+                {
+                    <div class="imobisoft-empty-box">
+                        <h3>No results matched your search</h3>
+                        <p>Try searching with different keywords, checking your spelling, or clearing active filters.</p>
+                        @if (hasActiveFilters)
+                        {
+                            <p style="margin-top: 24px;">
+                                <a href="@Context.ClearFiltersUrl()" class="imobisoft-btn imobisoft-btn-secondary">Clear active filters</a>
+                            </p>
+                        }
+                    </div>
+                }
+                else if (response.Results.Count == 0)
+                {
+                    @* Matches exist but this page holds none of them: the visitor paged past the
+                       end, or the profile's "results before searching" limit is set to zero. *@
+                    <div class="imobisoft-empty-box">
+                        <h3>Nothing to show on this page</h3>
+                        <p>@response.TotalResults result@(response.TotalResults == 1 ? " matches" : " matches") were found.
+                           Use the page controls above, or ask your editor to raise the profile's page limits in the Search section.</p>
+                    </div>
+                }
+                else
+                {
+                    @* The AI text tools, when a key has been added and the profile switched them on.
+                       ai.js reads these attributes and builds the per-result buttons. *@
+                    AiRules? ai = AiTools.IsAvailable(response.ProfileAlias)
+                        ? AiTools.RulesFor(response.ProfileAlias)
+                        : null;
+
+                    @* The buttons need the text tools switch specifically. A profile running only
+                       the search half - an answer card and no buttons - is available here, and
+                       listing its actions anyway would put buttons on the page that the endpoint
+                       then refuses. *@
+                    var aiActions = ai is null || !ai.Enabled
+                        ? string.Empty
+                        : string.Join(',', ai.Actions.Select(a => char.ToLowerInvariant(a.ToString()[0]) + a.ToString()[1..]));
+
+                    @* The answer card and the suggested searches are fetched by the browser once
+                       this page is on screen, rather than rendered here. Both are a provider round
+                       trip, and nothing a visitor is reading should wait on one: the results are
+                       the answer, and these are an improvement on having to read them.
+
+                       Neither is offered when the visitor asked for their own words back - they
+                       would be answering the query the AI read, which is the one thing they just
+                       said they did not want. *@
+                    var aiCards = ai is not null && !Model.AiDisabled && !string.IsNullOrWhiteSpace(response.Term);
+
+                    @if (ai is not null)
+                    {
+                        <link rel="stylesheet" href="/App_Plugins/Imobisoft.Search/ai.css" />
+                    }
+                    <ol id="imobisoft-search-results"
+                        class="imobisoft-results-list"
+                        data-imobisoft-ai-endpoint="@(ai is null ? null : "/" + ImobisoftSearchConstants.Web.SearchPagePath + "/ai")"
+                        data-imobisoft-ai-actions="@(ai is null ? null : aiActions)"
+                        data-imobisoft-ai-languages="@(ai is null ? null : string.Join(',', ai.Languages))"
+                        data-imobisoft-ai-term="@(ai is null ? null : response.Term)"
+                        data-imobisoft-ai-question-limit="@(ai is null ? null : ai.MaxQuestionCharacters.ToString())"
+                        data-imobisoft-ai-answer="@((aiCards && ai!.Search.AnswerCard).ToString().ToLowerInvariant())"
+                        data-imobisoft-ai-related="@((aiCards && ai!.Search.RelatedSearches).ToString().ToLowerInvariant())"
+                        data-imobisoft-ai-page="@Model.PagePath"
+                        data-imobisoft-ai-profile="@(ai is null ? null : response.ProfileAlias)">
+                        @* The result cards. Inlined for the same reason as the search bar: this file
+                           is the whole page. Keep one <li> per result - Load More below copies them
+                           out of the next page's markup.
+
+                           Name, then where it lives, then what matched, then its details - each one
+                           quieter than the last, so a list of them is read by scanning the names. *@
+                        @foreach (SearchResultItem item in response.Results)
+                        {
+                            <li class="imobisoft-result-card @(item.IsBestBet ? "is-bestbet" : "")">
+                                <div class="imobisoft-result-header">
+                                    @if (item.IsBestBet)
+                                    {
+                                        <span class="imobisoft-badge imobisoft-badge-bestbet">Pinned best bet</span>
+                                    }
+                                </div>
+
+                                <h3 class="imobisoft-result-title">
+                                    @if (!string.IsNullOrWhiteSpace(item.Url))
+                                    {
+                                        <a href="@item.Url">@item.Name</a>
+                                    }
+                                    else
+                                    {
+                                        <span>@item.Name</span>
+                                    }
+                                </h3>
+
+                                @if (!string.IsNullOrWhiteSpace(item.Url))
+                                {
+                                    <div class="imobisoft-result-path">@item.Url</div>
+                                }
+
+                                @* The sentence that matched, or - when nothing did, which is every
+                                   result before a visitor has typed - what the page says about
+                                   itself. A result with nothing under its name tells a visitor
+                                   nothing about whether to click it. *@
+                                @if (!string.IsNullOrWhiteSpace(item.Highlight))
+                                {
+                                    @* The engine HTML-encodes the snippet and leaves only the
+                                       configured highlight tag intact, so this is safe as markup. *@
+                                    <div class="imobisoft-result-snippet">@Html.Raw(item.Highlight)</div>
+                                }
+                                else if (Model.Excerpt(item) is { Length: > 0 } excerpt)
+                                {
+                                    @* Plain text by the time it reaches here - markup stripped,
+                                       structured values flattened - so it is printed, not raw.
+
+                                       Read through Excerpt rather than straight off Summary, which
+                                       is what keeps block editor leftovers off the page: a profile
+                                       pointed at a raw block property would otherwise print
+                                       ["Home page-square text layout"] under the result name. *@
+                                    <div class="imobisoft-result-snippet">@excerpt</div>
+                                }
+
+                                @* Below the description, on a line of its own: the date is context
+                                   for what was just read, not a label on the result. The document
+                                   type stays off a content page - "landing" is an internal alias
+                                   and means nothing to a visitor - but is kept for media and
+                                   members, where it is the one thing that tells a result apart
+                                   from a page. *@
+                                @{
+                                    var showType = Model.ShowResultType(item);
+
+                                    // Decided before the element is opened, because Razor leaves
+                                    // whitespace inside it - so an empty row would not match
+                                    // :empty and would show as a blank gap under the description.
+                                    var hasMeta = item.CreateDate is not null
+                                                  || (showType && (!string.IsNullOrWhiteSpace(item.ContentTypeAlias)
+                                                                   || !string.IsNullOrWhiteSpace(item.IndexType)))
+                                                  || (showType && !string.IsNullOrWhiteSpace(item.Culture));
+                                }
+
+                                @if (hasMeta)
+                                {
+                                    <div class="imobisoft-result-meta">
+                                        @* The parsed date, never the index's own value for it: that
+                                           is written as a tick count and reads as an id. *@
+                                        @if (item.CreateDate is { } created)
+                                        {
+                                            <span class="imobisoft-result-date">@created.ToString("dd MMM yyyy")</span>
+                                        }
+                                        @if (showType
+                                             && (!string.IsNullOrWhiteSpace(item.ContentTypeAlias) || !string.IsNullOrWhiteSpace(item.IndexType)))
+                                        {
+                                            <span class="imobisoft-result-type">@Model.ResultTypeLabel(item)</span>
+                                        }
+                                        @if (showType && !string.IsNullOrWhiteSpace(item.Culture))
+                                        {
+                                            <span class="imobisoft-result-culture">@item.Culture</span>
+                                        }
+                                    </div>
+                                }
+                            </li>
+                        }
+                    </ol>
+                    @if (ai is not null)
+                    {
+                        <script src="/App_Plugins/Imobisoft.Search/ai.js" defer></script>
+                    }
+
+                    @* Load More pagination: rendered only when the profile enables it and
+                       further pages exist. When disabled, the profile serves exactly one page
+                       of PageSize items and nothing beyond it. *@
+                    @if (response.EnableLoadMore && response.Page < response.TotalPages)
+                    {
+                        <div id="imobisoft-load-more-wrap" class="imobisoft-pagination-wrap">
+                            <button id="imobisoft-search-more"
+                                    type="button"
+                                    class="imobisoft-btn-load-more"
+                                    data-next-page="@(response.Page + 1)"
+                                    data-total-pages="@response.TotalPages">
+                                Load more
+                            </button>
+                        </div>
+
+                        <script>
+                            (function () {
+                                var btn = document.getElementById('imobisoft-search-more');
+                                var list = document.getElementById('imobisoft-search-results');
+                                if (!btn || !list) return;
+
+                                btn.addEventListener('click', async function (e) {
+                                    e.preventDefault();
+
+                                    var next = parseInt(btn.getAttribute('data-next-page'), 10);
+                                    var total = parseInt(btn.getAttribute('data-total-pages'), 10);
+
+                                    btn.disabled = true;
+                                    btn.textContent = 'Loading...';
+
+                                    var params = new URLSearchParams(window.location.search);
+                                    params.set('page', next);
+
+                                    try {
+                                        // The next page is this same page at the next page number,
+                                        // and its result cards are lifted out of the response. That
+                                        // keeps everything in this one file - there is no separate
+                                        // partial or endpoint serving fragments of it.
+                                        var res = await fetch(window.location.pathname + '?' + params.toString());
+                                        if (!res.ok) throw new Error('Failed to fetch results');
+
+                                        var html = await res.text();
+                                        var doc = new DOMParser().parseFromString(html, 'text/html');
+                                        var added = doc.querySelectorAll('#imobisoft-search-results > li');
+
+                                        added.forEach(function (item) { list.appendChild(item); });
+
+                                        if (next >= total) {
+                                            var wrap = document.getElementById('imobisoft-load-more-wrap');
+                                            if (wrap) wrap.parentNode.removeChild(wrap);
+                                            else btn.parentNode.removeChild(btn);
+                                        } else {
+                                            btn.setAttribute('data-next-page', next + 1);
+                                            btn.disabled = false;
+                                            btn.textContent = 'Load more';
+                                        }
+                                    } catch (err) {
+                                        console.error('Error loading more results:', err);
+                                        btn.disabled = false;
+                                        btn.textContent = 'Load more';
+                                    }
+                                });
+                            })();
+                        </script>
+                    }
+                }
+            }
+        </form>
+    </div>

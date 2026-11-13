@@ -52,6 +52,21 @@ public sealed class SearchRequest
     public bool AllowEmptyTerm { get; set; }
 
     /// <summary>
+    /// Runs this search with the AI stages off, however the profile is configured.
+    /// <para>
+    /// This is what the "search for X instead" link on the results page sets. A feature that reads
+    /// a query and quietly searches for something else has to be undoable by the person who typed
+    /// it - otherwise a visitor whose query was misread has no way to insist, and no way to tell
+    /// that insisting is even possible.
+    /// </para>
+    /// <para>
+    /// Only the stages that change the query or the order. It does not touch the text tools, which
+    /// nothing runs without being asked.
+    /// </para>
+    /// </summary>
+    public bool DisableAi { get; set; }
+
+    /// <summary>
     /// Populates <see cref="SearchResponse.Diagnostics"/> with the queries that ran and the rules
     /// that were applied. The dashboard turns this on; site code normally leaves it off.
     /// </summary>
